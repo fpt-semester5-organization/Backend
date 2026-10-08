@@ -14,7 +14,7 @@ IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[Ve
 BEGIN
     CREATE TABLE [dbo].[VeganVenues] (
         [Venue_ID]              INT IDENTITY(1,1) NOT NULL,
-        [External_Source]       VARCHAR(30) NOT NULL CONSTRAINT [DF_VeganVenues_Source] DEFAULT ('USER_CONTRIBUTED'),
+        [External_Source]       VARCHAR(20) NOT NULL,
         [External_Place_ID]     VARCHAR(100) NULL,
         [Venue_Name]            NVARCHAR(150) NOT NULL,
         [Address]               NVARCHAR(255) NOT NULL,
@@ -28,7 +28,7 @@ BEGIN
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_VeganVenues_Created_At] DEFAULT (SYSDATETIME()),
 
         CONSTRAINT [PK_VeganVenues] PRIMARY KEY CLUSTERED ([Venue_ID] ASC),
-        CONSTRAINT [CK_VeganVenues_Source] CHECK ([External_Source] IN ('HAPPYCOW', 'GOOGLE_PLACES', 'USER_CONTRIBUTED')),
+        CONSTRAINT [CK_VeganVenues_Source] CHECK ([External_Source] IN ('HAPPYCOW', 'GOOGLE_PLACES')),
         CONSTRAINT [CK_VeganVenues_Rating] CHECK ([Rating] BETWEEN 0.0 AND 5.0)
     );
 

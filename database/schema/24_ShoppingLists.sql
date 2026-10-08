@@ -1,8 +1,7 @@
 -- ============================================================================
 -- Table: ShoppingLists
 -- Cluster: Kho Công thức Chay, Thực đơn & Đi chợ
--- Description: Danh sách đi chợ thông minh tổng hợp từ thực đơn tuần (Chế độ Online).
--- Note: TUYỆT ĐỐI KHÔNG tạo cột Is_Offline_Synced theo quyết định 05/10.
+-- Description: Danh sách đi chợ thông minh tổng hợp từ thực đơn tuần (Chế độ Online & PWA Offline Sync).
 -- ============================================================================
 
 
@@ -19,6 +18,7 @@ BEGIN
         [List_Title]            NVARCHAR(150) NOT NULL,
         [Target_Shopping_Date]  DATE NOT NULL,
         [Status]                VARCHAR(20) NOT NULL CONSTRAINT [DF_ShoppingLists_Status] DEFAULT ('PENDING'),
+        [Is_Offline_Synced]     BIT NOT NULL CONSTRAINT [DF_ShoppingLists_Is_Offline_Synced] DEFAULT (0),
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_ShoppingLists_Created_At] DEFAULT (SYSDATETIME()),
 
         CONSTRAINT [PK_ShoppingLists] PRIMARY KEY CLUSTERED ([List_ID] ASC),

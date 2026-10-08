@@ -106,7 +106,7 @@ veggielife-backend/
 | MealPlans | MealPlansController | MealPlans, MealSlots | Gemini lập thực đơn |
 | ShoppingLists | ShoppingListsController | ShoppingLists, ShoppingListItems | Chỉ online |
 | Products | ProductsController | Products, ENumberDictionary, Product_ENumbers, ProductAllergens, UserScanHistory | Barcode, OCR nhãn, Open Food Facts |
-| Fridge | FridgeController | FridgeInventoryList | Gemini Vision qua AI service |
+| Fridge | FridgeController | FridgeInventory | Gemini Vision qua AI service |
 | Venues | VenuesController | VeganVenues, VenueMenuItems, VenueCategories | HappyCow + Google Maps; thực đơn đối soát ShopeeFood/GrabFood (D34) |
 | Chat | ChatController | ChatSessions, ChatMessages, Surveys | |
 | Subscriptions | SubscriptionsController | VipSubscriptions (danh mục gói), PaymentTransactions | VIP = giao dịch SUCCESS và `Ends_At > now` (D39) |
@@ -125,7 +125,7 @@ veggielife-backend/
 13_IngredientAllergens  14_Posts  15_Recipes  16_RecipeIngredients  17_Videos  18_VideoTranscripts
 19_Comments  20_Votes  21_ViolationReports  22_MealPlans  23_MealSlots  24_ShoppingLists
 25_ShoppingListItems  26_Products  27_ENumberDictionary  28_Product_ENumbers  29_ProductAllergens
-30_UserScanHistory  31_FridgeInventoryList  32_VeganVenues  33_VenueMenuItems  34_VenueCategories
+30_UserScanHistory  31_FridgeInventory  32_VeganVenues  33_VenueMenuItems  34_VenueCategories
 35_ChatSessions  36_ChatMessages  37_Surveys
 ```
 

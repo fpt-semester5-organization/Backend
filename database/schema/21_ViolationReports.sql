@@ -33,7 +33,7 @@ BEGIN
         CONSTRAINT [FK_ViolationReports_Videos] FOREIGN KEY ([Video_ID]) REFERENCES [dbo].[Videos]([Video_ID]),
         CONSTRAINT [CK_ViolationReports_Type] CHECK ([Violation_Type] IN ('VIO_MEAT', 'VIO_LABEL', 'VIO_HATE', 'VIO_SPAM')),
         CONSTRAINT [CK_ViolationReports_Source] CHECK ([Report_Source] IN ('AI_SCAN', 'USER_REPORT')),
-        CONSTRAINT [CK_ViolationReports_Status] CHECK ([Status] IN ('PENDING', 'APPROVED', 'REJECTED'))
+        CONSTRAINT [CK_ViolationReports_Status] CHECK ([Status] IN ('PENDING', 'APPROVE', 'REJECT'))
     );
 
     CREATE NONCLUSTERED INDEX [IX_ViolationReports_Status] ON [dbo].[ViolationReports]([Status] ASC);

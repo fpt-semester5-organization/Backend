@@ -27,7 +27,7 @@ BEGIN
 
         CONSTRAINT [PK_Posts] PRIMARY KEY CLUSTERED ([Post_ID] ASC),
         CONSTRAINT [CK_Posts_Visibility] CHECK ([Visibility] IN ('PUBLIC', 'FOLLOWERS', 'PRIVATE')),
-        CONSTRAINT [CK_Posts_Moderation_Status] CHECK ([Moderation_Status] IN ('DRAFT', 'PENDING_REVIEW', 'APPROVED_ACTIVE', 'REJECTED', 'QUARANTINED_HIDDEN', 'SOFT_DELETED'))
+        CONSTRAINT [CK_Posts_Moderation_Status] CHECK ([Moderation_Status] IN ('DRAFT', 'PENDING_REVIEW', 'APPROVED_ACTIVE', 'REJECTED', 'QUARANTINED_HIDDEN', 'DELETED'))
     );
 
     CREATE NONCLUSTERED INDEX [IX_Posts_User_ID] ON [dbo].[Posts]([User_ID] ASC);

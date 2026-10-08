@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using VeggieLife.DAL.Entities;
@@ -12,15 +12,11 @@ public partial class AppDbContext : DbContext
     {
     }
 
-    public virtual DbSet<ChatMessage> ChatMessages { get; set; }
-
-    public virtual DbSet<ChatSession> ChatSessions { get; set; }
-
     public virtual DbSet<Comment> Comments { get; set; }
 
     public virtual DbSet<FoodCategory> FoodCategories { get; set; }
 
-    public virtual DbSet<FridgeInventoryList> FridgeInventoryLists { get; set; }
+    public virtual DbSet<FridgeInventory> FridgeInventories { get; set; }
 
     public virtual DbSet<Ingredient> Ingredients { get; set; }
 
@@ -38,8 +34,6 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<ShoppingListItem> ShoppingListItems { get; set; }
 
-    public virtual DbSet<Survey> Surveys { get; set; }
-
     public virtual DbSet<VeganVenue> VeganVenues { get; set; }
 
     public virtual DbSet<VenueCategory> VenueCategories { get; set; }
@@ -54,57 +48,6 @@ public partial class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<ChatMessage>(entity =>
-        {
-            entity.HasKey(e => e.MessageId);
-
-            entity.HasIndex(e => e.ChatSessionId, "IX_ChatMessages_Session_ID");
-
-            entity.Property(e => e.MessageId).HasColumnName("Message_ID");
-            entity.Property(e => e.ChatSessionId).HasColumnName("Chat_Session_ID");
-            entity.Property(e => e.CreatedAt)
-                .HasDefaultValueSql("(sysdatetime())")
-                .HasColumnName("Created_At");
-            entity.Property(e => e.SenderType)
-                .HasMaxLength(20)
-                .IsUnicode(false)
-                .HasColumnName("Sender_Type");
-
-            entity.HasOne(d => d.ChatSession).WithMany(p => p.ChatMessages)
-                .HasForeignKey(d => d.ChatSessionId)
-                .HasConstraintName("FK_ChatMessages_ChatSessions");
-        });
-
-        modelBuilder.Entity<ChatSession>(entity =>
-        {
-            entity.HasIndex(e => e.GuestUuid, "IX_ChatSessions_Guest_UUID").HasFilter("([Guest_UUID] IS NOT NULL)");
-
-            entity.HasIndex(e => e.UserId, "IX_ChatSessions_User_ID");
-
-            entity.Property(e => e.ChatSessionId).HasColumnName("Chat_Session_ID");
-            entity.Property(e => e.ContextType)
-                .HasMaxLength(30)
-                .IsUnicode(false)
-                .HasDefaultValue("NUTRITION_CONSULTATION")
-                .HasColumnName("Context_Type");
-            entity.Property(e => e.GuestUuid)
-                .HasMaxLength(36)
-                .IsUnicode(false)
-                .HasColumnName("Guest_UUID");
-            entity.Property(e => e.ProfilesId).HasColumnName("Profiles_ID");
-            entity.Property(e => e.SessionTitle)
-                .HasMaxLength(150)
-                .HasDefaultValue("Há»™i thoáº¡i má»›i")
-                .HasColumnName("Session_Title");
-            entity.Property(e => e.StartedAt)
-                .HasDefaultValueSql("(sysdatetime())")
-                .HasColumnName("Started_At");
-            entity.Property(e => e.UpdatedAt)
-                .HasDefaultValueSql("(sysdatetime())")
-                .HasColumnName("Updated_At");
-            entity.Property(e => e.UserId).HasColumnName("User_ID");
-        });
-
         modelBuilder.Entity<Comment>(entity =>
         {
             entity.HasIndex(e => e.ParentCommentId, "IX_Comments_Parent_Comment_ID");
@@ -155,23 +98,20 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.UpdatedAt).HasColumnName("Updated_At");
         });
 
-        modelBuilder.Entity<FridgeInventoryList>(entity =>
+        modelBuilder.Entity<FridgeInventory>(entity =>
         {
             entity.HasKey(e => e.InventoryId);
 
-            entity.ToTable("FridgeInventoryList");
+            entity.ToTable("FridgeInventory");
 
-            entity.HasIndex(e => e.UserId, "IX_FridgeInventoryList_User_ID");
+            entity.HasIndex(e => e.UserId, "IX_FridgeInventory_User_ID");
 
             entity.Property(e => e.InventoryId).HasColumnName("Inventory_ID");
-            entity.Property(e => e.CreatedAt)
-                .HasDefaultValueSql("(sysdatetime())")
-                .HasColumnName("Created_At");
             entity.Property(e => e.CustomItemName)
                 .HasMaxLength(100)
                 .HasColumnName("Custom_Item_Name");
             entity.Property(e => e.FreshnessStatus)
-                .HasMaxLength(20)
+                .HasMaxLength(15)
                 .IsUnicode(false)
                 .HasDefaultValue("FRESH")
                 .HasColumnName("Freshness_Status");
@@ -179,10 +119,10 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.SessionId).HasColumnName("Session_ID");
             entity.Property(e => e.UserId).HasColumnName("User_ID");
 
-            entity.HasOne(d => d.Ingredient).WithMany(p => p.FridgeInventoryLists)
+            entity.HasOne(d => d.Ingredient).WithMany(p => p.FridgeInventories)
                 .HasForeignKey(d => d.IngredientId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK_FridgeInventoryList_Ingredients");
+                .HasConstraintName("FK_FridgeInventory_Ingredients");
         });
 
         modelBuilder.Entity<Ingredient>(entity =>
@@ -200,10 +140,14 @@ public partial class AppDbContext : DbContext
                 .HasMaxLength(30)
                 .IsUnicode(false)
                 .HasColumnName("Default_Stall_Type");
+            entity.Property(e => e.FoodGroup)
+                .HasMaxLength(20)
+                .IsUnicode(false)
+                .HasDefaultValue("PLANT")
+                .HasColumnName("Food_Group");
             entity.Property(e => e.IngredientName)
                 .HasMaxLength(100)
                 .HasColumnName("Ingredient_Name");
-            entity.Property(e => e.IsAllergen).HasColumnName("Is_Allergen");
             entity.Property(e => e.IsAllium).HasColumnName("Is_Allium");
             entity.Property(e => e.StandardUnit)
                 .HasMaxLength(20)
@@ -402,6 +346,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysdatetime())")
                 .HasColumnName("Created_At");
+            entity.Property(e => e.IsOfflineSynced).HasColumnName("Is_Offline_Synced");
             entity.Property(e => e.ListTitle)
                 .HasMaxLength(150)
                 .HasColumnName("List_Title");
@@ -443,27 +388,6 @@ public partial class AppDbContext : DbContext
                 .HasConstraintName("FK_ShoppingListItems_ShoppingLists");
         });
 
-        modelBuilder.Entity<Survey>(entity =>
-        {
-            entity.HasIndex(e => e.UserId, "IX_Surveys_User_ID");
-
-            entity.Property(e => e.SurveyId).HasColumnName("Survey_ID");
-            entity.Property(e => e.ContextQuestion)
-                .HasMaxLength(255)
-                .HasColumnName("Context_Question");
-            entity.Property(e => e.CreatedAt)
-                .HasDefaultValueSql("(sysdatetime())")
-                .HasColumnName("Created_At");
-            entity.Property(e => e.FeedbackContent).HasColumnName("Feedback_Content");
-            entity.Property(e => e.RatingScore).HasColumnName("Rating_Score");
-            entity.Property(e => e.SessionId).HasColumnName("Session_ID");
-            entity.Property(e => e.UserId).HasColumnName("User_ID");
-
-            entity.HasOne(d => d.Session).WithMany(p => p.Surveys)
-                .HasForeignKey(d => d.SessionId)
-                .HasConstraintName("FK_Surveys_ChatSessions");
-        });
-
         modelBuilder.Entity<VeganVenue>(entity =>
         {
             entity.HasKey(e => e.VenueId);
@@ -484,9 +408,8 @@ public partial class AppDbContext : DbContext
                 .IsUnicode(false)
                 .HasColumnName("External_Place_ID");
             entity.Property(e => e.ExternalSource)
-                .HasMaxLength(30)
+                .HasMaxLength(20)
                 .IsUnicode(false)
-                .HasDefaultValue("USER_CONTRIBUTED")
                 .HasColumnName("External_Source");
             entity.Property(e => e.IsActive)
                 .HasDefaultValue(true)
@@ -560,15 +483,12 @@ public partial class AppDbContext : DbContext
         {
             entity.HasIndex(e => e.PostId, "IX_Videos_Post_ID");
 
-            entity.HasIndex(e => e.RecipeId, "IX_Videos_Recipe_ID");
-
             entity.Property(e => e.VideoId).HasColumnName("Video_ID");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysdatetime())")
                 .HasColumnName("Created_At");
             entity.Property(e => e.DurationSeconds).HasColumnName("Duration_Seconds");
             entity.Property(e => e.PostId).HasColumnName("Post_ID");
-            entity.Property(e => e.RecipeId).HasColumnName("Recipe_ID");
             entity.Property(e => e.Status)
                 .HasMaxLength(20)
                 .IsUnicode(false)
@@ -587,16 +507,15 @@ public partial class AppDbContext : DbContext
 
             entity.HasOne(d => d.Post).WithMany(p => p.Videos)
                 .HasForeignKey(d => d.PostId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_Videos_Posts");
-
-            entity.HasOne(d => d.Recipe).WithMany(p => p.Videos)
-                .HasForeignKey(d => d.RecipeId)
-                .HasConstraintName("FK_Videos_Recipes");
         });
 
         modelBuilder.Entity<VideoTranscript>(entity =>
         {
             entity.HasKey(e => e.TranscriptId);
+
+            entity.HasIndex(e => e.RecipeId, "IX_VideoTranscripts_Recipe_ID");
 
             entity.HasIndex(e => e.VideoId, "UQ_VideoTranscripts_Video_ID").IsUnique();
 
@@ -607,6 +526,7 @@ public partial class AppDbContext : DbContext
                 .HasColumnName("Created_At");
             entity.Property(e => e.ExtractedRecipeJson).HasColumnName("Extracted_Recipe_JSON");
             entity.Property(e => e.RawTranscript).HasColumnName("Raw_Transcript");
+            entity.Property(e => e.RecipeId).HasColumnName("Recipe_ID");
             entity.Property(e => e.Status)
                 .HasMaxLength(20)
                 .IsUnicode(false)
@@ -616,6 +536,10 @@ public partial class AppDbContext : DbContext
                 .IsUnicode(false)
                 .HasColumnName("STT_Model_Version");
             entity.Property(e => e.VideoId).HasColumnName("Video_ID");
+
+            entity.HasOne(d => d.Recipe).WithMany(p => p.VideoTranscripts)
+                .HasForeignKey(d => d.RecipeId)
+                .HasConstraintName("FK_VideoTranscripts_Recipes");
 
             entity.HasOne(d => d.Video).WithOne(p => p.VideoTranscript)
                 .HasForeignKey<VideoTranscript>(d => d.VideoId)

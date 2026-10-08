@@ -7,9 +7,7 @@ public partial class Video
 {
     public int VideoId { get; set; }
 
-    public int? PostId { get; set; }
-
-    public int? RecipeId { get; set; }
+    public int PostId { get; set; }
 
     public string Title { get; set; } = null!;
 
@@ -27,9 +25,7 @@ public partial class Video
 
     public DateTime? UpdatedAt { get; set; }
 
-    public virtual Post? Post { get; set; }
-
-    public virtual Recipe? Recipe { get; set; }
+    public virtual Post Post { get; set; } = null!;
 
     public virtual VideoTranscript? VideoTranscript { get; set; }
 

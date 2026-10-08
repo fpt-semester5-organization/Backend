@@ -1,9 +1,9 @@
 -- ============================================================================
--- VeggieLifeDb - Master Schema Creation Script (20 Tables)
+-- VeggieLifeDb - Master Schema Creation Script (17 Tables)
 -- Clusters:
 --   - Mạng xã hội Ẩm thực, Video & Kiểm duyệt (5 thực thể)
 --   - Kho Công thức Chay, Thực đơn & Đi chợ (8 thực thể)
---   - Trợ lý Tư vấn AI, Tủ lạnh Ảo & Địa điểm (7 thực thể)
+--   - Trợ lý Tư vấn AI, Tủ lạnh Ảo & Địa điểm (4 thực thể)
 -- Target RDBMS: Microsoft SQL Server 2022
 -- ============================================================================
 
@@ -48,7 +48,6 @@ BEGIN
     ON [dbo].[FoodCategories]([Category_Name] ASC);
 END;
 GO
-
 GO
 
 -- ============================================================================
@@ -74,19 +73,19 @@ BEGIN
         [Standard_Unit]         NVARCHAR(20) NOT NULL CONSTRAINT [DF_Ingredients_Standard_Unit] DEFAULT (N'g'),
         [Default_Stall_Type]    VARCHAR(30) NOT NULL,
         [Calories_Per_100g]     DECIMAL(6,1) NOT NULL,
-        [Is_Allergen]           BIT NOT NULL CONSTRAINT [DF_Ingredients_Is_Allergen] DEFAULT (0),
         [Is_Allium]             BIT NOT NULL CONSTRAINT [DF_Ingredients_Is_Allium] DEFAULT (0),
+        [Food_Group]            VARCHAR(20) NOT NULL CONSTRAINT [DF_Ingredients_Food_Group] DEFAULT ('PLANT'),
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_Ingredients_Created_At] DEFAULT (SYSDATETIME()),
 
         CONSTRAINT [PK_Ingredients] PRIMARY KEY CLUSTERED ([Ingredient_ID] ASC),
-        CONSTRAINT [CK_Ingredients_Stall_Type] CHECK ([Default_Stall_Type] IN ('PRODUCE', 'CONDIMENTS', 'DRY_GOODS', 'PLANT_PROTEIN'))
+        CONSTRAINT [CK_Ingredients_Stall_Type] CHECK ([Default_Stall_Type] IN ('PRODUCE', 'CONDIMENTS', 'DRY_GOODS', 'PLANT_PROTEIN')),
+        CONSTRAINT [CK_Ingredients_Food_Group] CHECK ([Food_Group] IN ('PLANT', 'EGG', 'DAIRY', 'POULTRY', 'SEAFOOD'))
     );
 
     CREATE UNIQUE NONCLUSTERED INDEX [UQ_Ingredients_Ingredient_Name] 
     ON [dbo].[Ingredients]([Ingredient_Name] ASC);
 END;
 GO
-
 GO
 
 -- ============================================================================
@@ -121,7 +120,7 @@ BEGIN
 
         CONSTRAINT [PK_Posts] PRIMARY KEY CLUSTERED ([Post_ID] ASC),
         CONSTRAINT [CK_Posts_Visibility] CHECK ([Visibility] IN ('PUBLIC', 'FOLLOWERS', 'PRIVATE')),
-        CONSTRAINT [CK_Posts_Moderation_Status] CHECK ([Moderation_Status] IN ('DRAFT', 'PENDING_REVIEW', 'APPROVED_ACTIVE', 'REJECTED', 'QUARANTINED_HIDDEN', 'SOFT_DELETED'))
+        CONSTRAINT [CK_Posts_Moderation_Status] CHECK ([Moderation_Status] IN ('DRAFT', 'PENDING_REVIEW', 'APPROVED_ACTIVE', 'REJECTED', 'QUARANTINED_HIDDEN', 'DELETED'))
     );
 
     CREATE NONCLUSTERED INDEX [IX_Posts_User_ID] ON [dbo].[Posts]([User_ID] ASC);
@@ -134,7 +133,6 @@ BEGIN
     END;
 END;
 GO
-
 GO
 
 -- ============================================================================
@@ -205,7 +203,6 @@ BEGIN
     END;
 END;
 GO
-
 GO
 
 -- ============================================================================
@@ -241,7 +238,6 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_RecipeIngredients_Ingredient_ID] ON [dbo].[RecipeIngredients]([Ingredient_ID] ASC);
 END;
 GO
-
 GO
 
 -- ============================================================================
@@ -263,8 +259,7 @@ IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[Vi
 BEGIN
     CREATE TABLE [dbo].[Videos] (
         [Video_ID]              INT IDENTITY(1,1) NOT NULL,
-        [Post_ID]               INT NULL,
-        [Recipe_ID]             INT NULL,
+        [Post_ID]               INT NOT NULL,
         [Title]                 NVARCHAR(150) NOT NULL,
         [Video_Url]             VARCHAR(255) NOT NULL,
         [Thumbnail_Url]         VARCHAR(255) NULL,
@@ -276,16 +271,12 @@ BEGIN
 
         CONSTRAINT [PK_Videos] PRIMARY KEY CLUSTERED ([Video_ID] ASC),
         CONSTRAINT [FK_Videos_Posts] FOREIGN KEY ([Post_ID]) REFERENCES [dbo].[Posts]([Post_ID]),
-        CONSTRAINT [FK_Videos_Recipes] FOREIGN KEY ([Recipe_ID]) REFERENCES [dbo].[Recipes]([Recipe_ID]),
-        CONSTRAINT [CK_Videos_Target] CHECK ([Post_ID] IS NOT NULL OR [Recipe_ID] IS NOT NULL),
         CONSTRAINT [CK_Videos_Status] CHECK ([Status] IN ('PROCESSING', 'READY', 'FAILED', 'BANNED'))
     );
 
     CREATE NONCLUSTERED INDEX [IX_Videos_Post_ID] ON [dbo].[Videos]([Post_ID] ASC);
-    CREATE NONCLUSTERED INDEX [IX_Videos_Recipe_ID] ON [dbo].[Videos]([Recipe_ID] ASC);
 END;
 GO
-
 GO
 
 -- ============================================================================
@@ -308,6 +299,7 @@ BEGIN
     CREATE TABLE [dbo].[VideoTranscripts] (
         [Transcript_ID]         INT IDENTITY(1,1) NOT NULL,
         [Video_ID]              INT NOT NULL,
+        [Recipe_ID]             INT NULL,
         [Raw_Transcript]        NVARCHAR(MAX) NULL,
         [Extracted_Recipe_JSON] NVARCHAR(MAX) NULL,
         [STT_Model_Version]     VARCHAR(50) NULL,
@@ -317,13 +309,14 @@ BEGIN
 
         CONSTRAINT [PK_VideoTranscripts] PRIMARY KEY CLUSTERED ([Transcript_ID] ASC),
         CONSTRAINT [FK_VideoTranscripts_Videos] FOREIGN KEY ([Video_ID]) REFERENCES [dbo].[Videos]([Video_ID]) ON DELETE CASCADE,
+        CONSTRAINT [FK_VideoTranscripts_Recipes] FOREIGN KEY ([Recipe_ID]) REFERENCES [dbo].[Recipes]([Recipe_ID]),
         CONSTRAINT [CK_VideoTranscripts_Status] CHECK ([Status] IN ('PENDING', 'COMPLETED', 'FAILED'))
     );
 
     CREATE UNIQUE NONCLUSTERED INDEX [UQ_VideoTranscripts_Video_ID] ON [dbo].[VideoTranscripts]([Video_ID] ASC);
+    CREATE NONCLUSTERED INDEX [IX_VideoTranscripts_Recipe_ID] ON [dbo].[VideoTranscripts]([Recipe_ID] ASC);
 END;
 GO
-
 GO
 
 -- ============================================================================
@@ -369,7 +362,6 @@ BEGIN
     END;
 END;
 GO
-
 GO
 
 -- ============================================================================
@@ -410,7 +402,7 @@ BEGIN
         CONSTRAINT [FK_ViolationReports_Videos] FOREIGN KEY ([Video_ID]) REFERENCES [dbo].[Videos]([Video_ID]),
         CONSTRAINT [CK_ViolationReports_Type] CHECK ([Violation_Type] IN ('VIO_MEAT', 'VIO_LABEL', 'VIO_HATE', 'VIO_SPAM')),
         CONSTRAINT [CK_ViolationReports_Source] CHECK ([Report_Source] IN ('AI_SCAN', 'USER_REPORT')),
-        CONSTRAINT [CK_ViolationReports_Status] CHECK ([Status] IN ('PENDING', 'APPROVED', 'REJECTED'))
+        CONSTRAINT [CK_ViolationReports_Status] CHECK ([Status] IN ('PENDING', 'APPROVE', 'REJECT'))
     );
 
     CREATE NONCLUSTERED INDEX [IX_ViolationReports_Status] ON [dbo].[ViolationReports]([Status] ASC);
@@ -422,7 +414,6 @@ BEGIN
     END;
 END;
 GO
-
 GO
 
 -- ============================================================================
@@ -474,7 +465,6 @@ BEGIN
     END;
 END;
 GO
-
 GO
 
 -- ============================================================================
@@ -513,7 +503,6 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_MealSlots_Plan_ID] ON [dbo].[MealSlots]([Plan_ID] ASC);
 END;
 GO
-
 GO
 
 -- ============================================================================
@@ -522,8 +511,7 @@ GO
 -- ============================================================================
 -- Table: ShoppingLists
 -- Cluster: Kho Công thức Chay, Thực đơn & Đi chợ
--- Description: Danh sách đi chợ thông minh tổng hợp từ thực đơn tuần (Chế độ Online).
--- Note: TUYỆT ĐỐI KHÔNG tạo cột Is_Offline_Synced theo quyết định 05/10.
+-- Description: Danh sách đi chợ thông minh tổng hợp từ thực đơn tuần (Chế độ Online & PWA Offline Sync).
 -- ============================================================================
 
 
@@ -540,6 +528,7 @@ BEGIN
         [List_Title]            NVARCHAR(150) NOT NULL,
         [Target_Shopping_Date]  DATE NOT NULL,
         [Status]                VARCHAR(20) NOT NULL CONSTRAINT [DF_ShoppingLists_Status] DEFAULT ('PENDING'),
+        [Is_Offline_Synced]     BIT NOT NULL CONSTRAINT [DF_ShoppingLists_Is_Offline_Synced] DEFAULT (0),
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_ShoppingLists_Created_At] DEFAULT (SYSDATETIME()),
 
         CONSTRAINT [PK_ShoppingLists] PRIMARY KEY CLUSTERED ([List_ID] ASC),
@@ -550,7 +539,6 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_ShoppingLists_Plan_ID] ON [dbo].[ShoppingLists]([Plan_ID] ASC);
 END;
 GO
-
 GO
 
 -- ============================================================================
@@ -586,14 +574,13 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_ShoppingListItems_List_ID] ON [dbo].[ShoppingListItems]([List_ID] ASC);
 END;
 GO
-
 GO
 
 -- ============================================================================
--- START: 31_FridgeInventoryList.sql
+-- START: 31_FridgeInventory.sql
 -- ============================================================================
 -- ============================================================================
--- Table: FridgeInventoryList (Fridge_Inventory)
+-- Table: FridgeInventory
 -- Cluster: Trợ lý Tư vấn AI, Tủ lạnh Ảo & Địa điểm
 -- Description: Quản lý thực phẩm trong tủ lạnh ảo phục vụ thuật toán Empty the Fridge.
 -- ============================================================================
@@ -604,31 +591,34 @@ GO
 SET QUOTED_IDENTIFIER ON;
 GO
 
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[FridgeInventoryList]') AND type in (N'U'))
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[FridgeInventory]') AND type in (N'U'))
 BEGIN
-    CREATE TABLE [dbo].[FridgeInventoryList] (
+    CREATE TABLE [dbo].[FridgeInventory] (
         [Inventory_ID]          INT IDENTITY(1,1) NOT NULL,
         [User_ID]               INT NOT NULL,
         [Ingredient_ID]         INT NOT NULL,
         [Session_ID]            INT NULL,
         [Custom_Item_Name]      NVARCHAR(100) NOT NULL,
-        [Freshness_Status]      VARCHAR(20) NOT NULL CONSTRAINT [DF_FridgeInventoryList_Freshness] DEFAULT ('FRESH'),
-        [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_FridgeInventoryList_Created_At] DEFAULT (SYSDATETIME()),
+        [Freshness_Status]      VARCHAR(15) NOT NULL CONSTRAINT [DF_FridgeInventory_Freshness] DEFAULT ('FRESH'),
 
-        CONSTRAINT [PK_FridgeInventoryList] PRIMARY KEY CLUSTERED ([Inventory_ID] ASC),
-        CONSTRAINT [FK_FridgeInventoryList_Ingredients] FOREIGN KEY ([Ingredient_ID]) REFERENCES [dbo].[Ingredients]([Ingredient_ID]),
-        CONSTRAINT [CK_FridgeInventoryList_Freshness] CHECK ([Freshness_Status] IN ('FRESH', 'NON-FRESH'))
+        CONSTRAINT [PK_FridgeInventory] PRIMARY KEY CLUSTERED ([Inventory_ID] ASC),
+        CONSTRAINT [FK_FridgeInventory_Ingredients] FOREIGN KEY ([Ingredient_ID]) REFERENCES [dbo].[Ingredients]([Ingredient_ID]),
+        CONSTRAINT [CK_FridgeInventory_Freshness] CHECK ([Freshness_Status] IN ('FRESH', 'NON-FRESH'))
     );
 
-    CREATE NONCLUSTERED INDEX [IX_FridgeInventoryList_User_ID] ON [dbo].[FridgeInventoryList]([User_ID] ASC);
+    CREATE NONCLUSTERED INDEX [IX_FridgeInventory_User_ID] ON [dbo].[FridgeInventory]([User_ID] ASC);
 
     IF OBJECT_ID(N'[dbo].[Users]', N'U') IS NOT NULL
     BEGIN
-        ALTER TABLE [dbo].[FridgeInventoryList] ADD CONSTRAINT [FK_FridgeInventoryList_Users] FOREIGN KEY ([User_ID]) REFERENCES [dbo].[Users]([User_ID]);
+        ALTER TABLE [dbo].[FridgeInventory] ADD CONSTRAINT [FK_FridgeInventory_Users] FOREIGN KEY ([User_ID]) REFERENCES [dbo].[Users]([User_ID]);
+    END;
+
+    IF OBJECT_ID(N'[dbo].[FridgeSessions]', N'U') IS NOT NULL
+    BEGIN
+        ALTER TABLE [dbo].[FridgeInventory] ADD CONSTRAINT [FK_FridgeInventory_FridgeSessions] FOREIGN KEY ([Session_ID]) REFERENCES [dbo].[FridgeSessions]([Session_ID]);
     END;
 END;
 GO
-
 GO
 
 -- ============================================================================
@@ -650,7 +640,7 @@ IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[Ve
 BEGIN
     CREATE TABLE [dbo].[VeganVenues] (
         [Venue_ID]              INT IDENTITY(1,1) NOT NULL,
-        [External_Source]       VARCHAR(30) NOT NULL CONSTRAINT [DF_VeganVenues_Source] DEFAULT ('USER_CONTRIBUTED'),
+        [External_Source]       VARCHAR(20) NOT NULL,
         [External_Place_ID]     VARCHAR(100) NULL,
         [Venue_Name]            NVARCHAR(150) NOT NULL,
         [Address]               NVARCHAR(255) NOT NULL,
@@ -664,7 +654,7 @@ BEGIN
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_VeganVenues_Created_At] DEFAULT (SYSDATETIME()),
 
         CONSTRAINT [PK_VeganVenues] PRIMARY KEY CLUSTERED ([Venue_ID] ASC),
-        CONSTRAINT [CK_VeganVenues_Source] CHECK ([External_Source] IN ('HAPPYCOW', 'GOOGLE_PLACES', 'USER_CONTRIBUTED')),
+        CONSTRAINT [CK_VeganVenues_Source] CHECK ([External_Source] IN ('HAPPYCOW', 'GOOGLE_PLACES')),
         CONSTRAINT [CK_VeganVenues_Rating] CHECK ([Rating] BETWEEN 0.0 AND 5.0)
     );
 
@@ -675,7 +665,6 @@ BEGIN
     ON [dbo].[VeganVenues]([Latitude] ASC, [Longitude] ASC);
 END;
 GO
-
 GO
 
 -- ============================================================================
@@ -711,7 +700,6 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_VenueMenuItems_Venue_ID] ON [dbo].[VenueMenuItems]([Venue_ID] ASC);
 END;
 GO
-
 GO
 
 -- ============================================================================
@@ -745,126 +733,4 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_VenueCategories_Venue_ID] ON [dbo].[VenueCategories]([Venue_ID] ASC);
 END;
 GO
-
 GO
-
--- ============================================================================
--- START: 35_ChatSessions.sql
--- ============================================================================
--- ============================================================================
--- Table: ChatSessions
--- Cluster: Trợ lý Tư vấn AI, Tủ lạnh Ảo & Địa điểm
--- Description: Phiên hội thoại tư vấn dinh dưỡng với Chatbot AI (User & Guest).
--- ============================================================================
-
-
-SET ANSI_NULLS ON;
-GO
-SET QUOTED_IDENTIFIER ON;
-GO
-
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ChatSessions]') AND type in (N'U'))
-BEGIN
-    CREATE TABLE [dbo].[ChatSessions] (
-        [Chat_Session_ID]       BIGINT IDENTITY(1,1) NOT NULL,
-        [User_ID]               INT NULL,
-        [Profiles_ID]           INT NULL,
-        [Guest_UUID]            VARCHAR(36) NULL,
-        [Session_Title]         NVARCHAR(150) NOT NULL CONSTRAINT [DF_ChatSessions_Title] DEFAULT (N'Hội thoại mới'),
-        [Context_Type]          VARCHAR(30) NOT NULL CONSTRAINT [DF_ChatSessions_Context] DEFAULT ('NUTRITION_CONSULTATION'),
-        [Started_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_ChatSessions_Started_At] DEFAULT (SYSDATETIME()),
-        [Updated_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_ChatSessions_Updated_At] DEFAULT (SYSDATETIME()),
-
-        CONSTRAINT [PK_ChatSessions] PRIMARY KEY CLUSTERED ([Chat_Session_ID] ASC),
-        CONSTRAINT [CK_ChatSessions_User_Or_Guest] CHECK ([User_ID] IS NOT NULL OR [Guest_UUID] IS NOT NULL)
-    );
-
-    CREATE NONCLUSTERED INDEX [IX_ChatSessions_User_ID] ON [dbo].[ChatSessions]([User_ID] ASC);
-    CREATE NONCLUSTERED INDEX [IX_ChatSessions_Guest_UUID] ON [dbo].[ChatSessions]([Guest_UUID] ASC) WHERE [Guest_UUID] IS NOT NULL;
-
-    IF OBJECT_ID(N'[dbo].[Users]', N'U') IS NOT NULL
-    BEGIN
-        ALTER TABLE [dbo].[ChatSessions] ADD CONSTRAINT [FK_ChatSessions_Users] FOREIGN KEY ([User_ID]) REFERENCES [dbo].[Users]([User_ID]);
-    END;
-END;
-GO
-
-GO
-
--- ============================================================================
--- START: 36_ChatMessages.sql
--- ============================================================================
--- ============================================================================
--- Table: ChatMessages
--- Cluster: Trợ lý Tư vấn AI, Tủ lạnh Ảo & Địa điểm
--- Description: Tin nhắn hội thoại trong phiên tư vấn AI (Sender: USER | ASSISTANT).
--- ============================================================================
-
-
-SET ANSI_NULLS ON;
-GO
-SET QUOTED_IDENTIFIER ON;
-GO
-
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ChatMessages]') AND type in (N'U'))
-BEGIN
-    CREATE TABLE [dbo].[ChatMessages] (
-        [Message_ID]            BIGINT IDENTITY(1,1) NOT NULL,
-        [Chat_Session_ID]       BIGINT NOT NULL,
-        [Sender_Type]           VARCHAR(20) NOT NULL,
-        [Content]               NVARCHAR(MAX) NOT NULL,
-        [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_ChatMessages_Created_At] DEFAULT (SYSDATETIME()),
-
-        CONSTRAINT [PK_ChatMessages] PRIMARY KEY CLUSTERED ([Message_ID] ASC),
-        CONSTRAINT [FK_ChatMessages_ChatSessions] FOREIGN KEY ([Chat_Session_ID]) REFERENCES [dbo].[ChatSessions]([Chat_Session_ID]) ON DELETE CASCADE,
-        CONSTRAINT [CK_ChatMessages_Sender_Type] CHECK ([Sender_Type] IN ('USER', 'ASSISTANT'))
-    );
-
-    CREATE NONCLUSTERED INDEX [IX_ChatMessages_Session_ID] ON [dbo].[ChatMessages]([Chat_Session_ID] ASC);
-END;
-GO
-
-GO
-
--- ============================================================================
--- START: 37_Surveys.sql
--- ============================================================================
--- ============================================================================
--- Table: Surveys
--- Cluster: Trợ lý Tư vấn AI, Tủ lạnh Ảo & Địa điểm
--- Description: Khảo sát và đánh giá chất lượng phản hồi của AI (1 - 5 sao).
--- ============================================================================
-
-
-SET ANSI_NULLS ON;
-GO
-SET QUOTED_IDENTIFIER ON;
-GO
-
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[Surveys]') AND type in (N'U'))
-BEGIN
-    CREATE TABLE [dbo].[Surveys] (
-        [Survey_ID]             BIGINT IDENTITY(1,1) NOT NULL,
-        [User_ID]               INT NOT NULL,
-        [Session_ID]            BIGINT NULL,
-        [Rating_Score]          INT NOT NULL,
-        [Context_Question]      NVARCHAR(255) NOT NULL,
-        [Feedback_Content]      NVARCHAR(MAX) NULL,
-        [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_Surveys_Created_At] DEFAULT (SYSDATETIME()),
-
-        CONSTRAINT [PK_Surveys] PRIMARY KEY CLUSTERED ([Survey_ID] ASC),
-        CONSTRAINT [FK_Surveys_ChatSessions] FOREIGN KEY ([Session_ID]) REFERENCES [dbo].[ChatSessions]([Chat_Session_ID]),
-        CONSTRAINT [CK_Surveys_Rating_Score] CHECK ([Rating_Score] BETWEEN 1 AND 5)
-    );
-
-    CREATE NONCLUSTERED INDEX [IX_Surveys_User_ID] ON [dbo].[Surveys]([User_ID] ASC);
-
-    IF OBJECT_ID(N'[dbo].[Users]', N'U') IS NOT NULL
-    BEGIN
-        ALTER TABLE [dbo].[Surveys] ADD CONSTRAINT [FK_Surveys_Users] FOREIGN KEY ([User_ID]) REFERENCES [dbo].[Users]([User_ID]);
-    END;
-END;
-GO
-
-GO
-

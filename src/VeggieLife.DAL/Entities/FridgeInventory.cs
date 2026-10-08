@@ -1,9 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace VeggieLife.DAL.Entities;
 
-public partial class FridgeInventoryList
+public partial class FridgeInventory
 {
     public int InventoryId { get; set; }
 
@@ -16,8 +16,6 @@ public partial class FridgeInventoryList
     public string CustomItemName { get; set; } = null!;
 
     public string FreshnessStatus { get; set; } = null!;
-
-    public DateTime CreatedAt { get; set; }
 
     public virtual Ingredient Ingredient { get; set; } = null!;
 }

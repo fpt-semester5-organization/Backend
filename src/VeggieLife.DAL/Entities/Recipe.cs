@@ -51,7 +51,7 @@ public partial class Recipe
 
     public virtual ICollection<RecipeIngredient> RecipeIngredients { get; set; } = new List<RecipeIngredient>();
 
-    public virtual ICollection<Video> Videos { get; set; } = new List<Video>();
+    public virtual ICollection<VideoTranscript> VideoTranscripts { get; set; } = new List<VideoTranscript>();
 
     public virtual ICollection<ViolationReport> ViolationReports { get; set; } = new List<ViolationReport>();
 }

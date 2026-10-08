@@ -15,13 +15,13 @@ public partial class Ingredient
 
     public decimal CaloriesPer100g { get; set; }
 
-    public bool IsAllergen { get; set; }
-
     public bool IsAllium { get; set; }
+
+    public string FoodGroup { get; set; } = null!;
 
     public DateTime CreatedAt { get; set; }
 
-    public virtual ICollection<FridgeInventoryList> FridgeInventoryLists { get; set; } = new List<FridgeInventoryList>();
+    public virtual ICollection<FridgeInventory> FridgeInventories { get; set; } = new List<FridgeInventory>();
 
     public virtual ICollection<RecipeIngredient> RecipeIngredients { get; set; } = new List<RecipeIngredient>();
 

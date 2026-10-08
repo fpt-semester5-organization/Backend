@@ -15,6 +15,8 @@ public partial class ShoppingList
 
     public string Status { get; set; } = null!;
 
+    public bool IsOfflineSynced { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public virtual MealPlan Plan { get; set; } = null!;

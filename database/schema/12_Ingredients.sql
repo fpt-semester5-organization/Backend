@@ -18,12 +18,13 @@ BEGIN
         [Standard_Unit]         NVARCHAR(20) NOT NULL CONSTRAINT [DF_Ingredients_Standard_Unit] DEFAULT (N'g'),
         [Default_Stall_Type]    VARCHAR(30) NOT NULL,
         [Calories_Per_100g]     DECIMAL(6,1) NOT NULL,
-        [Is_Allergen]           BIT NOT NULL CONSTRAINT [DF_Ingredients_Is_Allergen] DEFAULT (0),
         [Is_Allium]             BIT NOT NULL CONSTRAINT [DF_Ingredients_Is_Allium] DEFAULT (0),
+        [Food_Group]            VARCHAR(20) NOT NULL CONSTRAINT [DF_Ingredients_Food_Group] DEFAULT ('PLANT'),
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_Ingredients_Created_At] DEFAULT (SYSDATETIME()),
 
         CONSTRAINT [PK_Ingredients] PRIMARY KEY CLUSTERED ([Ingredient_ID] ASC),
-        CONSTRAINT [CK_Ingredients_Stall_Type] CHECK ([Default_Stall_Type] IN ('PRODUCE', 'CONDIMENTS', 'DRY_GOODS', 'PLANT_PROTEIN'))
+        CONSTRAINT [CK_Ingredients_Stall_Type] CHECK ([Default_Stall_Type] IN ('PRODUCE', 'CONDIMENTS', 'DRY_GOODS', 'PLANT_PROTEIN')),
+        CONSTRAINT [CK_Ingredients_Food_Group] CHECK ([Food_Group] IN ('PLANT', 'EGG', 'DAIRY', 'POULTRY', 'SEAFOOD'))
     );
 
     CREATE UNIQUE NONCLUSTERED INDEX [UQ_Ingredients_Ingredient_Name] 
