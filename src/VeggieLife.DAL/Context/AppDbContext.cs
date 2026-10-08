@@ -24,6 +24,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<HealthProfile> HealthProfiles { get; set; }
 
+    public virtual DbSet<IngredientAllergen> IngredientAllergens { get; set; }
+
     public virtual DbSet<PaymentTransaction> PaymentTransactions { get; set; }
 
     public virtual DbSet<Product> Products { get; set; }
@@ -43,6 +45,8 @@ public partial class AppDbContext : DbContext
     public virtual DbSet<UserScanHistory> UserScanHistories { get; set; }
 
     public virtual DbSet<UserWeightHistory> UserWeightHistories { get; set; }
+
+    public virtual DbSet<Vote> Votes { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -109,6 +113,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysdatetime())")
                 .HasColumnName("Created_At");
+            entity.Property(e => e.MetadataJson).HasColumnName("Metadata_JSON");
             entity.Property(e => e.SenderType)
                 .HasMaxLength(20)
                 .IsUnicode(false)
@@ -239,6 +244,23 @@ public partial class AppDbContext : DbContext
                 .HasForeignKey<HealthProfile>(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_HealthProfiles_Users");
+        });
+
+        modelBuilder.Entity<IngredientAllergen>(entity =>
+        {
+            entity.HasKey(e => new { e.IngredientId, e.AllergenId });
+
+            entity.HasIndex(e => e.AllergenId, "IX_IngredientAllergens_Allergen_ID");
+
+            entity.Property(e => e.IngredientId).HasColumnName("Ingredient_ID");
+            entity.Property(e => e.AllergenId).HasColumnName("Allergen_ID");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(sysdatetime())")
+                .HasColumnName("Created_At");
+
+            entity.HasOne(d => d.Allergen).WithMany(p => p.IngredientAllergens)
+                .HasForeignKey(d => d.AllergenId)
+                .HasConstraintName("FK_IngredientAllergens_Allergens");
         });
 
         modelBuilder.Entity<PaymentTransaction>(entity =>
@@ -545,6 +567,24 @@ public partial class AppDbContext : DbContext
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_UserWeightHistory_Users");
+        });
+
+        modelBuilder.Entity<Vote>(entity =>
+        {
+            entity.HasIndex(e => e.PostId, "IX_Votes_Post_ID");
+
+            entity.HasIndex(e => new { e.UserId, e.PostId }, "UQ_Votes_User_Post").IsUnique();
+
+            entity.Property(e => e.VoteId).HasColumnName("Vote_ID");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(sysdatetime())")
+                .HasColumnName("Created_At");
+            entity.Property(e => e.PostId).HasColumnName("Post_ID");
+            entity.Property(e => e.UserId).HasColumnName("User_ID");
+
+            entity.HasOne(d => d.User).WithMany(p => p.Votes)
+                .HasForeignKey(d => d.UserId)
+                .HasConstraintName("FK_Votes_Users");
         });
 
         OnModelCreatingPartial(modelBuilder);

@@ -52,4 +52,6 @@ public partial class User
     public virtual ICollection<UserScanHistory> UserScanHistories { get; set; } = new List<UserScanHistory>();
 
     public virtual ICollection<UserWeightHistory> UserWeightHistories { get; set; } = new List<UserWeightHistory>();
+
+    public virtual ICollection<Vote> Votes { get; set; } = new List<Vote>();
 }

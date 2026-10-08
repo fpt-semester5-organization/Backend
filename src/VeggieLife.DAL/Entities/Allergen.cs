@@ -17,6 +17,8 @@ public partial class Allergen
 
     public DateTime UpdatedAt { get; set; }
 
+    public virtual ICollection<IngredientAllergen> IngredientAllergens { get; set; } = new List<IngredientAllergen>();
+
     public virtual ICollection<ProductAllergen> ProductAllergens { get; set; } = new List<ProductAllergen>();
 
     public virtual ICollection<UserAllergy> UserAllergies { get; set; } = new List<UserAllergy>();

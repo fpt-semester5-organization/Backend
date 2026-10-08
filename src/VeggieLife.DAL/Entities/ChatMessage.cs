@@ -15,5 +15,7 @@ public partial class ChatMessage
 
     public DateTime CreatedAt { get; set; }
 
+    public string? MetadataJson { get; set; }
+
     public virtual ChatSession ChatSession { get; set; } = null!;
 }
