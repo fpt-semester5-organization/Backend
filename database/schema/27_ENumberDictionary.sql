@@ -7,7 +7,7 @@
 CREATE TABLE dbo.ENumberDictionary (
     Code VARCHAR(15) NOT NULL,
     Name NVARCHAR(150) NOT NULL,
-    Category_Type VARCHAR(50) NULL,
+    Category_Type NVARCHAR(100) NULL,
     Origin_Source NVARCHAR(100) NOT NULL,
     Vegan_Status VARCHAR(20) NOT NULL,
     Health_Risk_Notes NVARCHAR(MAX) NULL,

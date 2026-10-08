@@ -43,8 +43,10 @@ done
 echo ""
 if ls "$SEED_DIR"/*.sql 1> /dev/null 2>&1; then
     echo "[2/2] Đang thực thi các file Seed Data..."
-    for file in $(ls "$SEED_DIR"/*.sql | sort); do
-        echo "  -> Running $(basename "$file")..."
+    for file in $(ls "$SEED_DIR"/0*.sql | sort); do
+        filename=$(basename "$file")
+        if [ "$filename" = "00_Seed_All.sql" ]; then continue; fi
+        echo "  -> Running $filename..."
         sqlcmd -S "$SERVER" -d "$DATABASE" "${AUTH_FLAGS[@]}" -I -i "$file" -b
     done
 else
