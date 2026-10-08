@@ -15,16 +15,14 @@ local-docs/
 .vs/
 .vscode/
 *.user
+*.userprefs
 *.userosscache
 *.sln.docstates
 *.suo
 
-## User-specific files
+## JetBrains Rider / Resharper
+.idea/
 *.rsuser
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
 
 ## Sensitive & Local Environment files
 appsettings.Development.json
