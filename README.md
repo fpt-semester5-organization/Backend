@@ -16,8 +16,7 @@ Thứ tự đọc: **BR → Data Model → FR → API**.
 | Cần gì | Tài liệu cần mở |
 |---|---|
 | Business Rules | **Final Business Rules** (bản Final, mã `BR-xxx`) |
-| Bảng và cột (36 bảng) | **Master Logical Data Model** (sơ đồ draw.io, 36 bảng) |
-| Kiểu dữ liệu, CHECK | **Master Logical Data Model Specification** (Word). ⚠ Bản hiện tại chưa cập nhật lên 36 bảng |
+| Bảng, cột, kiểu dữ liệu, CHECK (37 bảng) | **VeggieLife_ Logical Data Model Specification** (Word, 37 bảng chuẩn 3NF) |
 | Chức năng | **Functional Requirements** (bản Master khi có) |
 | Endpoint | **API Specification** (bản Master khi có) |
 | Quyết định đã chốt | **Decision Log** (Kế hoạch đồng bộ & Decision Log, mã `D1`, `D2`…) |
@@ -51,7 +50,7 @@ veggielife-backend/
 ├── .github/workflows/             CI (GitHub Actions): build + test khi mở PR
 ├── docs/                          tài liệu kỹ thuật riêng của BE (Redis keys, error codes, endpoint map)
 ├── database/                      ★ Database-first: SQL là gốc, Entity sinh từ đây
-│   ├── schema/                    36 file DDL, mỗi bảng 1 file, đánh số theo thứ tự FK (mục 5)
+│   ├── schema/                    37 file DDL, mỗi bảng 1 file, đánh số theo thứ tự FK (mục 5)
 │   ├── seed/                      dữ liệu master: DietarySchools, Allergens, FoodCategories, ENumberDictionary, VipSubscriptions, admin đầu tiên
 │   └── scripts/                   run_all.sh (chạy schema + seed bằng sqlcmd), scaffold.sh, reset_db.sh
 ├── src/
@@ -107,7 +106,7 @@ veggielife-backend/
 | MealPlans | MealPlansController | MealPlans, MealSlots | Gemini lập thực đơn |
 | ShoppingLists | ShoppingListsController | ShoppingLists, ShoppingListItems | Chỉ online |
 | Products | ProductsController | Products, ENumberDictionary, Product_ENumbers, ProductAllergens, UserScanHistory | Barcode, OCR nhãn, Open Food Facts |
-| Fridge | FridgeController | FridgeInventoryList | Gemini Vision qua AI service |
+| Fridge | FridgeController | FridgeInventory | Gemini Vision qua AI service |
 | Venues | VenuesController | VeganVenues, VenueMenuItems, VenueCategories | HappyCow + Google Maps; thực đơn đối soát ShopeeFood/GrabFood (D34) |
 | Chat | ChatController | ChatSessions, ChatMessages, Surveys | |
 | Subscriptions | SubscriptionsController | VipSubscriptions (danh mục gói), PaymentTransactions | VIP = giao dịch SUCCESS và `Ends_At > now` (D39) |
@@ -123,17 +122,18 @@ veggielife-backend/
 ```
 01_DietarySchools  02_Allergens  03_Users  04_HealthProfiles  05_UserWeightHistory  06_UserAllergies
 07_VipSubscriptions  08_PaymentTransactions  09_AIQuotaLogs  10_AuditLogs  11_FoodCategories  12_Ingredients
-13_Posts  14_Recipes  15_RecipeIngredients  16_Videos  17_VideoTranscripts  18_Comments  19_Votes
-20_ViolationReports  21_MealPlans  22_MealSlots  23_ShoppingLists  24_ShoppingListItems  25_Products
-26_ENumberDictionary  27_Product_ENumbers  28_ProductAllergens  29_UserScanHistory  30_FridgeInventoryList
-31_VeganVenues  32_VenueMenuItems  33_VenueCategories  34_ChatSessions  35_ChatMessages  36_Surveys
+13_IngredientAllergens  14_Posts  15_Recipes  16_RecipeIngredients  17_Videos  18_VideoTranscripts
+19_Comments  20_Votes  21_ViolationReports  22_MealPlans  23_MealSlots  24_ShoppingLists
+25_ShoppingListItems  26_Products  27_ENumberDictionary  28_Product_ENumbers  29_ProductAllergens
+30_UserScanHistory  31_FridgeInventory  32_VeganVenues  33_VenueMenuItems  34_VenueCategories
+35_ChatSessions  36_ChatMessages  37_Surveys
 ```
 
 **Lưu ý khi viết DDL**
 - PK mặc định `INT IDENTITY(1,1)`. Ngoại lệ:
   - `ENumberDictionary` dùng PK `Code` kiểu chuỗi.
   - `HealthProfiles` dùng PK chính là `User_ID`.
-  - 5 bảng nối dùng PK ghép: UserAllergies, ProductAllergens, Product_ENumbers, RecipeIngredients, VenueCategories.
+  - 6 bảng nối dùng PK ghép: UserAllergies, ProductAllergens, Product_ENumbers, RecipeIngredients, VenueCategories, IngredientAllergens.
 - `Votes`: CHECK đúng 1 trong 2 cột `Post_ID` / `Recipe_ID` có giá trị, và 2 UNIQUE filtered index (D37).
 - Theo quyết định ngày 05/10, **không** tạo cột `Users.Totp_Secret` và `ShoppingLists.Is_Offline_Synced`.
 
