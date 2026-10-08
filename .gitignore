@@ -1,24 +1,41 @@
-# Build results
+## Antigravity AI Customizations (local skills & rules)
+.agents/
+
+## Local Project Documentation (Specs, BRs, Data Models, Decision Log)
+project-docs/
+local-docs/
+
+## Build results
 [Bb]in/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
 
-# Visual Studio / VS Code
-.vscode/
+## Visual Studio / VS Code
 .vs/
+.vscode/
 *.user
 *.userprefs
+*.userosscache
+*.sln.docstates
 *.suo
 
-# JetBrains Rider
+## JetBrains Rider / Resharper
 .idea/
+*.rsuser
 
-# OS files
-.DS_Store
-Thumbs.db
-
-# Environment / Secrets
-*.env
+## Sensitive & Local Environment files
 appsettings.Development.json
 appsettings.Local.json
+*.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.cer
+!appsettings.Example.json
+!.env.example
+
+## OS files
+.DS_Store
+Thumbs.db

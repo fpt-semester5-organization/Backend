@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Tự động reverse-engineer (scaffold) database thành Entity POCO và AppDbContext cho VeggieLife.DAL.
 .DESCRIPTION
@@ -18,7 +18,7 @@ param (
 
 $ErrorActionPreference = "Stop"
 
-if (-not $Server) { $Server = "(localdb)\MSSQLLocalDB" }
+if (-not $Server) { $Server = "localhost" }
 if (-not $Database) { $Database = "VeggieLifeDb" }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+
 # ============================================================
 # Tự động reverse-engineer (scaffold) database thành Entity POCO và AppDbContext
 # cho VeggieLife.DAL theo chuẩn Backend/README.md
@@ -6,7 +7,7 @@
 
 set -e
 
-SERVER="${DB_SERVER:-(localdb)\\MSSQLLocalDB}"
+SERVER="${DB_SERVER:-localhost}"
 DATABASE="${DB_NAME:-VeggieLifeDb}"
 USER="${DB_USER:-}"
 PASSWORD="${DB_PASSWORD:-}"
