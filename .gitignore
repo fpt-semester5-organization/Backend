@@ -19,12 +19,14 @@ local-docs/
 *.userosscache
 *.sln.docstates
 *.suo
+*.slnx
 
 ## JetBrains Rider / Resharper
 .idea/
 *.rsuser
 
 ## Sensitive & Local Environment files
+appsettings.json
 appsettings.Development.json
 appsettings.Local.json
 *.env

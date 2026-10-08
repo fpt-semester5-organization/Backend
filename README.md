@@ -16,7 +16,7 @@ Thứ tự đọc: **BR → Data Model → FR → API**.
 | Cần gì | Tài liệu cần mở |
 |---|---|
 | Business Rules | **Final Business Rules** (bản Final, mã `BR-xxx`) |
-| Bảng, cột, kiểu dữ liệu, CHECK (37 bảng) | **VeggieLife_ Logical Data Model Specification** (Word, 37 bảng chuẩn 3NF) |
+| Bảng, cột, kiểu dữ liệu, CHECK (38 bảng) | **VeggieLife_ Logical Data Model Specification** (Word, 38 bảng chuẩn 3NF) |
 | Chức năng | **Functional Requirements** (bản Master khi có) |
 | Endpoint | **API Specification** (bản Master khi có) |
 | Quyết định đã chốt | **Decision Log** (Kế hoạch đồng bộ & Decision Log, mã `D1`, `D2`…) |
@@ -50,7 +50,7 @@ veggielife-backend/
 ├── .github/workflows/             CI (GitHub Actions): build + test khi mở PR
 ├── docs/                          tài liệu kỹ thuật riêng của BE (Redis keys, error codes, endpoint map)
 ├── database/                      ★ Database-first: SQL là gốc, Entity sinh từ đây
-│   ├── schema/                    37 file DDL, mỗi bảng 1 file, đánh số theo thứ tự FK (mục 5)
+│   ├── schema/                    38 file DDL, mỗi bảng 1 file, đánh số theo thứ tự FK (mục 5)
 │   ├── seed/                      dữ liệu master: DietarySchools, Allergens, FoodCategories, ENumberDictionary, VipSubscriptions, admin đầu tiên
 │   └── scripts/                   run_all.sh (chạy schema + seed bằng sqlcmd), scaffold.sh, reset_db.sh
 ├── src/
@@ -121,12 +121,12 @@ veggielife-backend/
 
 ```
 01_DietarySchools  02_Allergens  03_Users  04_HealthProfiles  05_UserWeightHistory  06_UserAllergies
-07_VipSubscriptions  08_PaymentTransactions  09_AIQuotaLogs  10_AuditLogs  11_FoodCategories  12_Ingredients
+07_SubscriptionPlans  08_PaymentTransactions  09_AIQuotaLogs  10_AuditLogs  11_FoodCategories  12_Ingredients
 13_IngredientAllergens  14_Posts  15_Recipes  16_RecipeIngredients  17_Videos  18_VideoTranscripts
 19_Comments  20_Votes  21_ViolationReports  22_MealPlans  23_MealSlots  24_ShoppingLists
 25_ShoppingListItems  26_Products  27_ENumberDictionary  28_Product_ENumbers  29_ProductAllergens
-30_UserScanHistory  31_FridgeInventory  32_VeganVenues  33_VenueMenuItems  34_VenueCategories
-35_ChatSessions  36_ChatMessages  37_Surveys
+30_UserScanHistory  31_FridgeSessions  32_FridgeInventory  33_VeganVenues  34_VenueMenuItems
+35_VenueCategories  36_ChatSessions  37_ChatMessages  38_Surveys
 ```
 
 **Lưu ý khi viết DDL**
@@ -218,7 +218,7 @@ Follow/Block, Streak, Swipe, Badges, Notifications, Share, Seasonal, Appeals, Sa
 
 ## 10. Đang chờ chốt (hỏi Leader trước khi làm phần liên quan)
 
-- **API Master** (route chuẩn, error code). Spec Data Model cho kiểu dữ liệu của 36 bảng.
+- **API Master** (route chuẩn, error code). Spec Data Model cho kiểu dữ liệu của 38 bảng.
 - **DB owner.**
 - **Jira project key** (`VL` chỉ là ví dụ).
 - **Thanh toán:** có giữ VNPay không.
