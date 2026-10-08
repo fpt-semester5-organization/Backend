@@ -1,5 +1,5 @@
 -- ============================================================
--- File: 28_ProductAllergens.sql
+-- File: 29_ProductAllergens.sql
 -- Bảng Thực Thể: ProductAllergens (3.26) [Bảng Trung Gian Phân Rã M:N Products - Allergens]
 -- Mục đích nghiệp vụ: Lưu trữ các chất gây dị ứng thực phẩm có mặt hoặc có nguy cơ nhiễm chéo trong sản phẩm (FDA/BYT).
 -- ============================================================

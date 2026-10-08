@@ -1,5 +1,5 @@
 -- ============================================================
--- File: 35_ChatMessages.sql
+-- File: 37_ChatMessages.sql
 -- Bảng Thực Thể: ChatMessages (3.34)
 -- Mục đích nghiệp vụ: Chi tiết từng lượt tin nhắn trong phiên tư vấn AI (phân vai USER và ASSISTANT).
 -- ============================================================

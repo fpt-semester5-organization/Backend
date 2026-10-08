@@ -13,5 +13,7 @@ public partial class Vote
 
     public DateTime CreatedAt { get; set; }
 
+    public virtual Post Post { get; set; } = null!;
+
     public virtual User User { get; set; } = null!;
 }

@@ -29,7 +29,11 @@ public partial class MealPlan
 
     public DateTime CreatedAt { get; set; }
 
+    public virtual DietarySchool DietarySchool { get; set; } = null!;
+
     public virtual ICollection<MealSlot> MealSlots { get; set; } = new List<MealSlot>();
 
     public virtual ICollection<ShoppingList> ShoppingLists { get; set; } = new List<ShoppingList>();
+
+    public virtual User User { get; set; } = null!;
 }

@@ -1,5 +1,5 @@
 -- ============================================================
--- File: 26_ENumberDictionary.sql
+-- File: 27_ENumberDictionary.sql
 -- Bảng Thực Thể: ENumberDictionary (3.24)
 -- Mục đích nghiệp vụ: Từ điển bách khoa phụ gia thực phẩm mã hiệu E-Number quốc tế, nguồn gốc hóa học và mức độ phù hợp ăn chay.
 -- ============================================================

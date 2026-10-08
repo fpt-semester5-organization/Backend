@@ -1,5 +1,5 @@
 -- ============================================================
--- File: 27_Product_ENumbers.sql
+-- File: 28_Product_ENumbers.sql
 -- Bảng Thực Thể: Product_ENumbers (3.25) [Bảng Trung Gian Phân Rã M:N Products - ENumberDictionary]
 -- Mục đích nghiệp vụ: Lưu trữ các phụ gia thực phẩm mã số E-number phát hiện trong sản phẩm đóng gói.
 -- ============================================================

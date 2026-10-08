@@ -1,5 +1,5 @@
 -- ============================================================
--- File: 36_Surveys.sql
+-- File: 38_Surveys.sql
 -- Bảng Thực Thể: Surveys (3.35)
 -- Mục đích nghiệp vụ: Phiếu khảo sát / đánh giá chất lượng phản hồi AI chatbot từ người dùng (BR-ADM-AI-002).
 -- ============================================================

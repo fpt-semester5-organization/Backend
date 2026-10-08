@@ -45,11 +45,15 @@ public partial class Recipe
 
     public virtual FoodCategory Category { get; set; } = null!;
 
+    public virtual DietarySchool DietarySchool { get; set; } = null!;
+
     public virtual ICollection<MealSlot> MealSlots { get; set; } = new List<MealSlot>();
 
     public virtual ICollection<Post> Posts { get; set; } = new List<Post>();
 
     public virtual ICollection<RecipeIngredient> RecipeIngredients { get; set; } = new List<RecipeIngredient>();
+
+    public virtual User? User { get; set; }
 
     public virtual ICollection<VideoTranscript> VideoTranscripts { get; set; } = new List<VideoTranscript>();
 

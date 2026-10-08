@@ -1,5 +1,5 @@
 -- ============================================================
--- File: 25_Products.sql
+-- File: 26_Products.sql
 -- Bảng Thực Thể: Products (3.23)
 -- Mục đích nghiệp vụ: Cơ sở dữ liệu sản phẩm đóng gói thương mại, mã vạch Barcode EAN-13/UPC và kết luận kiểm định chay.
 -- ============================================================

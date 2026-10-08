@@ -1,5 +1,5 @@
 -- ============================================================
--- File: 29_UserScanHistory.sql
+-- File: 30_UserScanHistory.sql
 -- Bảng Thực Thể: UserScanHistory (3.27) [Lịch Sử Quét Mã Vạch Sản Phẩm]
 -- Mục đích nghiệp vụ: Lưu trữ nhật ký quét mã vạch sản phẩm đóng gói, kết quả phát hiện nguyên liệu không thuần chay (hỗ trợ cả Member và Khách Guest).
 -- ============================================================

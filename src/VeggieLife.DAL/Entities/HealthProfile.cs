@@ -41,5 +41,7 @@ public partial class HealthProfile
 
     public virtual ICollection<ChatSession> ChatSessions { get; set; } = new List<ChatSession>();
 
+    public virtual DietarySchool DietarySchool { get; set; } = null!;
+
     public virtual User User { get; set; } = null!;
 }

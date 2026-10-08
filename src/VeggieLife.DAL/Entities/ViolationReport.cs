@@ -29,11 +29,15 @@ public partial class ViolationReport
 
     public DateTime CreatedAt { get; set; }
 
+    public virtual User? Admin { get; set; }
+
     public virtual Comment? Comment { get; set; }
 
     public virtual Post? Post { get; set; }
 
     public virtual Recipe? Recipe { get; set; }
+
+    public virtual User? ReporterUser { get; set; }
 
     public virtual Video? Video { get; set; }
 }

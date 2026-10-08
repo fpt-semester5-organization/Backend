@@ -1,5 +1,5 @@
 -- ============================================================
--- File: 34_ChatSessions.sql
+-- File: 36_ChatSessions.sql
 -- Bảng Thực Thể: ChatSessions (3.33)
 -- Mục đích nghiệp vụ: Quản lý phiên hội thoại trợ lý AI tư vấn dinh dưỡng (hỗ trợ cả Member và Khách Guest).
 -- ============================================================

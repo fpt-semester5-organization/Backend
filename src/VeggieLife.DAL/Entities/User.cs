@@ -37,11 +37,25 @@ public partial class User
 
     public virtual ICollection<AiquotaLog> AiquotaLogs { get; set; } = new List<AiquotaLog>();
 
+    public virtual ICollection<AuditLog> AuditLogs { get; set; } = new List<AuditLog>();
+
     public virtual ICollection<ChatSession> ChatSessions { get; set; } = new List<ChatSession>();
+
+    public virtual ICollection<Comment> Comments { get; set; } = new List<Comment>();
+
+    public virtual ICollection<FridgeInventory> FridgeInventories { get; set; } = new List<FridgeInventory>();
+
+    public virtual ICollection<FridgeSession> FridgeSessions { get; set; } = new List<FridgeSession>();
 
     public virtual HealthProfile? HealthProfile { get; set; }
 
+    public virtual ICollection<MealPlan> MealPlans { get; set; } = new List<MealPlan>();
+
     public virtual ICollection<PaymentTransaction> PaymentTransactions { get; set; } = new List<PaymentTransaction>();
+
+    public virtual ICollection<Post> Posts { get; set; } = new List<Post>();
+
+    public virtual ICollection<Recipe> Recipes { get; set; } = new List<Recipe>();
 
     public virtual ICollection<SubscriptionPlan> SubscriptionPlans { get; set; } = new List<SubscriptionPlan>();
 
@@ -52,6 +66,10 @@ public partial class User
     public virtual ICollection<UserScanHistory> UserScanHistories { get; set; } = new List<UserScanHistory>();
 
     public virtual ICollection<UserWeightHistory> UserWeightHistories { get; set; } = new List<UserWeightHistory>();
+
+    public virtual ICollection<ViolationReport> ViolationReportAdmins { get; set; } = new List<ViolationReport>();
+
+    public virtual ICollection<ViolationReport> ViolationReportReporterUsers { get; set; } = new List<ViolationReport>();
 
     public virtual ICollection<Vote> Votes { get; set; } = new List<Vote>();
 }

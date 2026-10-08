@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Reset database VeggieLifeDb về trạng thái sạch (Drop và Create lại).
 .DESCRIPTION
@@ -16,7 +16,7 @@ param (
 
 $ErrorActionPreference = "Stop"
 
-if (-not $Server) { $Server = "(localdb)\MSSQLLocalDB" }
+if (-not $Server) { $Server = "localhost" }
 if (-not $Database) { $Database = "VeggieLifeDb" }
 
 Write-Host "============================================================" -ForegroundColor Cyan

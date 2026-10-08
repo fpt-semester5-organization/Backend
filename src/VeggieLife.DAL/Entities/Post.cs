@@ -31,7 +31,11 @@ public partial class Post
 
     public virtual Recipe? Recipe { get; set; }
 
+    public virtual User User { get; set; } = null!;
+
     public virtual ICollection<Video> Videos { get; set; } = new List<Video>();
 
     public virtual ICollection<ViolationReport> ViolationReports { get; set; } = new List<ViolationReport>();
+
+    public virtual ICollection<Vote> Votes { get; set; } = new List<Vote>();
 }

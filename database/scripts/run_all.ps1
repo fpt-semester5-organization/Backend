@@ -1,8 +1,8 @@
-﻿<#
+<#
 .SYNOPSIS
     Thực thi toàn bộ DDL trong schema/ và master data trong seed/ bằng sqlcmd.
 .DESCRIPTION
-    Tự động quét các file .sql theo thứ tự tên (01 -> 36) và thực thi lên SQL Server.
+    Tự động quét các file .sql theo thứ tự tên (01 -> 38) và thực thi lên SQL Server.
 #>
 [CmdletBinding()]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
@@ -16,7 +16,7 @@ param (
 
 $ErrorActionPreference = "Stop"
 
-if (-not $Server) { $Server = "(localdb)\MSSQLLocalDB" }
+if (-not $Server) { $Server = "localhost" }
 if (-not $Database) { $Database = "VeggieLifeDb" }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
