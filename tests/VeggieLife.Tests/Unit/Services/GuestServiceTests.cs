@@ -125,6 +125,11 @@ public class GuestServiceTests
                 return Task.FromResult((true, false, count, (TimeSpan?)null));
             }
         }
+
+        public Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default)
+        {
+            return Task.CompletedTask;
+        }
     }
 
     private readonly ThreadSafeTestRedisService _redisService = new();

@@ -136,6 +136,11 @@ public class AuthServiceTests
                 return Task.FromResult((true, false, count, (TimeSpan?)null));
             }
         }
+
+        public Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default)
+        {
+            return Task.CompletedTask;
+        }
     }
 
     private class TestEmailService : IEmailService

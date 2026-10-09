@@ -53,4 +53,9 @@ public interface IRedisService
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Bộ tuple (Allowed: có được phép, IsBanned: đã bị khóa hay chưa, CurrentCount: số request hiện tại, RetryAfter: thời gian còn lại trước khi hết khóa).</returns>
     Task<(bool Allowed, bool IsBanned, long CurrentCount, TimeSpan? RetryAfter)> CheckIpRateLimitAsync(string clientIp, int maxRequestsPerMinute = 10, int banDurationMinutes = 10, CancellationToken ct = default);
+
+    /// <summary>
+    /// Đưa công việc vào hàng đợi phân tán Redis (tương đương LPUSH cho stt_queue).
+    /// </summary>
+    Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default);
 }

@@ -383,4 +383,20 @@ public class RedisService : IRedisService
             return (true, false, count, null);
         }
     }
+
+    public async Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(item);
+            _logger.LogInformation("Đã xếp công việc vào hàng đợi {QueueName}: {Payload}", queueName, json);
+
+            // Ghi nhận vào cache để theo dõi trạng thái công việc mới nhất
+            await SetAsync($"queue:{queueName}:latest", item, TimeSpan.FromHours(24), ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi khi đưa phần tử vào hàng đợi '{QueueName}'.", queueName);
+        }
+    }
 }
