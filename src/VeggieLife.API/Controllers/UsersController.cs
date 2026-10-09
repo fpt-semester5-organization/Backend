@@ -73,6 +73,60 @@ public class UsersController : BaseApiController
     }
 
     /// <summary>
+    /// FN-PROF-03: Cập nhật ảnh đại diện người dùng lên Cloudinary (chuẩn hóa 500x500 px).
+    /// </summary>
+    [HttpPost("me/avatar")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> UploadCurrentUserAvatar(Microsoft.AspNetCore.Http.IFormFile? file, CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+
+        if (file == null || file.Length == 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrMediaInvalidFile, "Tệp hình ảnh không được để trống.");
+        }
+
+        if (file.Length > 5 * 1024 * 1024)
+        {
+            throw new AppException(413, ErrorCodes.ErrMediaFileTooLarge, "Tệp vượt quá dung lượng tối đa 5 MB.");
+        }
+
+        await using var stream = file.OpenReadStream();
+        var result = await _profileService.UploadAvatarAsync((int)CurrentUserId!.Value, stream, file.FileName, ct);
+        return OkResponse(result, "Cập nhật ảnh đại diện thành công.");
+    }
+
+    /// <summary>
+    /// FN-PROF-06: Ghi nhận mốc cân nặng mới và tự động tính lại chỉ số sức khỏe.
+    /// </summary>
+    [HttpPost("me/weight-history")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    public async Task<IActionResult> CreateCurrentUserWeightEntry([FromBody] CreateCurrentUserWeightEntryRequest request, CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+        var result = await _profileService.CreateWeightEntryAsync((int)CurrentUserId!.Value, request, ct);
+        return CreatedResponse(result, "Đã ghi cân nặng.");
+    }
+
+    /// <summary>
+    /// FN-PROF-06: Xem danh sách lịch sử cân nặng theo khoảng ngày có phân trang.
+    /// </summary>
+    [HttpGet("me/weight-history")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    public async Task<IActionResult> ListCurrentUserWeightHistory(
+        [FromQuery] System.DateOnly? from,
+        [FromQuery] System.DateOnly? to,
+        [FromQuery] int page = 1,
+        [FromQuery] int size = 20,
+        CancellationToken ct = default)
+    {
+        EnsureAuthorizedMember();
+        var (items, meta) = await _profileService.ListWeightHistoryAsync((int)CurrentUserId!.Value, from, to, page, size, ct);
+        return PagedResponse(items, meta, "OK");
+    }
+
+    /// <summary>
     /// Kiểm tra tính hợp lệ của tài khoản đăng nhập và từ chối khách vãng lai gọi tính năng cá nhân hóa (FN-AUTH-03).
     /// </summary>
     private void EnsureAuthorizedMember()
