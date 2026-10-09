@@ -14,6 +14,7 @@ using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.Email;
 using VeggieLife.BLL.Services.Media;
 using VeggieLife.BLL.Services.Payment;
+using VeggieLife.DAL.External.Cloudinary;
 
 namespace VeggieLife.API.Extensions;
 
@@ -185,16 +186,20 @@ public static class ServiceExtensions
     /// <summary>
     /// Đăng ký các dịch vụ cốt lõi và các interface nghiệp vụ dùng chung (AI, Vector DB, Email, Media, Payment, Auth).
     /// </summary>
-    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    public static IServiceCollection AddApplicationServices(this IServiceCollection services, IConfiguration configuration)
     {
         // Dịch vụ JWT & Cache
         services.AddScoped<IJwtTokenService, JwtTokenService>();
 
-        // Các interface dịch vụ dùng chung (Bản mẫu rỗng để các thành viên khác hoàn thiện)
+        // Cấu hình & Dịch vụ Cloudinary CDN dùng chung
+        services.Configure<CloudinarySettings>(configuration.GetSection(CloudinarySettings.SectionName));
+        services.AddSingleton<ICloudinaryClient, CloudinaryClient>();
+        services.AddScoped<IMediaService, MediaService>();
+
+        // Các interface dịch vụ dùng chung khác
         services.AddScoped<IAiService, AiServiceStub>();
         services.AddScoped<IVectorDbService, VectorDbServiceStub>();
         services.AddScoped<IEmailService, EmailServiceStub>();
-        services.AddScoped<IMediaService, MediaServiceStub>();
         services.AddScoped<IPaymentGatewayService, PaymentGatewayServiceStub>();
 
         return services;
