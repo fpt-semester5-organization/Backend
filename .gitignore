@@ -27,6 +27,7 @@ local-docs/
 
 ## Sensitive & Local Environment files
 appsettings.json
+appsettings.*.json
 appsettings.Development.json
 appsettings.Local.json
 *.env
