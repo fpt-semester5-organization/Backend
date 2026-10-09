@@ -1,0 +1,466 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using VeggieLife.BLL.Common.Constants;
+using VeggieLife.BLL.Common.Exceptions;
+using VeggieLife.BLL.DTOs.Profile.Requests;
+using VeggieLife.BLL.DTOs.Profile.Responses;
+using VeggieLife.BLL.Services.Cache;
+using VeggieLife.DAL.Context;
+using VeggieLife.DAL.Entities;
+
+namespace VeggieLife.BLL.Services.Profile;
+
+/// <summary>
+/// Dịch vụ quản lý hồ sơ sức khỏe và dinh dưỡng người dùng.
+/// Thực thi các quy tắc nghiệp vụ: BR-USR-01, BR-USR-02, BR-USR-NUT-03, BR-SCI-03, BR-SCI-04, BR-ADM-MAS-001, BR-SYS-MAS-01, BR-PAY-SUB-02.
+/// </summary>
+public class ProfileService : IProfileService
+{
+    private readonly AppDbContext _db;
+    private readonly IRedisService _redis;
+    private readonly ILogger<ProfileService> _logger;
+
+    private static readonly Regex PhoneRegex = new(@"^0(3|5|7|8|9)[0-9]{8}$", RegexOptions.Compiled);
+
+    public ProfileService(AppDbContext db, IRedisService redis, ILogger<ProfileService> logger)
+    {
+        _db = db;
+        _redis = redis;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// FN-PROF-01: Xem hồ sơ cá nhân, chỉ số sức khỏe & danh mục dị ứng.
+    /// </summary>
+    public async Task<CurrentUserProfileResponse> GetCurrentUserAsync(int userId, CancellationToken ct = default)
+    {
+        // 1. Kiểm tra bộ nhớ đệm Redis (cache 10 phút - D31)
+        var cacheKey = $"cache:profile:{userId}";
+        var cached = await _redis.GetAsync<CurrentUserProfileResponse>(cacheKey, ct);
+        if (cached != null)
+        {
+            return cached;
+        }
+
+        // 2. Truy vấn dữ liệu từ CSDL
+        var user = await _db.Users
+            .Include(u => u.HealthProfile)
+                .ThenInclude(hp => hp!.DietarySchool)
+            .Include(u => u.UserAllergies)
+                .ThenInclude(ua => ua.Allergen)
+            .Include(u => u.PaymentTransactions)
+            .FirstOrDefaultAsync(u => u.UserId == userId, ct);
+
+        if (user == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Không tìm thấy thông tin tài khoản người dùng.");
+        }
+
+        // 3. Đánh dấu chỉ số cũ nếu quá 30 ngày chưa cập nhật (BR-USR-02, D31)
+        if (user.HealthProfile != null)
+        {
+            var daysSinceUpdate = (DateTime.UtcNow - user.HealthProfile.UpdatedAt).TotalDays;
+            if (daysSinceUpdate > 30 && !user.HealthProfile.IsStaleMetrics)
+            {
+                user.HealthProfile.IsStaleMetrics = true;
+                await _db.SaveChangesAsync(ct);
+            }
+        }
+
+        // 4. Kiểm tra trạng thái VIP còn hạn (BR-PAY-SUB-02)
+        var now = DateTime.UtcNow;
+        var isVip = string.Equals(user.Role, UserRoles.Vip, StringComparison.OrdinalIgnoreCase) ||
+                    user.PaymentTransactions.Any(pt =>
+                        string.Equals(pt.TransactionStatus, "SUCCESS", StringComparison.OrdinalIgnoreCase) &&
+                        pt.StartsAt <= now && now < pt.EndsAt);
+
+        // 5. Ánh xạ hồ sơ sức khỏe nếu đã hoàn tất thiết lập
+        HealthProfileDto? healthDto = null;
+        if (user.HealthProfile != null)
+        {
+            healthDto = new HealthProfileDto
+            {
+                Gender = user.HealthProfile.Gender,
+                DateOfBirth = user.HealthProfile.DateOfBirth.ToString("yyyy-MM-dd"),
+                HeightCm = user.HealthProfile.HeightCm,
+                CurrentWeightKg = user.HealthProfile.CurrentWeightKg,
+                TargetWeightKg = user.HealthProfile.TargetWeightKg,
+                Bmi = user.HealthProfile.BmiValue,
+                BmiCategory = HealthMetricCalculator.GetBmiCategory(user.HealthProfile.BmiValue),
+                BmrKcal = user.HealthProfile.BmrKcal,
+                TdeeKcal = user.HealthProfile.TdeeKcal,
+                TargetDailyCalories = user.HealthProfile.TargetDailyCalories,
+                HealthGoal = user.HealthProfile.HealthGoal,
+                DietarySchool = new DietarySchoolBriefDto
+                {
+                    Id = user.HealthProfile.DietarySchool.DietarySchoolId,
+                    Code = user.HealthProfile.DietarySchool.SchoolCode,
+                    Name = user.HealthProfile.DietarySchool.SchoolName
+                },
+                RequiresAlliumFree = user.HealthProfile.RequiresAlliumFree,
+                RegionPreference = user.HealthProfile.RegionPreference,
+                IsStaleMetrics = user.HealthProfile.IsStaleMetrics,
+                UpdatedAt = user.HealthProfile.UpdatedAt
+            };
+        }
+
+        // 6. Ánh xạ danh sách dị ứng
+        var allergensList = user.UserAllergies
+            .Select(ua => new AllergenBriefDto
+            {
+                AllergenId = ua.AllergenId,
+                Name = ua.Allergen.AllergenName
+            })
+            .ToList();
+
+        var response = new CurrentUserProfileResponse
+        {
+            UserId = user.UserId,
+            FullName = user.FullName,
+            Email = user.Email,
+            PhoneNumber = user.PhoneNumber,
+            AvatarUrl = user.AvatarUrl,
+            Role = user.Role,
+            IsVip = isVip,
+            Health = healthDto,
+            Allergens = allergensList
+        };
+
+        // 7. Lưu vào bộ nhớ đệm Redis 10 phút
+        await _redis.SetAsync(cacheKey, response, TimeSpan.FromMinutes(10), ct);
+
+        return response;
+    }
+
+    /// <summary>
+    /// FN-PROF-02: Cập nhật thông tin cá nhân (Họ tên, Số điện thoại).
+    /// </summary>
+    public async Task<UpdateCurrentUserResponse> UpdateCurrentUserAsync(int userId, UpdateCurrentUserRequest request, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.FullName) && string.IsNullOrWhiteSpace(request.PhoneNumber))
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Vui lòng cung cấp ít nhất họ tên hoặc số điện thoại để cập nhật.");
+        }
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == userId, ct);
+        if (user == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Không tìm thấy tài khoản người dùng.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.FullName))
+        {
+            var trimmedName = request.FullName.Trim();
+            if (trimmedName.Length < 2 || trimmedName.Length > 100)
+            {
+                throw AppException.BadRequest(ErrorCodes.ErrValidation, "Họ tên phải từ 2 đến 100 ký tự.");
+            }
+            user.FullName = trimmedName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
+        {
+            var trimmedPhone = request.PhoneNumber.Trim();
+            if (!PhoneRegex.IsMatch(trimmedPhone))
+            {
+                throw AppException.BadRequest(ErrorCodes.ErrValidation, "Số điện thoại không đúng định dạng số di động Việt Nam.");
+            }
+            user.PhoneNumber = trimmedPhone;
+        }
+
+        user.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        // Xóa cache hồ sơ cá nhân
+        await _redis.RemoveAsync($"cache:profile:{userId}", ct);
+
+        return new UpdateCurrentUserResponse
+        {
+            UserId = user.UserId,
+            FullName = user.FullName,
+            PhoneNumber = user.PhoneNumber
+        };
+    }
+
+    /// <summary>
+    /// FN-PROF-04: Thiết lập / cập nhật hồ sơ sức khỏe & dinh dưỡng.
+    /// Tự tính BMI/BMR/TDEE/Calo mục tiêu và ghi một mốc cân nặng vào lịch sử.
+    /// </summary>
+    public async Task<HealthProfileDto> UpdateHealthProfileAsync(int userId, UpdateCurrentUserHealthProfileRequest request, CancellationToken ct = default)
+    {
+        // 1. Kiểm tra khoảng giá trị hợp lệ (BR-USR-01)
+        if (request.HeightCm < 50 || request.HeightCm > 250)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Chiều cao phải nằm trong khoảng từ 50 đến 250 cm.");
+        }
+
+        if (request.WeightKg < 20 || request.WeightKg > 300)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Cân nặng phải nằm trong khoảng từ 20 đến 300 kg.");
+        }
+
+        if (request.TargetWeightKg.HasValue && (request.TargetWeightKg.Value < 20 || request.TargetWeightKg.Value > 300))
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Cân nặng mục tiêu phải nằm trong khoảng từ 20 đến 300 kg.");
+        }
+
+        // Kiểm tra tuổi ≥ 10 và ngày sinh không ở tương lai
+        if (request.DateOfBirth > DateOnly.FromDateTime(DateTime.UtcNow))
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Ngày sinh không được ở tương lai.");
+        }
+
+        var age = HealthMetricCalculator.CalculateAge(request.DateOfBirth);
+        if (age < 10)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Người dùng phải từ 10 tuổi trở lên để thiết lập hồ sơ sức khỏe.");
+        }
+
+        // Kiểm tra giới tính
+        var normalizedGender = request.Gender.Trim().ToUpperInvariant();
+        if (normalizedGender != "MALE" && normalizedGender != "FEMALE")
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Giới tính phải là MALE hoặc FEMALE.");
+        }
+
+        // Kiểm tra mục tiêu sức khỏe
+        var normalizedGoal = request.HealthGoal.Trim().ToUpperInvariant();
+        if (normalizedGoal != "LOSE_WEIGHT" && normalizedGoal != "MAINTAIN" && normalizedGoal != "GAIN_MUSCLE")
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mục tiêu sức khỏe phải là LOSE_WEIGHT, MAINTAIN hoặc GAIN_MUSCLE.");
+        }
+
+        // Kiểm tra khẩu vị vùng miền (tùy chọn)
+        var regionPref = "SOUTH";
+        if (!string.IsNullOrWhiteSpace(request.RegionPreference))
+        {
+            regionPref = request.RegionPreference.Trim().ToUpperInvariant();
+            if (regionPref != "NORTH" && regionPref != "CENTRAL" && regionPref != "SOUTH")
+            {
+                throw AppException.BadRequest(ErrorCodes.ErrValidation, "Khẩu vị vùng miền phải là NORTH, CENTRAL hoặc SOUTH.");
+            }
+        }
+
+        // 2. Kiểm tra trường phái ăn chay tồn tại (BR-ADM-MAS-001)
+        var dietarySchool = await _db.DietarySchools.FirstOrDefaultAsync(ds => ds.DietarySchoolId == request.DietarySchoolId, ct);
+        if (dietarySchool == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrDietSchoolNotFound, "Trường phái ăn chay không tồn tại trong hệ thống.");
+        }
+
+        var user = await _db.Users.Include(u => u.HealthProfile).FirstOrDefaultAsync(u => u.UserId == userId, ct);
+        if (user == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Không tìm thấy thông tin tài khoản người dùng.");
+        }
+
+        // 3. Tự tính các chỉ số dẫn xuất dinh dưỡng theo công thức chuẩn
+        // BR-USR-02: BMI = Cân nặng (kg) / (Chiều cao (m))^2
+        var bmi = HealthMetricCalculator.CalculateBmi(request.HeightCm, request.WeightKg);
+        // BR-SCI-03: Phân loại WHO/WPRO Châu Á
+        var bmiCategory = HealthMetricCalculator.GetBmiCategory(bmi);
+        // BR-USR-NUT-03: BMR theo Mifflin-St Jeor
+        var bmr = HealthMetricCalculator.CalculateBmr(request.HeightCm, request.WeightKg, age, normalizedGender);
+        // BR-USR-NUT-03: TDEE = BMR × 1.2
+        var tdee = HealthMetricCalculator.CalculateTdee(bmr);
+        // BR-USR-NUT-03: Calo mục tiêu / ngày
+        var targetCalories = HealthMetricCalculator.CalculateTargetDailyCalories(tdee, normalizedGoal, normalizedGender);
+
+        var now = DateTime.UtcNow;
+
+        // 4. Transaction: Cập nhật HealthProfiles và thêm bản ghi UserWeightHistory
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            if (user.HealthProfile == null)
+            {
+                var newProfile = new HealthProfile
+                {
+                    UserId = userId,
+                    DietarySchoolId = request.DietarySchoolId,
+                    Gender = normalizedGender,
+                    DateOfBirth = request.DateOfBirth,
+                    HeightCm = request.HeightCm,
+                    CurrentWeightKg = request.WeightKg,
+                    TargetWeightKg = request.TargetWeightKg,
+                    BmiValue = bmi,
+                    BmrKcal = bmr,
+                    TdeeKcal = tdee,
+                    TargetDailyCalories = targetCalories,
+                    RequiresAlliumFree = request.RequiresAlliumFree ?? false,
+                    RegionPreference = regionPref,
+                    HealthGoal = normalizedGoal,
+                    IsStaleMetrics = false,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+                _db.HealthProfiles.Add(newProfile);
+                user.HealthProfile = newProfile;
+            }
+            else
+            {
+                user.HealthProfile.DietarySchoolId = request.DietarySchoolId;
+                user.HealthProfile.Gender = normalizedGender;
+                user.HealthProfile.DateOfBirth = request.DateOfBirth;
+                user.HealthProfile.HeightCm = request.HeightCm;
+                user.HealthProfile.CurrentWeightKg = request.WeightKg;
+                user.HealthProfile.TargetWeightKg = request.TargetWeightKg;
+                user.HealthProfile.BmiValue = bmi;
+                user.HealthProfile.BmrKcal = bmr;
+                user.HealthProfile.TdeeKcal = tdee;
+                user.HealthProfile.TargetDailyCalories = targetCalories;
+                user.HealthProfile.RequiresAlliumFree = request.RequiresAlliumFree ?? false;
+                user.HealthProfile.RegionPreference = regionPref;
+                user.HealthProfile.HealthGoal = normalizedGoal;
+                user.HealthProfile.IsStaleMetrics = false;
+                user.HealthProfile.UpdatedAt = now;
+            }
+
+            // Ghi một mốc cân nặng vào lịch sử cân nặng
+            var weightLog = new UserWeightHistory
+            {
+                UserId = userId,
+                WeightKg = request.WeightKg,
+                LoggedDate = DateOnly.FromDateTime(now),
+                Note = "Cập nhật từ hồ sơ sức khỏe",
+                CreatedAt = now
+            };
+            _db.UserWeightHistories.Add(weightLog);
+
+            await _db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(ct);
+            throw;
+        }
+
+        // 5. Xóa cache hồ sơ cá nhân và cache gợi ý thực đơn (BR-SCI-04)
+        await _redis.RemoveAsync($"cache:profile:{userId}", ct);
+        await _redis.RemoveAsync($"meal_plan_cache:{userId}", ct);
+
+        return new HealthProfileDto
+        {
+            Gender = normalizedGender,
+            DateOfBirth = request.DateOfBirth.ToString("yyyy-MM-dd"),
+            HeightCm = request.HeightCm,
+            CurrentWeightKg = request.WeightKg,
+            TargetWeightKg = request.TargetWeightKg,
+            Bmi = bmi,
+            BmiCategory = bmiCategory,
+            BmrKcal = bmr,
+            TdeeKcal = tdee,
+            TargetDailyCalories = targetCalories,
+            HealthGoal = normalizedGoal,
+            DietarySchool = new DietarySchoolBriefDto
+            {
+                Id = dietarySchool.DietarySchoolId,
+                Code = dietarySchool.SchoolCode,
+                Name = dietarySchool.SchoolName
+            },
+            RequiresAlliumFree = request.RequiresAlliumFree ?? false,
+            RegionPreference = regionPref,
+            IsStaleMetrics = false,
+            UpdatedAt = now
+        };
+    }
+
+    /// <summary>
+    /// FN-PROF-05: Khai báo và thay thế toàn bộ danh sách dị ứng của người dùng.
+    /// </summary>
+    public async Task<ReplaceCurrentUserAllergiesResponse> ReplaceAllergiesAsync(int userId, ReplaceCurrentUserAllergiesRequest request, CancellationToken ct = default)
+    {
+        if (request.Allergens == null)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Danh sách dị ứng không được để trống.");
+        }
+
+        if (request.Allergens.Count > 20)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Danh sách dị ứng tối đa 20 mục.");
+        }
+
+        var distinctAllergenIds = request.Allergens.Select(a => a.AllergenId).Distinct().ToList();
+
+        // Kiểm tra tất cả allergenId tồn tại trong bảng Allergens
+        if (distinctAllergenIds.Count > 0)
+        {
+            var existingAllergens = await _db.Allergens
+                .Where(a => distinctAllergenIds.Contains(a.AllergenId))
+                .ToListAsync(ct);
+
+            if (existingAllergens.Count != distinctAllergenIds.Count)
+            {
+                throw AppException.NotFound(ErrorCodes.ErrAllergenNotFound, "Chất dị ứng không tồn tại trong hệ thống.");
+            }
+        }
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == userId, ct);
+        if (user == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Không tìm thấy người dùng.");
+        }
+
+        var now = DateTime.UtcNow;
+
+        // Transaction: DELETE toàn bộ UserAllergies cũ và INSERT các bản ghi mới
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            var oldAllergies = await _db.UserAllergies.Where(ua => ua.UserId == userId).ToListAsync(ct);
+            _db.UserAllergies.RemoveRange(oldAllergies);
+
+            // Giữ lại phần tử duy nhất cho mỗi AllergenId
+            var addedIds = new HashSet<int>();
+            foreach (var item in request.Allergens)
+            {
+                if (addedIds.Add(item.AllergenId))
+                {
+                    _db.UserAllergies.Add(new UserAllergy
+                    {
+                        UserId = userId,
+                        AllergenId = item.AllergenId,
+                        Notes = item.Notes?.Trim(),
+                        CreatedAt = now,
+                        UpdatedAt = now
+                    });
+                }
+            }
+
+            await _db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(ct);
+            throw;
+        }
+
+        // Xóa cache hồ sơ và gợi ý thực đơn (BR-SCI-04)
+        await _redis.RemoveAsync($"cache:profile:{userId}", ct);
+        await _redis.RemoveAsync($"meal_plan_cache:{userId}", ct);
+
+        // Đọc lại danh sách dị ứng kèm tên chất dị ứng để trả về
+        var resultList = await _db.UserAllergies
+            .Where(ua => ua.UserId == userId)
+            .Include(ua => ua.Allergen)
+            .Select(ua => new AllergenBriefDto
+            {
+                AllergenId = ua.AllergenId,
+                Name = ua.Allergen.AllergenName
+            })
+            .ToListAsync(ct);
+
+        return new ReplaceCurrentUserAllergiesResponse
+        {
+            Allergens = resultList
+        };
+    }
+}

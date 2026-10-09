@@ -45,6 +45,14 @@ public abstract class BaseApiController : ControllerBase
     }
 
     /// <summary>
+    /// Trả về kết quả phân trang chuẩn Envelope D52 kèm PagedMeta.
+    /// </summary>
+    protected IActionResult PagedResponse<T>(T data, PagedMeta meta, string message = "OK")
+    {
+        return Ok(ApiResponse<T>.Success(data, message, StatusCodes.Status200OK, meta));
+    }
+
+    /// <summary>
     /// Lấy UserId của người dùng hiện tại từ Claims (nếu là tài khoản đã đăng nhập).
     /// </summary>
     protected long? CurrentUserId

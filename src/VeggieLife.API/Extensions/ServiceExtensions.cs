@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -80,10 +81,21 @@ public static class ServiceExtensions
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     context.Response.ContentType = "application/json; charset=utf-8";
 
+                    var isGuest = context.Principal?.IsInRole(UserRoles.Guest) == true ||
+                                  context.Principal?.FindFirst(ClaimTypes.Role)?.Value == UserRoles.Guest;
+
+                    var errorCode = isGuest
+                        ? ErrorCodes.ErrGuestPersonalizationRestricted
+                        : ErrorCodes.ErrAdmForbidden;
+
+                    var errorMessage = isGuest
+                        ? "Khách vãng lai gọi tính năng cá nhân hóa (FN-AUTH-03)."
+                        : "Bạn không có quyền truy cập vào tài nguyên này.";
+
                     var errorResponse = new ApiErrorResponse(
                         StatusCodes.Status403Forbidden,
-                        ErrorCodes.ErrAdmForbidden,
-                        "Bạn không có quyền truy cập vào tài nguyên này.");
+                        errorCode,
+                        errorMessage);
 
                     await context.Response.WriteAsync(JsonSerializer.Serialize(errorResponse, JsonOptions));
                 }
@@ -195,6 +207,10 @@ public static class ServiceExtensions
         services.Configure<CloudinarySettings>(configuration.GetSection(CloudinarySettings.SectionName));
         services.AddSingleton<ICloudinaryClient, CloudinaryClient>();
         services.AddScoped<IMediaService, MediaService>();
+
+        // Dịch vụ Hồ sơ cá nhân & Danh mục dùng chung
+        services.AddScoped<VeggieLife.BLL.Services.Profile.IProfileService, VeggieLife.BLL.Services.Profile.ProfileService>();
+        services.AddScoped<VeggieLife.BLL.Services.MasterData.IMasterDataService, VeggieLife.BLL.Services.MasterData.MasterDataService>();
 
         // Các interface dịch vụ dùng chung khác
         services.AddScoped<IAiService, AiServiceStub>();
