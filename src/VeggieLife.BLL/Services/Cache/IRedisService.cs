@@ -33,4 +33,9 @@ public interface IRedisService
     /// Tăng giá trị số nguyên nguyên tử trên Redis (phục vụ bộ đếm Quota, Rate Limit).
     /// </summary>
     Task<long> IncrementAsync(string key, long value = 1, TimeSpan? expiry = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Đưa công việc vào hàng đợi phân tán Redis (tương đương LPUSH cho stt_queue).
+    /// </summary>
+    Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default);
 }

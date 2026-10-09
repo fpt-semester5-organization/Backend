@@ -179,10 +179,41 @@ public class MediaService : IMediaService
                 "Chữ ký tệp (magic bytes) không khớp với định dạng video MP4/MOV hợp lệ.");
         }
 
+        // BR-AI-STT-01, BR-AI-STT-03: Kiểm tra sớm thời lượng video từ metadata MP4 (10 giây – 5 phút / 300 giây)
+        memoryStream.Position = 0;
+        var preCheckDuration = Mp4MetadataHelper.TryGetDurationSeconds(memoryStream);
+        memoryStream.Position = 0;
+
+        if (preCheckDuration.HasValue && (preCheckDuration.Value < 10.0 || preCheckDuration.Value > 300.0))
+        {
+            _logger.LogWarning("Video '{FileName}' có thời lượng {Duration:F1}s không nằm trong khoảng cho phép 10s–300s.", fileName, preCheckDuration.Value);
+            throw AppException.UnprocessableEntity(ErrorCodes.ErrSttDurationInvalid, 
+                $"Thời lượng video không hợp lệ. Video nấu ăn phải có thời lượng từ 10 giây đến tối đa 5 phút (300 giây). Thời lượng nhận được: {preCheckDuration.Value:F1} giây.");
+        }
+
         // 3. Giao tiếp với Cloudinary CDN
         try
         {
             var result = await _cloudinaryClient.UploadVideoAsync(memoryStream, fileName, folder, ct);
+
+            // BR-AI-STT-01, BR-AI-STT-03: Kiểm tra thời lượng được Cloudinary phân tích
+            if (result.Duration.HasValue && (result.Duration.Value < 10.0 || result.Duration.Value > 300.0))
+            {
+                _logger.LogWarning("Video '{FileName}' sau khi tải lên Cloudinary có thời lượng {Duration:F1}s không nằm trong khoảng cho phép 10s–300s.", fileName, result.Duration.Value);
+                
+                // Thu hồi tài nguyên trên Cloudinary để tránh chiếm dụng lưu trữ
+                try
+                {
+                    await _cloudinaryClient.DeleteResourceAsync(result.PublicId, "video", ct);
+                }
+                catch (Exception cleanupEx)
+                {
+                    _logger.LogWarning(cleanupEx, "Không thể xóa video không hợp lệ '{PublicId}' trên Cloudinary.", result.PublicId);
+                }
+
+                throw AppException.UnprocessableEntity(ErrorCodes.ErrSttDurationInvalid, 
+                    $"Thời lượng video không hợp lệ. Video nấu ăn phải có thời lượng từ 10 giây đến tối đa 5 phút (300 giây). Thời lượng nhận được: {result.Duration.Value:F1} giây.");
+            }
 
             return new MediaUploadResponse
             {
