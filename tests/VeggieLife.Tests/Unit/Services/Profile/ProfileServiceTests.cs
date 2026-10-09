@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,8 +10,11 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
+using VeggieLife.BLL.DTOs.Media.Responses;
 using VeggieLife.BLL.DTOs.Profile.Requests;
+using VeggieLife.BLL.DTOs.Profile.Responses;
 using VeggieLife.BLL.Services.Cache;
+using VeggieLife.BLL.Services.Media;
 using VeggieLife.BLL.Services.Profile;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
@@ -26,6 +30,7 @@ public class ProfileServiceTests : IDisposable
     private readonly AppDbContext _db;
     private readonly Mock<IRedisService> _mockRedis;
     private readonly Mock<ILogger<ProfileService>> _mockLogger;
+    private readonly Mock<IMediaService> _mockMediaService;
     private readonly ProfileService _service;
 
     public ProfileServiceTests()
@@ -38,8 +43,9 @@ public class ProfileServiceTests : IDisposable
         _db = new AppDbContext(options);
         _mockRedis = new Mock<IRedisService>();
         _mockLogger = new Mock<ILogger<ProfileService>>();
+        _mockMediaService = new Mock<IMediaService>();
 
-        _service = new ProfileService(_db, _mockRedis.Object, _mockLogger.Object);
+        _service = new ProfileService(_db, _mockRedis.Object, _mockMediaService.Object, _mockLogger.Object);
 
         SeedTestData();
     }
@@ -438,4 +444,231 @@ public class ProfileServiceTests : IDisposable
         ex.Which.StatusCode.Should().Be(400);
         ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
     }
+
+    #region FN-PROF-03: Upload Avatar Tests
+
+    [Fact]
+    public async Task UploadAvatarAsync_WhenValid_ShouldUpdateAvatarUrlAndInvalidateCache()
+    {
+        var publicId = "veggielife/avatars/user101_avatar";
+        var transformedUrl = "https://res.cloudinary.com/veggielife/avatars/user101_avatar_w500.webp";
+
+        _mockMediaService
+            .Setup(m => m.UploadImageAsync(It.IsAny<Stream>(), It.IsAny<string>(), "veggielife/avatars", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MediaUploadResponse
+            {
+                PublicId = publicId,
+                Url = "http://res.cloudinary.com/veggielife/avatars/user101_avatar.jpg",
+                SecureUrl = "https://res.cloudinary.com/veggielife/avatars/user101_avatar.jpg",
+                Format = "jpg",
+                Bytes = 1024
+            });
+
+        _mockMediaService
+            .Setup(m => m.GetImageUrl(publicId, 500, 500, "fill", "webp"))
+            .Returns(transformedUrl);
+
+        using var stream = new MemoryStream(new byte[] { 1, 2, 3 });
+        var result = await _service.UploadAvatarAsync(101, stream, "my_avatar.png");
+
+        result.Should().NotBeNull();
+        result.AvatarUrl.Should().Be(transformedUrl);
+
+        var userInDb = await _db.Users.FirstAsync(u => u.UserId == 101);
+        userInDb.AvatarUrl.Should().Be(transformedUrl);
+
+        _mockRedis.Verify(r => r.RemoveAsync("cache:profile:101", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UploadAvatarAsync_WhenUserNotFound_ShouldThrowUnauthorized()
+    {
+        using var stream = new MemoryStream(new byte[] { 1, 2, 3 });
+        var act = async () => await _service.UploadAvatarAsync(9999, stream, "my_avatar.png");
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(401);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrAuthInvalidToken);
+    }
+
+    #endregion
+
+    #region FN-PROF-06: Weight History Tests
+
+    [Fact]
+    public async Task CreateWeightEntryAsync_WhenValid_ShouldInsertLogAndUpdateHealthProfile()
+    {
+        // Chuẩn bị HealthProfile cho User 101
+        _db.HealthProfiles.Add(new HealthProfile
+        {
+            UserId = 101,
+            DietarySchoolId = 1,
+            Gender = "FEMALE",
+            DateOfBirth = new DateOnly(2000, 1, 1),
+            HeightCm = 165m,
+            CurrentWeightKg = 58m,
+            TargetWeightKg = 52m,
+            BmiValue = 21.3m,
+            BmrKcal = 1350m,
+            TdeeKcal = 1620m,
+            TargetDailyCalories = 1220m,
+            HealthGoal = "LOSE_WEIGHT",
+            RegionPreference = "SOUTH",
+            IsStaleMetrics = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+
+        var request = new CreateCurrentUserWeightEntryRequest
+        {
+            WeightKg = 54.0m,
+            LoggedDate = new DateOnly(2026, 10, 5),
+            Note = "Cân buổi sáng"
+        };
+
+        var result = await _service.CreateWeightEntryAsync(101, request);
+
+        result.Should().NotBeNull();
+        result.WeightKg.Should().Be(54.0m);
+        result.Bmi.Should().BeGreaterThan(0);
+        result.TargetDailyCalories.Should().BeGreaterThan(0);
+
+        var profile = await _db.HealthProfiles.FirstAsync(hp => hp.UserId == 101);
+        profile.CurrentWeightKg.Should().Be(54.0m);
+        profile.IsStaleMetrics.Should().BeFalse();
+
+        var historyLog = await _db.UserWeightHistories
+            .FirstOrDefaultAsync(w => w.UserId == 101 && w.WeightKg == 54.0m);
+        historyLog.Should().NotBeNull();
+        historyLog!.LoggedDate.Should().Be(new DateOnly(2026, 10, 5));
+        historyLog.Note.Should().Be("Cân buổi sáng");
+
+        _mockRedis.Verify(r => r.RemoveAsync("cache:profile:101", It.IsAny<CancellationToken>()), Times.Once);
+        _mockRedis.Verify(r => r.RemoveAsync("meal_plan_cache:101", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateWeightEntryAsync_WhenHealthProfileNotExists_ShouldThrowConflict409()
+    {
+        // Tạo user mới chưa có HealthProfile
+        var userWithoutProfile = new User
+        {
+            UserId = 202,
+            Email = "noprofile@veggielife.vn",
+            PasswordHash = "hash",
+            Role = UserRoles.Member,
+            FullName = "Chưa có Profile",
+            AccountStatus = "ACTIVE",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Users.Add(userWithoutProfile);
+        await _db.SaveChangesAsync();
+
+        var request = new CreateCurrentUserWeightEntryRequest
+        {
+            WeightKg = 60.0m
+        };
+
+        var act = async () => await _service.CreateWeightEntryAsync(202, request);
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(409);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrProfileNotCompleted);
+    }
+
+    [Theory]
+    [InlineData(19.9)]  // < 20 kg
+    [InlineData(300.1)] // > 300 kg
+    public async Task CreateWeightEntryAsync_WhenWeightOutOfRange_ShouldThrowBadRequest(decimal weight)
+    {
+        var request = new CreateCurrentUserWeightEntryRequest
+        {
+            WeightKg = weight
+        };
+
+        var act = async () => await _service.CreateWeightEntryAsync(101, request);
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+    }
+
+    [Fact]
+    public async Task CreateWeightEntryAsync_WhenLoggedDateInFuture_ShouldThrowBadRequest()
+    {
+        var tomorrow = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1));
+        var request = new CreateCurrentUserWeightEntryRequest
+        {
+            WeightKg = 60.0m,
+            LoggedDate = tomorrow
+        };
+
+        var act = async () => await _service.CreateWeightEntryAsync(101, request);
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+    }
+
+    [Fact]
+    public async Task ListWeightHistoryAsync_WhenValid_ShouldReturnPagedOrderedList()
+    {
+        // Thêm các mốc cân nặng
+        _db.UserWeightHistories.AddRange(
+            new UserWeightHistory { UserId = 101, WeightKg = 50.0m, LoggedDate = new DateOnly(2026, 10, 1), CreatedAt = DateTime.UtcNow },
+            new UserWeightHistory { UserId = 101, WeightKg = 52.0m, LoggedDate = new DateOnly(2026, 10, 3), CreatedAt = DateTime.UtcNow },
+            new UserWeightHistory { UserId = 101, WeightKg = 54.0m, LoggedDate = new DateOnly(2026, 10, 5), CreatedAt = DateTime.UtcNow }
+        );
+        await _db.SaveChangesAsync();
+
+        var (items, meta) = await _service.ListWeightHistoryAsync(101, from: null, to: null, page: 1, size: 2);
+
+        meta.Total.Should().Be(3);
+        meta.Page.Should().Be(1);
+        meta.Size.Should().Be(2);
+        items.Should().HaveCount(2);
+        // Sắp xếp mới nhất trước
+        items[0].LoggedDate.Should().Be(new DateOnly(2026, 10, 5));
+        items[1].LoggedDate.Should().Be(new DateOnly(2026, 10, 3));
+    }
+
+    [Fact]
+    public async Task ListWeightHistoryAsync_WithFromToFilter_ShouldFilterCorrectly()
+    {
+        _db.UserWeightHistories.AddRange(
+            new UserWeightHistory { UserId = 101, WeightKg = 50.0m, LoggedDate = new DateOnly(2026, 9, 15), CreatedAt = DateTime.UtcNow },
+            new UserWeightHistory { UserId = 101, WeightKg = 52.0m, LoggedDate = new DateOnly(2026, 10, 1), CreatedAt = DateTime.UtcNow },
+            new UserWeightHistory { UserId = 101, WeightKg = 54.0m, LoggedDate = new DateOnly(2026, 10, 15), CreatedAt = DateTime.UtcNow }
+        );
+        await _db.SaveChangesAsync();
+
+        var (items, meta) = await _service.ListWeightHistoryAsync(
+            101, 
+            from: new DateOnly(2026, 10, 1), 
+            to: new DateOnly(2026, 10, 10), 
+            page: 1, 
+            size: 10);
+
+        items.Should().HaveCount(1);
+        items[0].LoggedDate.Should().Be(new DateOnly(2026, 10, 1));
+        meta.Total.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ListWeightHistoryAsync_WhenFromGreaterThanTo_ShouldThrowBadRequest()
+    {
+        var act = async () => await _service.ListWeightHistoryAsync(
+            101, 
+            from: new DateOnly(2026, 10, 15), 
+            to: new DateOnly(2026, 10, 1), 
+            page: 1, 
+            size: 10);
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+    }
+
+    #endregion
 }

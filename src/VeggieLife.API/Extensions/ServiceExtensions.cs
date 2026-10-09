@@ -36,9 +36,15 @@ public static class ServiceExtensions
     /// </summary>
     public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
     {
-        var secretKey = configuration["Jwt:SecretKey"] ?? "VeggieLifeSecretKeyForDevelopmentMustBe32CharsLong!";
-        var issuer = configuration["Jwt:Issuer"] ?? "VeggieLife.API";
-        var audience = configuration["Jwt:Audience"] ?? "VeggieLife.Client";
+        var secretKey = configuration["Jwt:SecretKey"] 
+            ?? configuration["JwtSettings:SecretKey"] 
+            ?? "VeggieLifeSecretKeyForDevelopmentMustBe32CharsLong!";
+        var issuer = configuration["Jwt:Issuer"] 
+            ?? configuration["JwtSettings:Issuer"] 
+            ?? "VeggieLife.API";
+        var audience = configuration["Jwt:Audience"] 
+            ?? configuration["JwtSettings:Audience"] 
+            ?? "VeggieLife.Client";
 
         services.AddAuthentication(options =>
         {
@@ -81,8 +87,11 @@ public static class ServiceExtensions
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     context.Response.ContentType = "application/json; charset=utf-8";
 
-                    var isGuest = context.Principal?.IsInRole(UserRoles.Guest) == true ||
-                                  context.Principal?.FindFirst(ClaimTypes.Role)?.Value == UserRoles.Guest;
+                    var principal = context.Principal ?? context.HttpContext?.User;
+                    var isGuest = principal?.IsInRole(UserRoles.Guest) == true ||
+                                  principal?.Claims.Any(c => 
+                                      (c.Type == ClaimTypes.Role || c.Type == "role" || c.Type.EndsWith("/role")) && 
+                                      string.Equals(c.Value, UserRoles.Guest, StringComparison.OrdinalIgnoreCase)) == true;
 
                     var errorCode = isGuest
                         ? ErrorCodes.ErrGuestPersonalizationRestricted

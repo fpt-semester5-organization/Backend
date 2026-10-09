@@ -12,26 +12,34 @@ using VeggieLife.BLL.DTOs.Profile.Requests;
 using VeggieLife.BLL.DTOs.Profile.Responses;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.DAL.Context;
+using VeggieLife.BLL.Common.Responses;
+using VeggieLife.BLL.Services.Media;
 using VeggieLife.DAL.Entities;
 
 namespace VeggieLife.BLL.Services.Profile;
 
 /// <summary>
 /// Dịch vụ quản lý hồ sơ sức khỏe và dinh dưỡng người dùng.
-/// Thực thi các quy tắc nghiệp vụ: BR-USR-01, BR-USR-02, BR-USR-NUT-03, BR-SCI-03, BR-SCI-04, BR-ADM-MAS-001, BR-SYS-MAS-01, BR-PAY-SUB-02.
+/// Thực thi các quy tắc nghiệp vụ: BR-USR-01, BR-USR-02, BR-USR-NUT-03, BR-SCI-03, BR-SCI-04, BR-ADM-MAS-001, BR-SYS-MAS-01, BR-PAY-SUB-02, BR-USR-MEDIA-01.
 /// </summary>
 public class ProfileService : IProfileService
 {
     private readonly AppDbContext _db;
     private readonly IRedisService _redis;
+    private readonly IMediaService _mediaService;
     private readonly ILogger<ProfileService> _logger;
 
     private static readonly Regex PhoneRegex = new(@"^0(3|5|7|8|9)[0-9]{8}$", RegexOptions.Compiled);
 
-    public ProfileService(AppDbContext db, IRedisService redis, ILogger<ProfileService> logger)
+    public ProfileService(
+        AppDbContext db, 
+        IRedisService redis, 
+        IMediaService mediaService,
+        ILogger<ProfileService> logger)
     {
         _db = db;
         _redis = redis;
+        _mediaService = mediaService;
         _logger = logger;
     }
 
@@ -462,5 +470,205 @@ public class ProfileService : IProfileService
         {
             Allergens = resultList
         };
+    }
+
+    /// <summary>
+    /// FN-PROF-03: Cập nhật ảnh đại diện người dùng lên Cloudinary và tối ưu hóa 500x500 px.
+    /// </summary>
+    public async Task<UploadCurrentUserAvatarResponse> UploadAvatarAsync(
+        int userId,
+        Stream fileStream,
+        string fileName,
+        CancellationToken ct = default)
+    {
+        // 1. Kiểm tra người dùng tồn tại
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == userId, ct);
+        if (user == null)
+        {
+            throw AppException.Unauthorized(ErrorCodes.ErrAuthInvalidToken, "Không tìm thấy thông tin tài khoản người dùng.");
+        }
+
+        var oldAvatarUrl = user.AvatarUrl;
+
+        // 2. Tải ảnh lên Cloudinary thư mục veggielife/avatars (BR-USR-MEDIA-01: kiểm tra magic bytes, <= 5 MB)
+        var uploadResult = await _mediaService.UploadImageAsync(fileStream, fileName, "veggielife/avatars", ct);
+
+        // 3. Tối ưu hóa kích thước thu về 500x500 px, định dạng WebP
+        var avatarUrl = _mediaService.GetImageUrl(uploadResult.PublicId, width: 500, height: 500, crop: "fill", format: "webp");
+        if (string.IsNullOrWhiteSpace(avatarUrl))
+        {
+            avatarUrl = uploadResult.SecureUrl ?? uploadResult.Url;
+        }
+
+        // 4. Cập nhật Users.Avatar_Url trong CSDL
+        user.AvatarUrl = avatarUrl;
+        user.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        // 5. Xóa bộ nhớ đệm hồ sơ người dùng
+        await _redis.RemoveAsync($"cache:profile:{userId}", ct);
+
+        // 6. Xóa ảnh cũ trên Cloudinary nếu có (thực hiện ngầm an toàn)
+        if (!string.IsNullOrWhiteSpace(oldAvatarUrl) && oldAvatarUrl.Contains("veggielife/avatars"))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var uri = new Uri(oldAvatarUrl);
+                    var path = uri.AbsolutePath;
+                    var uploadIdx = path.IndexOf("veggielife/avatars");
+                    if (uploadIdx >= 0)
+                    {
+                        var publicIdWithExt = path[uploadIdx..];
+                        var dotIdx = publicIdWithExt.LastIndexOf('.');
+                        var oldPublicId = dotIdx > 0 ? publicIdWithExt[..dotIdx] : publicIdWithExt;
+                        await _mediaService.DeleteResourceAsync(oldPublicId, "image", CancellationToken.None);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Không thể xóa ảnh đại diện cũ trên Cloudinary: {Url}", oldAvatarUrl);
+                }
+            }, CancellationToken.None);
+        }
+
+        return new UploadCurrentUserAvatarResponse
+        {
+            AvatarUrl = avatarUrl
+        };
+    }
+
+    /// <summary>
+    /// FN-PROF-06: Ghi nhận mốc cân nặng mới và tự động cập nhật lại các chỉ số sức khỏe dẫn xuất.
+    /// </summary>
+    public async Task<CreateCurrentUserWeightEntryResponse> CreateWeightEntryAsync(
+        int userId,
+        CreateCurrentUserWeightEntryRequest request,
+        CancellationToken ct = default)
+    {
+        // 1. Kiểm tra cân nặng hợp lệ: 20–300 kg (BR-USR-01)
+        if (request.WeightKg < 20m || request.WeightKg > 300m)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Cân nặng phải trong khoảng từ 20 đến 300 kg.");
+        }
+
+        // 2. Ngày ghi nhận cân nặng không được ở tương lai
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var entryDate = request.LoggedDate ?? today;
+        if (entryDate > today)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Ngày ghi nhận cân nặng không được ở tương lai.");
+        }
+
+        if (request.Note != null && request.Note.Length > 255)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Ghi chú mốc cân nặng tối đa 255 ký tự.");
+        }
+
+        // 3. Kiểm tra điều kiện trước: Đã có HealthProfile
+        var profile = await _db.HealthProfiles.FirstOrDefaultAsync(hp => hp.UserId == userId, ct);
+        if (profile == null)
+        {
+            throw new AppException(409, ErrorCodes.ErrProfileNotCompleted, "Người dùng chưa hoàn tất hồ sơ sức khỏe.");
+        }
+
+        // 4. Thêm bản ghi mới vào UserWeightHistory
+        var weightLog = new UserWeightHistory
+        {
+            UserId = userId,
+            WeightKg = request.WeightKg,
+            LoggedDate = entryDate,
+            Note = request.Note?.Trim(),
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.UserWeightHistories.Add(weightLog);
+
+        // 5. Cập nhật Current_Weight_Kg và tính toán lại các chỉ số dẫn xuất (BR-USR-02, BR-USR-NUT-03)
+        profile.CurrentWeightKg = request.WeightKg;
+        var age = HealthMetricCalculator.CalculateAge(profile.DateOfBirth, entryDate);
+
+        profile.BmiValue = HealthMetricCalculator.CalculateBmi(profile.HeightCm, request.WeightKg);
+        profile.BmrKcal = HealthMetricCalculator.CalculateBmr(profile.HeightCm, request.WeightKg, age, profile.Gender);
+        profile.TdeeKcal = HealthMetricCalculator.CalculateTdee(profile.BmrKcal);
+        profile.TargetDailyCalories = HealthMetricCalculator.CalculateTargetDailyCalories(profile.TdeeKcal, profile.HealthGoal, profile.Gender);
+        profile.IsStaleMetrics = false;
+        profile.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+
+        // 6. Xóa cache hồ sơ và gợi ý thực đơn
+        await _redis.RemoveAsync($"cache:profile:{userId}", ct);
+        await _redis.RemoveAsync($"meal_plan_cache:{userId}", ct);
+
+        return new CreateCurrentUserWeightEntryResponse
+        {
+            LogId = weightLog.LogId,
+            WeightKg = weightLog.WeightKg,
+            Bmi = profile.BmiValue,
+            TargetDailyCalories = profile.TargetDailyCalories
+        };
+    }
+
+    /// <summary>
+    /// FN-PROF-06: Xem danh sách lịch sử cân nặng theo khoảng thời gian và phân trang.
+    /// </summary>
+    public async Task<(IReadOnlyList<WeightHistoryEntryDto> Items, PagedMeta Meta)> ListWeightHistoryAsync(
+        int userId,
+        DateOnly? from,
+        DateOnly? to,
+        int page = 1,
+        int size = 20,
+        CancellationToken ct = default)
+    {
+        // 1. Kiểm tra tham số phân trang & khoảng ngày
+        if (page < 1)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Số trang (page) phải lớn hơn hoặc bằng 1.");
+        }
+
+        if (size < 1 || size > 100)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Kích thước trang (size) phải từ 1 đến 100.");
+        }
+
+        if (from.HasValue && to.HasValue && from.Value > to.Value)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Ngày bắt đầu (from) không được lớn hơn ngày kết thúc (to).");
+        }
+
+        // 2. Truy vấn lịch sử cân nặng của người dùng
+        var query = _db.UserWeightHistories
+            .AsNoTracking()
+            .Where(w => w.UserId == userId);
+
+        if (from.HasValue)
+        {
+            query = query.Where(w => w.LoggedDate >= from.Value);
+        }
+
+        if (to.HasValue)
+        {
+            query = query.Where(w => w.LoggedDate <= to.Value);
+        }
+
+        var total = await query.CountAsync(ct);
+
+        // Sắp xếp mới nhất trước (BR-USR-02)
+        var items = await query
+            .OrderByDescending(w => w.LoggedDate)
+            .ThenByDescending(w => w.LogId)
+            .Skip((page - 1) * size)
+            .Take(size)
+            .Select(w => new WeightHistoryEntryDto
+            {
+                LogId = w.LogId,
+                WeightKg = w.WeightKg,
+                LoggedDate = w.LoggedDate
+            })
+            .ToListAsync(ct);
+
+        var meta = new PagedMeta(page, size, total);
+        return (items, meta);
     }
 }
