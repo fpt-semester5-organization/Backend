@@ -34,7 +34,8 @@ public static class ServiceExtensions
     /// </summary>
     public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
     {
-        var secretKey = configuration["Jwt:SecretKey"] ?? "VeggieLifeSecretKeyForDevelopmentMustBe32CharsLong!";
+        var secretKey = configuration["Jwt:SecretKey"]
+            ?? throw new InvalidOperationException("Cấu hình 'Jwt:SecretKey' chưa được thiết lập trong appsettings.json.");
         var issuer = configuration["Jwt:Issuer"] ?? "VeggieLife.API";
         var audience = configuration["Jwt:Audience"] ?? "VeggieLife.Client";
 
