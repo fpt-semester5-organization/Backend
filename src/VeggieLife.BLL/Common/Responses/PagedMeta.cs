@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace VeggieLife.BLL.Common.Responses;
 
 /// <summary>
@@ -9,14 +11,18 @@ public class PagedMeta
     public int Size { get; set; }
     public int Total { get; set; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? SignUpPromptAtItem { get; set; }
+
     public PagedMeta()
     {
     }
 
-    public PagedMeta(int page, int size, int total)
+    public PagedMeta(int page, int size, int total, int? signUpPromptAtItem = null)
     {
         Page = page;
         Size = size;
         Total = total;
+        SignUpPromptAtItem = signUpPromptAtItem;
     }
 }

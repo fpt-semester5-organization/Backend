@@ -182,7 +182,13 @@ public static class ServiceExtensions
     /// </summary>
     public static IServiceCollection AddRedisCaching(this IServiceCollection services, IConfiguration configuration)
     {
-        var redisConn = configuration.GetConnectionString("Redis") ?? "localhost:6379,abortConnect=false";
+        services.AddMemoryCache();
+
+        var redisConn = configuration.GetConnectionString("Redis") ?? "localhost:6379,abortConnect=false,connectTimeout=500,syncTimeout=500,asyncTimeout=500";
+        if (!redisConn.Contains("connectTimeout", StringComparison.OrdinalIgnoreCase))
+        {
+            redisConn += ",connectTimeout=500,syncTimeout=500,asyncTimeout=500";
+        }
 
         services.AddStackExchangeRedisCache(options =>
         {
@@ -211,6 +217,9 @@ public static class ServiceExtensions
         // Dịch vụ Hồ sơ cá nhân & Danh mục dùng chung
         services.AddScoped<VeggieLife.BLL.Services.Profile.IProfileService, VeggieLife.BLL.Services.Profile.ProfileService>();
         services.AddScoped<VeggieLife.BLL.Services.MasterData.IMasterDataService, VeggieLife.BLL.Services.MasterData.MasterDataService>();
+
+        // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
+        services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();
 
         // Các interface dịch vụ dùng chung khác
         services.AddScoped<IAiService, AiServiceStub>();

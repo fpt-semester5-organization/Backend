@@ -3,114 +3,189 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace VeggieLife.BLL.Services.Cache;
 
 /// <summary>
-/// Triển khai dịch vụ phân tán Redis thông qua IDistributedCache kết hợp cơ chế xử lý lỗi an toàn (graceful fallback).
+/// Triển khai dịch vụ phân tán Redis thông qua IDistributedCache kết hợp cơ chế bộ nhớ đệm dự phòng (In-Memory fallback & Cooldown)
+/// giúp duy trì hiệu năng cực cao ngay cả khi máy chủ Redis tạm thời gián đoạn.
 /// </summary>
 public class RedisService : IRedisService
 {
     private readonly IDistributedCache _cache;
+    private readonly IMemoryCache? _memoryCache;
     private readonly ILogger<RedisService> _logger;
+    private static DateTime _redisCooldownUntil = DateTime.MinValue;
 
-    public RedisService(IDistributedCache cache, ILogger<RedisService> logger)
+    public RedisService(IDistributedCache cache, ILogger<RedisService> logger, IMemoryCache? memoryCache = null)
     {
         _cache = cache;
         _logger = logger;
+        _memoryCache = memoryCache;
+    }
+
+    private static bool IsInCooldown => DateTime.UtcNow < _redisCooldownUntil;
+
+    private void TriggerCooldown(Exception ex)
+    {
+        _redisCooldownUntil = DateTime.UtcNow.AddSeconds(30);
+        _logger.LogWarning("Redis tạm thời không phản hồi ({Message}). Tự động chuyển sang In-Memory Fallback Cache trong 30 giây.", ex.Message);
     }
 
     public async Task<T?> GetAsync<T>(string key, CancellationToken ct = default)
     {
-        try
+        if (!IsInCooldown)
         {
-            var data = await _cache.GetStringAsync(key, ct);
-            if (string.IsNullOrEmpty(data))
+            try
             {
-                return default;
+                var data = await _cache.GetStringAsync(key, ct);
+                if (!string.IsNullOrEmpty(data))
+                {
+                    return JsonSerializer.Deserialize<T>(data);
+                }
             }
+            catch (Exception ex)
+            {
+                TriggerCooldown(ex);
+            }
+        }
 
-            return JsonSerializer.Deserialize<T>(data);
-        }
-        catch (Exception ex)
+        // Fallback đọc từ In-Memory Cache cục bộ
+        if (_memoryCache != null && _memoryCache.TryGetValue(key, out T? memoryValue))
         {
-            _logger.LogWarning(ex, "Lỗi khi lấy dữ liệu từ cache cho khóa '{Key}'. Trả về null.", key);
-            return default;
+            return memoryValue;
         }
+
+        return default;
     }
 
     public async Task SetAsync<T>(string key, T value, TimeSpan? expiry = null, CancellationToken ct = default)
     {
-        try
+        // 1. Luôn ghi vào bộ nhớ đệm cục bộ In-Memory để dự phòng và tăng tốc
+        if (_memoryCache != null)
         {
-            var options = new DistributedCacheEntryOptions();
+            var memOptions = new MemoryCacheEntryOptions();
             if (expiry.HasValue)
             {
-                options.AbsoluteExpirationRelativeToNow = expiry;
+                memOptions.AbsoluteExpirationRelativeToNow = expiry;
             }
-
-            var json = JsonSerializer.Serialize(value);
-            await _cache.SetStringAsync(key, json, options, ct);
+            _memoryCache.Set(key, value, memOptions);
         }
-        catch (Exception ex)
+
+        // 2. Ghi vào Redis nếu không trong thời gian cooldown
+        if (!IsInCooldown)
         {
-            _logger.LogWarning(ex, "Lỗi khi ghi dữ liệu vào cache cho khóa '{Key}'.", key);
+            try
+            {
+                var options = new DistributedCacheEntryOptions();
+                if (expiry.HasValue)
+                {
+                    options.AbsoluteExpirationRelativeToNow = expiry;
+                }
+
+                var json = JsonSerializer.Serialize(value);
+                await _cache.SetStringAsync(key, json, options, ct);
+            }
+            catch (Exception ex)
+            {
+                TriggerCooldown(ex);
+            }
         }
     }
 
     public async Task RemoveAsync(string key, CancellationToken ct = default)
     {
-        try
+        if (_memoryCache != null)
         {
-            await _cache.RemoveAsync(key, ct);
+            _memoryCache.Remove(key);
         }
-        catch (Exception ex)
+
+        if (!IsInCooldown)
         {
-            _logger.LogWarning(ex, "Lỗi khi xóa khóa '{Key}' khỏi cache.", key);
+            try
+            {
+                await _cache.RemoveAsync(key, ct);
+            }
+            catch (Exception ex)
+            {
+                TriggerCooldown(ex);
+            }
         }
     }
 
     public async Task<bool> ExistsAsync(string key, CancellationToken ct = default)
     {
-        try
+        if (_memoryCache != null && _memoryCache.TryGetValue(key, out _))
         {
-            var data = await _cache.GetAsync(key, ct);
-            return data != null && data.Length > 0;
+            return true;
         }
-        catch (Exception ex)
+
+        if (!IsInCooldown)
         {
-            _logger.LogWarning(ex, "Lỗi khi kiểm tra tồn tại khóa '{Key}' trong cache.", key);
-            return false;
+            try
+            {
+                var data = await _cache.GetAsync(key, ct);
+                return data != null && data.Length > 0;
+            }
+            catch (Exception ex)
+            {
+                TriggerCooldown(ex);
+                return false;
+            }
         }
+
+        return false;
     }
 
     public async Task<long> IncrementAsync(string key, long value = 1, TimeSpan? expiry = null, CancellationToken ct = default)
     {
-        try
+        long current = 0;
+
+        if (_memoryCache != null)
         {
-            var strVal = await _cache.GetStringAsync(key, ct);
-            long current = 0;
-            if (!string.IsNullOrEmpty(strVal))
+            if (_memoryCache.TryGetValue(key, out long memVal))
             {
-                long.TryParse(strVal, out current);
+                current = memVal;
             }
-
             current += value;
-
-            var options = new DistributedCacheEntryOptions();
+            var memOptions = new MemoryCacheEntryOptions();
             if (expiry.HasValue)
             {
-                options.AbsoluteExpirationRelativeToNow = expiry;
+                memOptions.AbsoluteExpirationRelativeToNow = expiry;
             }
+            _memoryCache.Set(key, current, memOptions);
+        }
 
-            await _cache.SetStringAsync(key, current.ToString(), options, ct);
-            return current;
-        }
-        catch (Exception ex)
+        if (!IsInCooldown)
         {
-            _logger.LogWarning(ex, "Lỗi khi tăng giá trị khóa '{Key}' trong cache.", key);
-            return 0;
+            try
+            {
+                var strVal = await _cache.GetStringAsync(key, ct);
+                long redisVal = 0;
+                if (!string.IsNullOrEmpty(strVal))
+                {
+                    long.TryParse(strVal, out redisVal);
+                }
+
+                redisVal += value;
+
+                var options = new DistributedCacheEntryOptions();
+                if (expiry.HasValue)
+                {
+                    options.AbsoluteExpirationRelativeToNow = expiry;
+                }
+
+                await _cache.SetStringAsync(key, redisVal.ToString(), options, ct);
+                return redisVal;
+            }
+            catch (Exception ex)
+            {
+                TriggerCooldown(ex);
+            }
         }
+
+        return current;
     }
 }
