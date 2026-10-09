@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -122,8 +123,8 @@ public static class ServiceExtensions
 
                     var errorResponse = new ApiErrorResponse(
                         StatusCodes.Status403Forbidden,
-                        ErrorCodes.ErrAdmForbidden,
-                        "Bạn không có quyền truy cập vào tài nguyên này.");
+                        errorCode,
+                        errorMessage);
 
                     await context.Response.WriteAsync(JsonSerializer.Serialize(errorResponse, JsonOptions));
                 }

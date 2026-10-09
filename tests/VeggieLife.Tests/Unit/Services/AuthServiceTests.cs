@@ -81,6 +81,12 @@ public class AuthServiceTests
             _storage[key] = (current, expireAt);
             return Task.FromResult(current);
         }
+
+        public Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default)
+        {
+            _storage[$"queue:{queueName}"] = (item!, DateTime.UtcNow.AddHours(24));
+            return Task.CompletedTask;
+        }
     }
 
     private class TestEmailService : IEmailService
