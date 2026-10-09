@@ -42,6 +42,9 @@ public class AppException : Exception
     public static AppException Internal(string errorCode = ErrorCodes.ErrInternal, string message = "Đã xảy ra lỗi nội bộ hệ thống.", object? details = null)
         => new(500, errorCode, message, details);
 
+    public static AppException UnprocessableEntity(string errorCode = ErrorCodes.ErrSttDurationInvalid, string message = "Dữ liệu không thể xử lý.", object? details = null)
+        => new(422, errorCode, message, details);
+
     public static AppException BadGateway(string errorCode = ErrorCodes.ErrExtCloudinaryFailed, string message = "Không thể kết nối đến máy chủ dịch vụ bên ngoài (502 Bad Gateway).", object? details = null)
         => new(502, errorCode, message, details);
 }
