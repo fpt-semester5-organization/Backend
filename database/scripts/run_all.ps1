@@ -52,7 +52,7 @@ Write-Host "`n[1/2] Đang thực thi $($schemaFiles.Count) file DDL trong schema
 $successCount = 0
 foreach ($file in $schemaFiles) {
     Write-Host "  -> Running: $($file.Name)..." -ForegroundColor White -NoNewline
-    $result = sqlcmd -S $Server -d $Database @authArgs -I -i $file.FullName -b 2>&1
+    $result = sqlcmd -S $Server -d $Database @authArgs -f 65001 -I -i $file.FullName -b 2>&1
     if ($LASTEXITCODE -eq 0) {
         Write-Host " [OK]" -ForegroundColor Green
         $successCount++
@@ -64,12 +64,12 @@ foreach ($file in $schemaFiles) {
 }
 
 # 3. Chạy seed data nếu có file
-$seedFiles = Get-ChildItem -Path $seedDir -Filter "*.sql" -ErrorAction SilentlyContinue | Sort-Object Name
+$seedFiles = Get-ChildItem -Path $seedDir -Filter "0*.sql" -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "00_Seed_All.sql" } | Sort-Object Name
 if ($seedFiles -and $seedFiles.Count -gt 0) {
     Write-Host "`n[2/2] Đang thực thi $($seedFiles.Count) file Seed Data..." -ForegroundColor Yellow
     foreach ($file in $seedFiles) {
         Write-Host "  -> Running: $($file.Name)..." -ForegroundColor White -NoNewline
-        $result = sqlcmd -S $Server -d $Database @authArgs -I -i $file.FullName -b 2>&1
+        $result = sqlcmd -S $Server -d $Database @authArgs -f 65001 -I -i $file.FullName -b 2>&1
         if ($LASTEXITCODE -eq 0) {
             Write-Host " [OK]" -ForegroundColor Green
         } else {
