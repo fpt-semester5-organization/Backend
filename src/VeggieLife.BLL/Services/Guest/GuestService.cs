@@ -22,7 +22,7 @@ public class GuestService : IGuestService
     private readonly GuestSecuritySettings _securitySettings;
     private readonly ILogger<GuestService> _logger;
 
-    public const int DefaultAiTrialLimit = 3;
+    public const int DefaultAiTrialLimit = 5;
     public const int DefaultBarcodeDailyLimit = 3;
     public const int DefaultMapSearchLimit = 3;
 
