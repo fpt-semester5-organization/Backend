@@ -4,53 +4,40 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace VeggieLife.BLL.Services.Cache;
 
 /// <summary>
-/// Triển khai dịch vụ phân tán Redis thông qua IDistributedCache kết hợp cơ chế bộ nhớ đệm dự phòng cục bộ (In-Memory Fallback)
-/// giúp hệ thống duy trì hoạt động thông suốt ngay cả khi cụm Redis gặp sự cố hoặc môi trường phát triển chưa bật Redis daemon.
+/// Triển khai dịch vụ phân tán Redis thông qua IDistributedCache kết hợp cơ chế bộ nhớ đệm dự phòng (In-Memory fallback & Cooldown)
+/// giúp duy trì hiệu năng cực cao ngay cả khi máy chủ Redis tạm thời gián đoạn.
 /// </summary>
 public class RedisService : IRedisService
 {
     private readonly IDistributedCache _cache;
+    private readonly IMemoryCache? _memoryCache;
     private readonly ILogger<RedisService> _logger;
-    private readonly ConcurrentDictionary<string, MemoryCacheEntry> _fallbackStore = new();
+    private static DateTime _redisCooldownUntil = DateTime.MinValue;
 
-    private record MemoryCacheEntry(string JsonValue, DateTimeOffset? ExpiresAt);
-
-    private bool _redisAvailable = true;
-    private DateTimeOffset _lastRedisFailure = DateTimeOffset.MinValue;
-    private static readonly TimeSpan RedisRetryInterval = TimeSpan.FromSeconds(30);
-
-    public RedisService(IDistributedCache cache, ILogger<RedisService> logger)
+    public RedisService(IDistributedCache cache, ILogger<RedisService> logger, IMemoryCache? memoryCache = null)
     {
         _cache = cache;
         _logger = logger;
+        _memoryCache = memoryCache;
     }
 
-    private bool ShouldTryRedis()
-    {
-        if (_redisAvailable) return true;
-        if (DateTimeOffset.UtcNow - _lastRedisFailure > RedisRetryInterval)
-        {
-            _redisAvailable = true;
-            return true;
-        }
-        return false;
-    }
+    private static bool IsInCooldown => DateTime.UtcNow < _redisCooldownUntil;
 
-    private void MarkRedisFailure(Exception ex, string operation)
+    private void TriggerCooldown(Exception ex)
     {
-        _redisAvailable = false;
-        _lastRedisFailure = DateTimeOffset.UtcNow;
-        _logger.LogWarning(ex, "Redis kết nối thất bại khi thực hiện thao tác '{Operation}'. Tự động chuyển sang In-Memory Fallback trong 30 giây.", operation);
+        _redisCooldownUntil = DateTime.UtcNow.AddSeconds(30);
+        _logger.LogWarning("Redis tạm thời không phản hồi ({Message}). Tự động chuyển sang In-Memory Fallback Cache trong 30 giây.", ex.Message);
     }
 
     public async Task<T?> GetAsync<T>(string key, CancellationToken ct = default)
     {
-        if (ShouldTryRedis())
+        if (!IsInCooldown)
         {
             try
             {
@@ -62,27 +49,14 @@ public class RedisService : IRedisService
             }
             catch (Exception ex)
             {
-                MarkRedisFailure(ex, $"GetAsync({key})");
+                TriggerCooldown(ex, $"GetAsync({key})");
             }
         }
 
-        // Fallback sang bộ nhớ RAM cục bộ
-        if (_fallbackStore.TryGetValue(key, out var entry))
+        // Fallback đọc từ In-Memory Cache cục bộ
+        if (_memoryCache != null && _memoryCache.TryGetValue(key, out T? memoryValue))
         {
-            if (entry.ExpiresAt.HasValue && entry.ExpiresAt.Value <= DateTimeOffset.UtcNow)
-            {
-                _fallbackStore.TryRemove(key, out _);
-                return default;
-            }
-
-            try
-            {
-                return JsonSerializer.Deserialize<T>(entry.JsonValue);
-            }
-            catch
-            {
-                return default;
-            }
+            return memoryValue;
         }
 
         return default;
@@ -90,13 +64,19 @@ public class RedisService : IRedisService
 
     public async Task SetAsync<T>(string key, T value, TimeSpan? expiry = null, CancellationToken ct = default)
     {
-        var json = JsonSerializer.Serialize(value);
-        var expiresAt = expiry.HasValue ? DateTimeOffset.UtcNow.Add(expiry.Value) : (DateTimeOffset?)null;
+        // 1. Luôn ghi vào bộ nhớ đệm cục bộ In-Memory để dự phòng và tăng tốc
+        if (_memoryCache != null)
+        {
+            var memOptions = new MemoryCacheEntryOptions();
+            if (expiry.HasValue)
+            {
+                memOptions.AbsoluteExpirationRelativeToNow = expiry;
+            }
+            _memoryCache.Set(key, value, memOptions);
+        }
 
-        // Luôn ghi nhận vào in-memory fallback
-        _fallbackStore[key] = new MemoryCacheEntry(json, expiresAt);
-
-        if (ShouldTryRedis())
+        // 2. Ghi vào Redis nếu không trong thời gian cooldown
+        if (!IsInCooldown)
         {
             try
             {
@@ -106,20 +86,24 @@ public class RedisService : IRedisService
                     options.AbsoluteExpirationRelativeToNow = expiry;
                 }
 
+                var json = JsonSerializer.Serialize(value);
                 await _cache.SetStringAsync(key, json, options, ct);
             }
             catch (Exception ex)
             {
-                MarkRedisFailure(ex, $"SetAsync({key})");
+                TriggerCooldown(ex, $"SetAsync({key})");
             }
         }
     }
 
     public async Task RemoveAsync(string key, CancellationToken ct = default)
     {
-        _fallbackStore.TryRemove(key, out _);
+        if (_memoryCache != null)
+        {
+            _memoryCache.Remove(key);
+        }
 
-        if (ShouldTryRedis())
+        if (!IsInCooldown)
         {
             try
             {
@@ -127,34 +111,30 @@ public class RedisService : IRedisService
             }
             catch (Exception ex)
             {
-                MarkRedisFailure(ex, $"RemoveAsync({key})");
+                TriggerCooldown(ex, $"RemoveAsync({key})");
             }
         }
     }
 
     public async Task<bool> ExistsAsync(string key, CancellationToken ct = default)
     {
-        if (ShouldTryRedis())
+        if (_memoryCache != null && _memoryCache.TryGetValue(key, out _))
+        {
+            return true;
+        }
+
+        if (!IsInCooldown)
         {
             try
             {
                 var data = await _cache.GetAsync(key, ct);
-                if (data != null && data.Length > 0) return true;
+                return data != null && data.Length > 0;
             }
             catch (Exception ex)
             {
-                MarkRedisFailure(ex, $"ExistsAsync({key})");
-            }
-        }
-
-        if (_fallbackStore.TryGetValue(key, out var entry))
-        {
-            if (entry.ExpiresAt.HasValue && entry.ExpiresAt.Value <= DateTimeOffset.UtcNow)
-            {
-                _fallbackStore.TryRemove(key, out _);
+                TriggerCooldown(ex, $"ExistsAsync({key})");
                 return false;
             }
-            return true;
         }
 
         return false;
@@ -162,35 +142,35 @@ public class RedisService : IRedisService
 
     public async Task<long> IncrementAsync(string key, long value = 1, TimeSpan? expiry = null, CancellationToken ct = default)
     {
-        long inMemoryResult = 0;
-        _fallbackStore.AddOrUpdate(key,
-            _ =>
-            {
-                inMemoryResult = value;
-                var exp = expiry.HasValue ? DateTimeOffset.UtcNow.Add(expiry.Value) : (DateTimeOffset?)null;
-                return new MemoryCacheEntry(inMemoryResult.ToString(), exp);
-            },
-            (_, existing) =>
-            {
-                long current = 0;
-                long.TryParse(existing.JsonValue, out current);
-                inMemoryResult = current + value;
-                var exp = expiry.HasValue ? DateTimeOffset.UtcNow.Add(expiry.Value) : existing.ExpiresAt;
-                return new MemoryCacheEntry(inMemoryResult.ToString(), exp);
-            });
+        long current = 0;
 
-        if (ShouldTryRedis())
+        if (_memoryCache != null)
+        {
+            if (_memoryCache.TryGetValue(key, out long memVal))
+            {
+                current = memVal;
+            }
+            current += value;
+            var memOptions = new MemoryCacheEntryOptions();
+            if (expiry.HasValue)
+            {
+                memOptions.AbsoluteExpirationRelativeToNow = expiry;
+            }
+            _memoryCache.Set(key, current, memOptions);
+        }
+
+        if (!IsInCooldown)
         {
             try
             {
                 var strVal = await _cache.GetStringAsync(key, ct);
-                long current = 0;
+                long redisVal = 0;
                 if (!string.IsNullOrEmpty(strVal))
                 {
-                    long.TryParse(strVal, out current);
+                    long.TryParse(strVal, out redisVal);
                 }
 
-                current += value;
+                redisVal += value;
 
                 var options = new DistributedCacheEntryOptions();
                 if (expiry.HasValue)
@@ -198,15 +178,15 @@ public class RedisService : IRedisService
                     options.AbsoluteExpirationRelativeToNow = expiry;
                 }
 
-                await _cache.SetStringAsync(key, current.ToString(), options, ct);
-                return current;
+                await _cache.SetStringAsync(key, redisVal.ToString(), options, ct);
+                return redisVal;
             }
             catch (Exception ex)
             {
-                MarkRedisFailure(ex, $"IncrementAsync({key})");
+                TriggerCooldown(ex, $"IncrementAsync({key})");
             }
         }
 
-        return inMemoryResult;
+        return current;
     }
 }

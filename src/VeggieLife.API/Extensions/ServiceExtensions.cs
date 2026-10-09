@@ -12,8 +12,11 @@ using VeggieLife.BLL.Services.AI;
 using VeggieLife.BLL.Services.Auth;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.Email;
+using VeggieLife.BLL.Services.MasterData;
 using VeggieLife.BLL.Services.Media;
 using VeggieLife.BLL.Services.Payment;
+using VeggieLife.BLL.Services.Profile;
+using VeggieLife.DAL.External.Cloudinary;
 
 namespace VeggieLife.API.Extensions;
 
@@ -35,9 +38,10 @@ public static class ServiceExtensions
     public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
     {
         var secretKey = configuration["Jwt:SecretKey"]
+            ?? configuration["JwtSettings:SecretKey"]
             ?? throw new InvalidOperationException("Cấu hình 'Jwt:SecretKey' chưa được thiết lập trong appsettings.json.");
-        var issuer = configuration["Jwt:Issuer"] ?? "VeggieLife.API";
-        var audience = configuration["Jwt:Audience"] ?? "VeggieLife.Client";
+        var issuer = configuration["Jwt:Issuer"] ?? configuration["JwtSettings:Issuer"] ?? "VeggieLife.API";
+        var audience = configuration["Jwt:Audience"] ?? configuration["JwtSettings:Audience"] ?? "VeggieLife.Client";
 
         services.AddAuthentication(options =>
         {
@@ -170,7 +174,13 @@ public static class ServiceExtensions
     /// </summary>
     public static IServiceCollection AddRedisCaching(this IServiceCollection services, IConfiguration configuration)
     {
-        var redisConn = configuration.GetConnectionString("Redis") ?? "localhost:6379,abortConnect=false,connectTimeout=1000,syncTimeout=1000";
+        services.AddMemoryCache();
+
+        var redisConn = configuration.GetConnectionString("Redis") ?? "localhost:6379,abortConnect=false,connectTimeout=500,syncTimeout=500,asyncTimeout=500";
+        if (!redisConn.Contains("connectTimeout", StringComparison.OrdinalIgnoreCase))
+        {
+            redisConn += ",connectTimeout=500,syncTimeout=500,asyncTimeout=500";
+        }
 
         services.AddStackExchangeRedisCache(options =>
         {
@@ -186,17 +196,32 @@ public static class ServiceExtensions
     /// <summary>
     /// Đăng ký các dịch vụ cốt lõi và các interface nghiệp vụ dùng chung (AI, Vector DB, Email, Media, Payment, Auth).
     /// </summary>
-    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    public static IServiceCollection AddApplicationServices(this IServiceCollection services, IConfiguration configuration)
     {
         // Dịch vụ JWT, Auth & Cache
         services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddScoped<IAuthService, AuthService>();
 
-        // Các interface dịch vụ dùng chung (Bản mẫu rỗng để các thành viên khác hoàn thiện)
+        // Cấu hình & Dịch vụ Cloudinary CDN dùng chung
+        services.Configure<CloudinarySettings>(configuration.GetSection(CloudinarySettings.SectionName));
+        services.AddSingleton<ICloudinaryClient, CloudinaryClient>();
+        services.AddScoped<IMediaService, MediaService>();
+
+        // Dịch vụ Hồ sơ cá nhân & Danh mục dùng chung
+        services.AddScoped<IProfileService, ProfileService>();
+        services.AddScoped<IMasterDataService, MasterDataService>();
+
+<<<<<<< HEAD
+        // Các interface dịch vụ dùng chung khác (Bản mẫu rỗng để các thành viên khác hoàn thiện)
+=======
+        // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
+        services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();
+
+        // Các interface dịch vụ dùng chung khác
+>>>>>>> f8f9378d7d4f9d79ec35b6d177bb9d4e5c7fb367
         services.AddScoped<IAiService, AiServiceStub>();
         services.AddScoped<IVectorDbService, VectorDbServiceStub>();
         services.AddScoped<IEmailService, EmailServiceStub>();
-        services.AddScoped<IMediaService, MediaServiceStub>();
         services.AddScoped<IPaymentGatewayService, PaymentGatewayServiceStub>();
 
         return services;

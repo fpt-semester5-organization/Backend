@@ -1,8 +1,10 @@
+using System.Text.Json.Serialization;
+
 namespace VeggieLife.BLL.Common.Responses;
 
 /// <summary>
 /// Lớp bọc kết quả trả về chuẩn của hệ thống VeggieLife cho các phản hồi thành công.
-/// Quy chuẩn cấu trúc: { statusCode, message, data }
+/// Quy chuẩn cấu trúc: { statusCode, message, data, meta? } (D52)
 /// </summary>
 /// <typeparam name="T">Kiểu dữ liệu của payload trả về.</typeparam>
 public class ApiResponse<T>
@@ -11,20 +13,24 @@ public class ApiResponse<T>
     public string Message { get; set; } = string.Empty;
     public T? Data { get; set; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PagedMeta? Meta { get; set; }
+
     public ApiResponse()
     {
     }
 
-    public ApiResponse(int statusCode, string message, T? data = default)
+    public ApiResponse(int statusCode, string message, T? data = default, PagedMeta? meta = null)
     {
         StatusCode = statusCode;
         Message = message;
         Data = data;
+        Meta = meta;
     }
 
-    public static ApiResponse<T> Success(T? data, string message = "Thao tác thành công.", int statusCode = 200)
+    public static ApiResponse<T> Success(T? data, string message = "Thao tác thành công.", int statusCode = 200, PagedMeta? meta = null)
     {
-        return new ApiResponse<T>(statusCode, message, data);
+        return new ApiResponse<T>(statusCode, message, data, meta);
     }
 }
 

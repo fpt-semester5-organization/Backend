@@ -26,17 +26,15 @@ public class EmailServiceStub : IEmailService
     public Task SendOtpEmailAsync(string toEmail, string otpCode, string purpose, CancellationToken ct = default)
     {
         LastSentOtps[toEmail.Trim().ToLowerInvariant()] = otpCode;
-
-        _logger.LogInformation("==========================================================================================");
-        _logger.LogInformation("[EMAIL SERVICE DEV] >>> ĐÃ GỬI TỚI: {ToEmail} | MÃ OTP: {OtpCode} | MỤC ĐÍCH: {Purpose} <<<", toEmail, otpCode, purpose);
-        _logger.LogInformation("==========================================================================================");
-
+        _logger.LogInformation("[EmailServiceStub] Gửi mã OTP '{OtpCode}' mục đích '{Purpose}' tới {ToEmail}", otpCode, purpose, toEmail);
+        // TODO: Cấu hình FluentEmail / MailKit / SendGrid để gửi email thực tế
         return Task.CompletedTask;
     }
 
     public Task SendNotificationEmailAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default)
     {
         _logger.LogInformation("[EmailServiceStub] Gửi email thông báo '{Subject}' tới {ToEmail}", subject, toEmail);
+        // TODO: Gửi email thực tế
         return Task.CompletedTask;
     }
 }
