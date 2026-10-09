@@ -169,7 +169,7 @@ public static class ServiceExtensions
     /// </summary>
     public static IServiceCollection AddRedisCaching(this IServiceCollection services, IConfiguration configuration)
     {
-        var redisConn = configuration.GetConnectionString("Redis") ?? "localhost:6379,abortConnect=false";
+        var redisConn = configuration.GetConnectionString("Redis") ?? "localhost:6379,abortConnect=false,connectTimeout=1000,syncTimeout=1000";
 
         services.AddStackExchangeRedisCache(options =>
         {
@@ -187,8 +187,9 @@ public static class ServiceExtensions
     /// </summary>
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
-        // Dịch vụ JWT & Cache
+        // Dịch vụ JWT, Auth & Cache
         services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.AddScoped<IAuthService, AuthService>();
 
         // Các interface dịch vụ dùng chung (Bản mẫu rỗng để các thành viên khác hoàn thiện)
         services.AddScoped<IAiService, AiServiceStub>();

@@ -36,6 +36,9 @@ public class AppException : Exception
     public static AppException Conflict(string errorCode = ErrorCodes.ErrAuthEmailExists, string message = "Tài nguyên đã tồn tại hoặc xảy ra xung đột trạng thái.", object? details = null)
         => new(409, errorCode, message, details);
 
+    public static AppException TooManyRequests(string errorCode = ErrorCodes.ErrGuestRateLimitExceeded, string message = "Thao tác quá nhanh hoặc vượt quá giới hạn cho phép.", object? details = null)
+        => new(429, errorCode, message, details);
+
     public static AppException Internal(string errorCode = ErrorCodes.ErrInternal, string message = "Đã xảy ra lỗi nội bộ hệ thống.", object? details = null)
         => new(500, errorCode, message, details);
 }
