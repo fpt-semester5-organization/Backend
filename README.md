@@ -1,37 +1,37 @@
 # veggielife-backend
 
-API của VeggieLife. **ASP.NET Core 8 Web API · C# · Entity Framework Core 8 (Database-first) · SQL Server 2022 · Redis · JWT · Swagger.**
+API của VeggieLife. **ASP.NET Core 8 Web API · C# · EF Core 8 (Database-first) · SQL Server 2022 · Redis 7 · JWT · Swagger · Polly · Serilog.**
 
 > Repo hiện chỉ có **cây thư mục**. File `.gitkeep` chỉ giữ thư mục rỗng trong Git; khi thư mục đã có file thật thì xóa `.gitkeep` đi.
-> Đọc hết README này trước khi tạo file đầu tiên.
+> Đọc hết README này trước khi tạo file đầu tiên. Cập nhật theo bộ tài liệu chuẩn ngày 09/10/2026 (Decision Log tới D119).
 
 ---
 
 ## 1. Nguồn sự thật
 
-Mọi tên bảng, cột, endpoint và rule đều lấy từ **bộ tài liệu đặc tả của nhóm**. Mỗi thành viên tải bộ tài liệu bản mới nhất từ nơi lưu chung của nhóm về máy mình. Đặt ở thư mục nào cũng được, nhưng **không** đặt bên trong repo code.
+Đặc tả nằm trong `docs/` (bản sao của `plan/16. Context implement`; bảng số tệp ở `docs/README.md`). **Không sửa tay** các tệp này.
 
-Thứ tự đọc: **BR → Data Model → FR → API**.
-
-| Cần gì | Tài liệu cần mở |
+| Cần gì | Mở tệp |
 |---|---|
-| Business Rules | **Final Business Rules** (bản Final, mã `BR-xxx`) |
-| Bảng và cột (36 bảng) | **Master Logical Data Model** (sơ đồ draw.io, 36 bảng) |
-| Kiểu dữ liệu, CHECK | **Master Logical Data Model Specification** (Word). ⚠ Bản hiện tại chưa cập nhật lên 36 bảng |
-| Chức năng | **Functional Requirements** (bản Master khi có) |
-| Endpoint | **API Specification** (bản Master khi có) |
-| Quyết định đã chốt | **Decision Log** (Kế hoạch đồng bộ & Decision Log, mã `D1`, `D2`…) |
+| Quy tắc nghiệp vụ, số liệu (mã `BR-xxx`) | `docs/01. Business Rules.docx` |
+| Hành vi người dùng (UC) | `docs/02. Use Case Specification.docx` |
+| Đặc tả 82 chức năng (mã `FN-<MODULE>-nn`) | `docs/03. Functional Requirements.docx` |
+| Ngưỡng hiệu năng, bảo mật | `docs/04. Nonfunctional Requirements Specification.docx` |
+| Kiến trúc, biến môi trường, Docker, CI | `docs/05. Architecture and Deployment.docx` |
+| 38 bảng / 312 cột | `docs/06. Logical Data Model Specification.docx` |
+| 113 endpoint | `docs/07. API Specification.docx` và `docs/08. OpenAPI Specification.yaml` |
+| **Thẻ chức năng để code** (luồng, dữ liệu, endpoint, lỗi, test) | `docs/09. Task Cards.docx` |
+| Bảng/cột, hằng số, enum, mã lỗi, khóa Redis | `docs/10. Data Dictionary and Constants.docx` |
+| Tên interface dùng chung, hợp đồng AI service, quy tắc cho agent | Sprint Plan **Phụ lục B** và **§11** (`plan/16. Context implement/09. Sprint Plan.docx`) |
 
-Luôn kiểm tra mình đang dùng **bản mới nhất**: hỏi Leader nếu không chắc.
-
-Nếu tài liệu mâu thuẫn nhau thì Decision Log thắng. Không tự đặt tên mới; thiếu thì hỏi Leader.
+Thứ tự đọc cho một task: **README này → thẻ FN → Data Dictionary → Phụ lục B → FR/API khi cần đối chiếu nguyên văn**. Ưu tiên: BR cho số liệu, Data Model cho cấu trúc. Tài liệu mâu thuẫn thì **Decision Log thắng**. Không tự đặt tên mới; thiếu thông tin thì ghi `UNSPECIFIED: <câu hỏi>` và hỏi Leader.
 
 ---
 
 ## 2. Kiến trúc 3 layer
 
 ```
-VeggieLife.API  ──►  VeggieLife.BLL  ──►  VeggieLife.DAL  ──►  SQL Server / Redis / dịch vụ ngoài
+VeggieLife.API  ──►  VeggieLife.BLL  ──►  VeggieLife.DAL  ──►  SQL Server / Redis / AI service / dịch vụ ngoài
 (Presentation)       (Business Logic)      (Data Access)
 ```
 
@@ -41,6 +41,17 @@ VeggieLife.API  ──►  VeggieLife.BLL  ──►  VeggieLife.DAL  ──► 
 | BLL gọi DAL qua repository / client interface | DAL tham chiếu BLL |
 | `Program.cs` tham chiếu DAL để đăng ký DI | Trả Entity ra JSON (phải qua DTO) |
 
+**Ranh giới AI (D118, D119):** Backend **không** giữ khóa Gemini và **không** truy cập Qdrant. Mọi nghiệp vụ AI đi qua `IAiServiceClient`:
+- **ai-service** trên VPS cùng Qdrant: chat RAG, thực đơn tuần, kiểm duyệt nội dung, nhận diện ảnh tủ lạnh, kho tri thức.
+- **stt-service** trên Cloud Run: video → công thức.
+
+Backend chỉ làm phần nghiệp vụ quanh lời gọi AI:
+- kiểm hạn mức;
+- đọc hồ sơ/dị ứng/công thức đã lọc rồi **gửi kèm trong yêu cầu**;
+- lưu kết quả cùng `usage`/`audit` mà AI service trả về (`AIQuotaLogs`, `AuditLogs`).
+
+**Middleware (đúng thứ tự):** `ExceptionHandling` → `CorrelationId` → `Serilog request logging` → `GeoRestriction` → `RateLimit (Guest 10 req/phút/IP)` → `Authentication (JWT)` → `Authorization (policy)` → `GuestQuota filter` → Controller.
+
 ---
 
 ## 3. Cây thư mục
@@ -48,98 +59,83 @@ VeggieLife.API  ──►  VeggieLife.BLL  ──►  VeggieLife.DAL  ──► 
 ```
 veggielife-backend/
 ├── README.md
-├── .github/workflows/             CI (GitHub Actions): build + test khi mở PR
-├── docs/                          tài liệu kỹ thuật riêng của BE (Redis keys, error codes, endpoint map)
+├── docs/                          bản sao đặc tả (xem docs/README.md)
+├── .github/workflows/             CI: build + test + format + contract guard + gitleaks
 ├── database/                      ★ Database-first: SQL là gốc, Entity sinh từ đây
-│   ├── schema/                    36 file DDL, mỗi bảng 1 file, đánh số theo thứ tự FK (mục 5)
-│   ├── seed/                      dữ liệu master: DietarySchools, Allergens, FoodCategories, ENumberDictionary, VipSubscriptions, admin đầu tiên
-│   └── scripts/                   run_all.sh (chạy schema + seed bằng sqlcmd), scaffold.sh, reset_db.sh
+│   ├── schema/                    38 file DDL, mỗi bảng 1 file, đánh số theo thứ tự khóa ngoại (sinh bằng dm_to_ddl.py)
+│   ├── seed/                      dữ liệu gốc: 7 trường phái (DietarySchools), Allergens, FoodCategories, Ingredients (+ IngredientAllergens),
+│   │                              ENumberDictionary, SubscriptionPlans (49k/129k/449k), template_meal_plans.sql, Admin đầu tiên
+│   └── scripts/                   run_all.sh (schema + seed bằng sqlcmd), scaffold.sh, reset_db.sh, dm_to_ddl.py
+├── scripts/                       check_contract.py (contract guard: route/field khớp 08. OpenAPI)
 ├── src/
 │   ├── VeggieLife.API/
-│   │   ├── Controllers/           1 controller / resource: AuthController, RecipesController…
-│   │   │   └── Admin/             toàn bộ /api/v1/admin/*: AdminUsersController…
-│   │   ├── Middlewares/           ExceptionHandling, GeoRestriction, RateLimit, MaintenanceMode
+│   │   ├── Controllers/           1 controller / resource (bảng mục 4)
+│   │   │   └── Admin/             toàn bộ /api/v1/admin/*: AdminUsersController, AdminModerationController, AdminMasterDataController, AdminKnowledgeController, AdminAiController…
+│   │   ├── Middlewares/           ExceptionHandling, CorrelationId, GeoRestriction, RateLimit
 │   │   ├── Filters/               GuestQuotaAttribute, ValidationFilter
-│   │   ├── Authorization/         tên policy (GuestOrMember, Member, Vip, Admin), claim types
+│   │   ├── Authorization/         policy GuestOrMember, Member, Vip, Admin; claim types (role, isVip)
+│   │   ├── BackgroundJobs/        VipExpiryJob, PaymentExpiryJob, AccountAnonymizeJob, ModelDriftJob, SttWorker, KnowledgeSyncWorker
 │   │   └── Extensions/            AddApplicationServices(), AddDataAccess(), AddJwtAuth(), AddSwagger()
 │   ├── VeggieLife.BLL/
 │   │   ├── Services/<Module>/     I<X>Service.cs + <X>Service.cs: nơi DUY NHẤT hiện thực BR
-│   │   │   └── AI/                AiUsageTracker, PromptTemplates (dùng chung cho các module gọi Gemini)
-│   │   ├── DTOs/<Module>/
-│   │   │   ├── Requests/          CreateRecipeRequest…
-│   │   │   └── Responses/         RecipeDetailResponse…
+│   │   │   ├── AI/                IAiUsageTracker (ghi AIQuotaLogs + AuditLogs, ngưỡng chi phí $10/$12,5)
+│   │   │   └── Knowledge/         IKnowledgeSyncQueue + KnowledgeSyncQueue (đẩy nội dung đã duyệt sang AI service)
+│   │   ├── DTOs/<Module>/         Requests/ · Responses/
 │   │   ├── Validators/<Module>/   FluentValidation cho Request DTO
 │   │   ├── Mappings/              Entity ↔ DTO
-│   │   └── Common/
-│   │       ├── Responses/         ApiResponse<T>, PagedResult<T>
-│   │       └── Exceptions/        BusinessException, ErrorCodes
+│   │   └── Common/                Responses (ApiResponse<T>, PagedResult<T>) · Exceptions (BusinessException, ErrorCodes)
 │   └── VeggieLife.DAL/
 │       ├── Entities/              ⚠ DO SCAFFOLD SINH, KHÔNG SỬA TAY
 │       ├── Context/               AppDbContext.cs (scaffold sinh) + AppDbContext.Partial.cs (code tùy biến)
-│       ├── Repositories/
-│       │   ├── Interfaces/        IGenericRepository<T>, IUnitOfWork, I<X>Repository
-│       │   └── Implementations/
-│       ├── Cache/                 IRedisService, RedisKeys (hằng số key), Lua scripts
-│       ├── External/              mỗi dịch vụ ngoài có 1 interface + 1 implementation
-│       │   ├── Gemini/  Cloudinary/  Google/ (OAuth, Places)  HappyCow/  OpenFoodFacts/
-│       │   ├── Email/   Payments/ (MoMo, VietQR)  AiService/ (gọi veggielife-ai-service)  Geo/ (IP → quốc gia)
-│       └── Enums/                 AccountStatus, UserRole, PaymentGateway, VenueSource, MenuItemSource…
-└── tests/VeggieLife.Tests/
-    ├── Unit/Services/<Module>/    test service, mock repository
-    └── Integration/               WebApplicationFactory
+│       ├── Repositories/          Interfaces/ (IGenericRepository<T>, IUnitOfWork, I<X>Repository) · Implementations/
+│       ├── Cache/                 IRedisService, RedisKeys (hằng số khóa), Lua scripts
+│       ├── External/              mỗi dịch vụ 1 interface + 1 implementation
+│       │   ├── AiService/         IAiServiceClient (ai-service + stt-service; ngắt mạch Polly)
+│       │   ├── Cloudinary/  Google/ (OAuth, Places)  OpenFoodFacts/  Email/ (SMTP)  Payments/ (MoMo, VietQR)  Geo/ (IP → quốc gia)
+│       └── Enums/                 AccountStatus, UserRole, PaymentGateway…
+└── tests/
+    ├── VeggieLife.Tests/          Unit/Services/<Module>/ (mock repository, bản giả IAiServiceClient)
+    └── VeggieLife.IntegrationTests/  WebApplicationFactory + Testcontainers (SQL Server, Redis); nhóm AiServiceIntegration
 ```
 
-`<Module>` gồm 15 module: **Auth, Guest, Profile, MasterData, Recipes, Community, Videos, MealPlans, ShoppingLists, Products, Fridge, Venues, Chat, Subscriptions, Admin**.
+Không có `DAL/External/Gemini`, `DAL/External/Qdrant` hay `BLL/Services/Knowledge/KnowledgeRetriever` (D118).
 
 ---
 
-## 4. Module ↔ bảng ↔ controller
+## 4. Module ↔ controller ↔ bảng
 
-| Module | Controller | Bảng chính | Ghi chú |
+Module theo mã FN; hạn mức và hằng số tra ở `docs/10. Data Dictionary and Constants.docx` mục 3.
+
+| Module (FN) | Controller → Service | Bảng chính | Ghi chú |
 |---|---|---|---|
-| Auth | AuthController | Users | Đăng ký/đăng nhập bằng **Email**. OTP Email **5 phút** (Redis). Anonymous JWT 24h cho Guest |
-| Guest | GuestController | (không có bảng) | Hạn mức trong Redis: AI 05/phiên, map 5, barcode 3/ngày |
-| Profile | ProfileController | HealthProfiles, UserWeightHistory, UserAllergies | BMI/BMR/TDEE; nhắc cập nhật sau 30 ngày (D31) |
-| MasterData | MasterDataController | DietarySchools, Allergens, FoodCategories | Dữ liệu cho dropdown |
-| Recipes | RecipesController | Recipes, RecipeIngredients, Ingredients, Comments, Votes | |
-| Community | PostsController, CommentsController, ReportsController | Posts, Videos, Comments, Votes, ViolationReports | Bình luận nhiều tầng (`Parent_Comment_ID`) |
-| Videos | VideosController | Videos, VideoTranscripts | STT gọi qua AI service |
-| MealPlans | MealPlansController | MealPlans, MealSlots | Gemini lập thực đơn |
-| ShoppingLists | ShoppingListsController | ShoppingLists, ShoppingListItems | Chỉ online |
-| Products | ProductsController | Products, ENumberDictionary, Product_ENumbers, ProductAllergens, UserScanHistory | Barcode, OCR nhãn, Open Food Facts |
-| Fridge | FridgeController | FridgeInventoryList | Gemini Vision qua AI service |
-| Venues | VenuesController | VeganVenues, VenueMenuItems, VenueCategories | HappyCow + Google Maps; thực đơn đối soát ShopeeFood/GrabFood (D34) |
-| Chat | ChatController | ChatSessions, ChatMessages, Surveys | |
-| Subscriptions | SubscriptionsController | VipSubscriptions (danh mục gói), PaymentTransactions | VIP = giao dịch SUCCESS và `Ends_At > now` (D39) |
-| Admin | Controllers/Admin/* | AuditLogs + các bảng trên | 2FA bằng **OTP Email**. Hàng đợi AI = ViolationReports với `Report_Source='AI'`; feedback AI = Surveys |
-| (dùng chung) | | AIQuotaLogs | Ghi mỗi lần gọi AI |
+| AUTH | AuthController → IAuthService | Users (+ Redis: OTP, refresh, phiên Khách) | Đăng ký bằng **Email**; OTP 6 số, 5 phút; Access 15 phút, Refresh 7 ngày xoay vòng (cookie HttpOnly); Anonymous JWT 24 giờ cho Khách; `/guest/quota` |
+| PROF | UsersController → IUserProfileService | Users, HealthProfiles, UserWeightHistory, UserAllergies; danh mục DietarySchools, Allergens, FoodCategories, Ingredients | `/users/me/*`; 4 GET danh mục công khai (FN-PROF-08); BMI/BMR/TDEE theo BR-USR-NUT-03 |
+| POST | RecipesController / PostsController / VideosController → IContentService | Recipes, RecipeIngredients, Posts, Videos, VideoTranscripts | Kiểm duyệt AI qua `IContentModerationService` (≥ 85% → QUARANTINED_HIDDEN); Red Alert theo trường phái (D109); video → công thức qua stt-service |
+| COMM | CommentsController / VotesController / ReportsController → IInteractionService | Comments, Votes, ViolationReports | Bình luận nhiều tầng (`Parent_Comment_ID`) |
+| MEAL | MealPlansController / ShoppingListsController → IMealPlanService | MealPlans, MealSlots, ShoppingLists, ShoppingListItems | Free 1, VIP 3 thực đơn/tuần (21 bữa); ai-service `/meal/generate`; quá 4 giây hoặc mạch mở → thực đơn mẫu `TEMPLATE` |
+| VIS | FridgeController → IFridgeService | FridgeSessions, FridgeInventory | Free 10, VIP 30 ảnh/ngày; ai-service `/vision/detect-ingredients`; FRESH / NON-FRESH |
+| BAR | ProductsController → IBarcodeService | Products, ENumberDictionary, Product_ENumbers, ProductAllergens, UserScanHistory | Open Food Facts; Khách 3 lần/ngày; **không** OCR nhãn |
+| MAP | VenuesController → IVenueService | VeganVenues, VenueCategories | Khách 5 km, Thành viên 1–10 km, chỉ trong Việt Nam; `VenueMenuItems` **không hiện thực** (D100) |
+| CHAT | ChatController / SurveysController → IChatService | ChatSessions, ChatMessages (`Metadata_JSON`), Surveys | Free 20, VIP 200 câu/ngày; ai-service `/chat/answer` lo RAG; `/admin/knowledge/*` (FN-CHAT-07) |
+| SUB | SubscriptionsController / PaymentsController → IPaymentService | SubscriptionPlans, PaymentTransactions | MoMo + VietQR sandbox; IPN HMAC SHA-256; đơn PENDING hết hạn sau 5 phút |
+| ADM | Admin*Controller → IAdminService | AuditLogs + các bảng trên | Đăng nhập qua `/auth/login`; tự đăng xuất sau 30 phút không thao tác; **không** có 2FA |
+| (dùng chung) | | AIQuotaLogs | Ghi mỗi lần gọi AI (`Feature_Code`: AI_CHAT, MEAL_PLAN_GEN, AI_FRIDGE, AI_BARCODE, SUMMARIZE_VIDEO, AI_EMBEDDING, CONTENT_MODERATION) |
+
+**Hạn mức Khách** (Redis, BR-GUEST-02): 03 lượt AI/phiên (dùng chung), quét mã vạch 03/ngày, tìm quán 03 lần.
+
+**VIP (D104):** `Users.Role ∈ {MEMBER, VIP, ADMIN}`. IPN thành công thì đặt VIP; `VipExpiryJob` hạ về MEMBER sau 23:59:59 ngày hết hạn. JWT mang `role` (GUEST/MEMBER/VIP/ADMIN) và claim `isVip`. Không có bảng `VipSubscriptions`.
 
 ---
 
 ## 5. Database-first: quy trình bắt buộc
 
-**Thứ tự file trong `database/schema/`** (bảng cha trước, bảng có khóa ngoại sau):
+**38 bảng:** Users, DietarySchools, HealthProfiles, UserWeightHistory, SubscriptionPlans, PaymentTransactions, Allergens, UserAllergies, AIQuotaLogs, Posts, Comments, ViolationReports, Videos, VideoTranscripts, Recipes, FoodCategories, Ingredients, RecipeIngredients, MealPlans, MealSlots, ShoppingLists, ShoppingListItems, Products, ENumberDictionary, Product_ENumbers, ProductAllergens, UserScanHistory, FridgeSessions, FridgeInventory, VeganVenues, VenueMenuItems, VenueCategories, ChatSessions, ChatMessages, Surveys, AuditLogs, Votes, IngredientAllergens.
 
-```
-01_DietarySchools  02_Allergens  03_Users  04_HealthProfiles  05_UserWeightHistory  06_UserAllergies
-07_VipSubscriptions  08_PaymentTransactions  09_AIQuotaLogs  10_AuditLogs  11_FoodCategories  12_Ingredients
-13_Posts  14_Recipes  15_RecipeIngredients  16_Videos  17_VideoTranscripts  18_Comments  19_Votes
-20_ViolationReports  21_MealPlans  22_MealSlots  23_ShoppingLists  24_ShoppingListItems  25_Products
-26_ENumberDictionary  27_Product_ENumbers  28_ProductAllergens  29_UserScanHistory  30_FridgeInventoryList
-31_VeganVenues  32_VenueMenuItems  33_VenueCategories  34_ChatSessions  35_ChatMessages  36_Surveys
-```
+Kiểu, độ dài, nullable, CHECK, FK lấy đúng từ `docs/06` và `docs/10` mục 2. File DDL đánh số theo thứ tự khóa ngoại (bảng cha trước) và được **sinh bằng script** (`database/scripts/dm_to_ddl.py`), không gõ tay.
 
-**Lưu ý khi viết DDL**
-- PK mặc định `INT IDENTITY(1,1)`. Ngoại lệ:
-  - `ENumberDictionary` dùng PK `Code` kiểu chuỗi.
-  - `HealthProfiles` dùng PK chính là `User_ID`.
-  - 5 bảng nối dùng PK ghép: UserAllergies, ProductAllergens, Product_ENumbers, RecipeIngredients, VenueCategories.
-- `Votes`: CHECK đúng 1 trong 2 cột `Post_ID` / `Recipe_ID` có giá trị, và 2 UNIQUE filtered index (D37).
-- Theo quyết định ngày 05/10, **không** tạo cột `Users.Totp_Secret` và `ShoppingLists.Is_Offline_Synced`.
-
-**Đổi schema** (chỉ **DB owner** được merge):
-1. Sửa file `.sql` trong `database/schema/`, rồi chạy `database/scripts/run_all.sh` trên DB local.
-2. Chạy `database/scripts/scaffold.sh`. Script này gọi:
+**Đổi schema** (chỉ **DB owner Nguyễn Văn Minh Tâm** được merge; người khác mở issue `db-change`; D103: chỉ được **thêm cột**, không thêm bảng, không đổi tên hay CHECK cũ):
+1. Sửa file `.sql` trong `database/schema/`, chạy `database/scripts/run_all.sh` trên DB local.
+2. Chạy `database/scripts/scaffold.sh`:
    ```bash
    dotnet ef dbcontext scaffold "<connection>" Microsoft.EntityFrameworkCore.SqlServer \
      -p src/VeggieLife.DAL -s src/VeggieLife.API \
@@ -149,7 +145,7 @@ veggielife-backend/
    Scaffold tự sinh `UserId` kèm `HasColumnName("User_ID")` và class số ít (`User` cho bảng `Users`).
 3. Commit **cả** file SQL **và** code sinh ra trong cùng 1 PR.
 
-Code tùy biến (chuyển enum sang chuỗi, query filter…) chỉ viết trong `AppDbContext.Partial.cs`, vì `--force` sẽ ghi đè các file khác.
+Code tùy biến (enum ↔ chuỗi, query filter xóa mềm…) chỉ viết trong `AppDbContext.Partial.cs`, vì `--force` ghi đè các file khác.
 
 ---
 
@@ -157,43 +153,93 @@ Code tùy biến (chuyển enum sang chuỗi, query filter…) chỉ viết tron
 
 | Thứ | Quy ước |
 |---|---|
-| Bảng / cột SQL | `MealPlans` / `User_ID` (D17) |
+| Bảng / cột SQL | `MealPlans` / `User_ID` |
 | Class / property C# | `MealPlan` / `UserId` |
-| JSON | camelCase `userId` (tự động) |
-| Route | `/api/v1/<danh-từ-số-nhiều-kebab>`; Guest và Member dùng chung resource; chỉ `/auth/anonymous`, `/guest/quota`, `/admin/*` là riêng |
-| Response | Luôn bọc `ApiResponse<T>`: `{ statusCode, success, message, data, errors[] }` |
-| Phân trang | `?pageNumber=1&pageSize=15` → `PagedResult<T>` |
+| JSON | camelCase `userId` |
+| Route | `/api/v1/<danh-từ-số-nhiều-kebab>`; Khách và Thành viên dùng chung resource; chỉ `/auth/anonymous`, `/guest/quota`, `/admin/*` là riêng |
+| Response thành công | `{ statusCode, message, data[, meta] }` (`ApiResponse<T>`) |
+| Response lỗi | `{ statusCode, errorCode, message[, details] }`. **Không** có trường `success` |
+| Mã lỗi | Chỉ dùng mã trong `docs/10` mục 5 (`ERR_VALIDATION`, `ERR_INTERNAL`, `ERR_QUOTA_*`, `ERR_AUTH_REFRESH_TOKEN_*`…), sinh `ErrorCodes.cs` từ đó |
+| Phân trang | `?page=1&size=20`; mặc định/tối đa theo thẻ FN; `meta = { page, size, total }`; lịch sử chat dùng `before/size` (D111) |
 | Lỗi nghiệp vụ | `throw new BusinessException(ErrorCodes.X, …)`; controller không try/catch |
 | Rule | Comment `// BR-XXX-NN` ngay chỗ hiện thực |
-| Role | `MEMBER`, `ADMIN` trong DB; `GUEST` chỉ là claim JWT; VIP là claim `isVip` tính từ PaymentTransactions |
+| Bảo mật | BCrypt cost 12; không log mật khẩu/token/OTP; kiểm tra magic bytes; HMAC cho webhook; truy vấn tham số hóa |
 | Secret | Chỉ để trong biến môi trường / user-secrets, không commit |
-| Gọi dịch vụ ngoài | Qua `External/*`, có timeout + Polly (circuit breaker, BR-ADM-AI-002) |
+| Gọi AI | Chỉ qua `IAiServiceClient`; timeout, retry 2 lần, circuit breaker (lỗi/timeout > 50% trong 60 giây → mở 5 phút, `ERR_AI_CIRCUIT_OPEN`); kiểm tra lại đầu ra AI ở tầng mã |
+| Kho tri thức | Đổi trạng thái nội dung thì gọi `IKnowledgeSyncQueue.EnqueueUpsert/EnqueueDelete`; chỉ đẩy nội dung công khai đã duyệt |
+| Khóa Redis | Đúng tên trong thẻ FN, hằng số ở `DAL/Cache/RedisKeys.cs`; đếm hạn mức bằng Lua/`INCR` nguyên tử |
 | Dapper | Chỉ dùng cho truy vấn thống kê Admin |
 
 **Muốn thêm… thì đặt ở đâu?**
 
 | Muốn thêm | Đặt tại |
 |---|---|
-| Endpoint mới | `API/Controllers/<X>Controller.cs` + method trong `BLL/Services/<Module>/I<X>Service.cs` |
+| Endpoint | `API/Controllers/<X>Controller.cs` + method trong `BLL/Services/<Module>/I<X>Service.cs` (route phải có trong `08. OpenAPI`) |
 | Rule nghiệp vụ | `BLL/Services/<Module>/<X>Service.cs` |
 | Request/response | `BLL/DTOs/<Module>/Requests` hoặc `Responses` |
 | Query phức tạp | `DAL/Repositories/Interfaces` + `Implementations` |
-| Gọi API bên ngoài | `DAL/External/<Dịch vụ>/` |
-| Redis key | Hằng số trong `DAL/Cache/RedisKeys.cs` |
-| Cột / bảng mới | Báo DB owner, sửa `database/schema/` (mục 5) |
+| Gọi dịch vụ ngoài | `DAL/External/<Dịch vụ>/` |
+| Job nền | `API/BackgroundJobs/` (`BackgroundService`, chạy lặp lại an toàn, ghi `AuditLogs` với `Actor_Role = SYSTEM`) |
+| Cột mới | Báo DB owner (mục 5) |
 
 ---
 
-## 7. Quy trình làm việc (Jira + GitHub)
+## 7. Cấu hình (`.env.example`)
 
-- **Nhánh:** `main` ← `develop` ← `feature/<JIRA-KEY>-<mô-tả>`, ví dụ `feature/VL-42-recipe-search`.
-- **Commit:** `feat(recipes): VL-42 add search endpoint [FR-REC-01]`.
-- **PR:** tiêu đề có mã Jira; mô tả ghi FR-ID, BR-ID, bảng liên quan; cần 1 người review; CI phải xanh.
-- **Viết hợp đồng trước:** viết interface service + DTO, review xong mới hiện thực.
+| Biến | Ý nghĩa |
+|---|---|
+| `ConnectionStrings__Default` | SQL Server |
+| `Redis__ConnectionString` | Redis |
+| `Jwt__Issuer`, `Jwt__Audience`, `Jwt__SigningKey` | JWT (khóa ≥ 32 ký tự ngẫu nhiên) |
+| `Jwt__AccessMinutes=15`, `Jwt__RefreshDays=7`, `Jwt__GuestHours=24` | Thời hạn token |
+| `Cors__AllowedOrigins` | Miền Frontend (không dùng `*`) |
+| `AiService__BaseUrl`, `AiService__ApiKey` | ai-service trên VPS (mọi nghiệp vụ AI trừ STT) |
+| `SttService__BaseUrl` | stt-service trên Cloud Run (`/stt/*`), dùng chung `AiService__ApiKey` |
+| `AiBudget__WarnUsd=10`, `AiBudget__ThrottleUsd=12.5` | Ngưỡng chi phí AI (BR-ADM-AI-001) |
+| `Cloudinary__CloudName/ApiKey/ApiSecret` | Ảnh, video |
+| `Google__ClientId`, `Google__PlacesApiKey` | OAuth, Places |
+| `Smtp__Host/Port/User/Password/From` | Gửi OTP Email |
+| `Payments__MoMo__*`, `Payments__VietQR__*`, `Payments__IpnSecret` | Thanh toán sandbox |
+| `Geo__Bypass=false` | `true` khi chạy local |
+| `Seed__AdminEmail`, `Seed__AdminPassword` | Admin đầu tiên |
+
+Backend **không** có biến `Gemini__*`, `Qdrant__*`, `Embedding__*`, `Rag__*` (D118).
 
 ---
 
-## 8. Khởi tạo (Leader chạy 1 lần)
+## 8. Chạy local và kiểm tra
+
+```bash
+docker compose up -d                 # SQL Server, Redis, API, ai-service, Qdrant (+ stt-service khi cần)
+bash database/scripts/run_all.sh     # 38 bảng + dữ liệu gốc
+```
+
+Trước khi báo xong một task, các lệnh sau phải xanh:
+
+```bash
+dotnet build
+dotnet test
+dotnet format --verify-no-changes
+python scripts/check_contract.py
+```
+
+CI khi mở PR chạy các lệnh trên cùng `gitleaks` và coverage; **bỏ qua** nhóm test `AiServiceIntegration`. Khi merge `develop`, CI chạy thêm nhóm này: ai-service thật qua Testcontainers, gọi Gemini thật bằng khóa trong GitHub Secrets (D119).
+
+---
+
+## 9. Quy trình làm việc (Jira + GitHub)
+
+- **Nhánh:** `main` ← `develop` ← `feature/VL-<số>-<mô-tả>`. Hotfix tách từ `main` rồi merge vào cả `main` và `develop`.
+- **Commit:** `feat(meal-plans): VL-42 generate weekly plan [FN-MEAL-01]` (`feat|fix|test|docs|refactor|chore`).
+- **PR:**
+  - tiêu đề có mã Jira; mô tả có FN-ID, BR-ID, bảng, endpoint và ví dụ request/response;
+  - cần 1 người duyệt; CI xanh (gồm contract guard); ≤ 400 dòng đổi.
+  - Còn câu hỏi thì thêm mục "Câu hỏi cho Leader / UNSPECIFIED".
+- **Contract-first:** mở PR nhỏ gồm interface service + DTO + validator + mã lỗi; duyệt xong mới hiện thực.
+
+---
+
+## 10. Khởi tạo (Leader chạy 1 lần)
 
 ```bash
 dotnet new sln -n VeggieLife
@@ -201,29 +247,22 @@ dotnet new webapi   -o src/VeggieLife.API --use-controllers -f net8.0
 dotnet new classlib -o src/VeggieLife.BLL -f net8.0
 dotnet new classlib -o src/VeggieLife.DAL -f net8.0
 dotnet new xunit    -o tests/VeggieLife.Tests -f net8.0
-dotnet sln add src/VeggieLife.API src/VeggieLife.BLL src/VeggieLife.DAL tests/VeggieLife.Tests
+dotnet new xunit    -o tests/VeggieLife.IntegrationTests -f net8.0
+dotnet sln add src/VeggieLife.API src/VeggieLife.BLL src/VeggieLife.DAL tests/VeggieLife.Tests tests/VeggieLife.IntegrationTests
 dotnet add src/VeggieLife.API reference src/VeggieLife.BLL src/VeggieLife.DAL
 dotnet add src/VeggieLife.BLL reference src/VeggieLife.DAL
 dotnet add tests/VeggieLife.Tests reference src/VeggieLife.API src/VeggieLife.BLL
+dotnet add tests/VeggieLife.IntegrationTests reference src/VeggieLife.API
 ```
 
-Package: EF Core SqlServer + Design + Tools, StackExchange.Redis, Dapper, FluentValidation, BCrypt.Net-Next, Google.Apis.Auth, JwtBearer, Swashbuckle, Serilog, Polly; test dùng Moq và FluentAssertions.
-Dev local: chạy SQL Server + Redis bằng Docker.
+Package chính:
+- EF Core SqlServer + Design + Tools, StackExchange.Redis, Dapper, FluentValidation, BCrypt.Net-Next, Google.Apis.Auth, JwtBearer, Swashbuckle, Serilog, Polly, QuestPDF.
+- Test: Moq, FluentAssertions, Testcontainers.
+
+Không thêm thư viện lớn ngoài danh sách này khi chưa hỏi Leader.
 
 ---
 
-## 9. Ngoài MVP: không code
+## 11. Ngoài phạm vi MVP: không code
 
-Follow/Block, Streak, Swipe, Badges, Notifications, Share, Seasonal, Appeals, SavedPosts, OTP SMS (eSMS/Twilio), Health Connect/Google Fit, Qdrant/AI Knowledge Base, các tầng menu OCR / crowdsourcing / AI synthetic.
-
-## 10. Đang chờ chốt (hỏi Leader trước khi làm phần liên quan)
-
-- **API Master** (route chuẩn, error code). Spec Data Model cho kiểu dữ liệu của 36 bảng.
-- **DB owner.**
-- **Jira project key** (`VL` chỉ là ví dụ).
-- **Thanh toán:** có giữ VNPay không.
-- **Email:** SendGrid hay SMTP.
-- **Giá trị nghiệp vụ:** giá 3 gói VIP, công thức BMR/TDEE, TTL các Redis key.
-- **Deploy:** nơi deploy.
-
-Danh sách đầy đủ các mục còn thiếu: hỏi Leader (file tổng hợp "Dữ liệu còn thiếu" của nhóm).
+Follow/Block, Streak, Swipe, Badges, Notifications, Share, Bookmark, DMCA, CAPTCHA, Admin 2FA, chế độ bảo trì, Google Fit / thiết bị đeo, OTP SMS (eSMS, Twilio), VNPay, URL-to-recipe (TikTok/Reels), OCR nhãn thành phần, thực đơn quán và đối soát ShopeeFood/GrabFood, ghi đè Ground Truth bởi Admin.
