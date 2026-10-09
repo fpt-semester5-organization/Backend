@@ -29,10 +29,17 @@ public class RedisService : IRedisService
 
     private static bool IsInCooldown => DateTime.UtcNow < _redisCooldownUntil;
 
-    private void TriggerCooldown(Exception ex)
+    private void TriggerCooldown(Exception ex, string? operation = null)
     {
         _redisCooldownUntil = DateTime.UtcNow.AddSeconds(30);
-        _logger.LogWarning("Redis tạm thời không phản hồi ({Message}). Tự động chuyển sang In-Memory Fallback Cache trong 30 giây.", ex.Message);
+        if (!string.IsNullOrEmpty(operation))
+        {
+            _logger.LogWarning("Redis thao tác '{Operation}' thất bại ({Message}). Chuyển sang In-Memory Fallback Cache trong 30 giây.", operation, ex.Message);
+        }
+        else
+        {
+            _logger.LogWarning("Redis tạm thời không phản hồi ({Message}). Tự động chuyển sang In-Memory Fallback Cache trong 30 giây.", ex.Message);
+        }
     }
 
     public async Task<T?> GetAsync<T>(string key, CancellationToken ct = default)
