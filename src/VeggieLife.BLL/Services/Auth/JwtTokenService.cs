@@ -51,7 +51,8 @@ public class JwtTokenService : IJwtTokenService
 
     public ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)
     {
-        var secretKey = _configuration["Jwt:SecretKey"] ?? "VeggieLifeSecretKeyForDevelopmentMustBe32CharsLong!";
+        var secretKey = _configuration["Jwt:SecretKey"]
+            ?? throw new InvalidOperationException("Cấu hình 'Jwt:SecretKey' chưa được thiết lập trong appsettings.json.");
         var tokenValidationParameters = new TokenValidationParameters
         {
             ValidateAudience = false,
@@ -81,7 +82,8 @@ public class JwtTokenService : IJwtTokenService
 
     private TokenResult BuildToken(IEnumerable<Claim> claims)
     {
-        var secretKey = _configuration["Jwt:SecretKey"] ?? "VeggieLifeSecretKeyForDevelopmentMustBe32CharsLong!";
+        var secretKey = _configuration["Jwt:SecretKey"]
+            ?? throw new InvalidOperationException("Cấu hình 'Jwt:SecretKey' chưa được thiết lập trong appsettings.json.");
         var issuer = _configuration["Jwt:Issuer"] ?? "VeggieLife.API";
         var audience = _configuration["Jwt:Audience"] ?? "VeggieLife.Client";
         var expiryMinutesStr = _configuration["Jwt:AccessTokenExpiryMinutes"];

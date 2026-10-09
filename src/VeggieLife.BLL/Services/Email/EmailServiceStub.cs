@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -5,11 +6,17 @@ using Microsoft.Extensions.Logging;
 namespace VeggieLife.BLL.Services.Email;
 
 /// <summary>
-/// Triển khai bản rỗng (Stub/Mock) của IEmailService để thành viên khác hoàn thiện gửi mail (SMTP / SendGrid / Resend).
+/// Triển khai dịch vụ gửi Email mẫu (phục vụ môi trường Development và kiểm thử tự động).
+/// Ghi log chi tiết nội dung mã OTP và lưu lại trong bộ nhớ để phục vụ kiểm thử.
 /// </summary>
 public class EmailServiceStub : IEmailService
 {
     private readonly ILogger<EmailServiceStub> _logger;
+
+    /// <summary>
+    /// Lưu trữ mã OTP gửi gần nhất theo địa chỉ Email để tiện kiểm thử môi trường Dev.
+    /// </summary>
+    public static readonly ConcurrentDictionary<string, string> LastSentOtps = new();
 
     public EmailServiceStub(ILogger<EmailServiceStub> logger)
     {
@@ -18,6 +25,7 @@ public class EmailServiceStub : IEmailService
 
     public Task SendOtpEmailAsync(string toEmail, string otpCode, string purpose, CancellationToken ct = default)
     {
+        LastSentOtps[toEmail.Trim().ToLowerInvariant()] = otpCode;
         _logger.LogInformation("[EmailServiceStub] Gửi mã OTP '{OtpCode}' mục đích '{Purpose}' tới {ToEmail}", otpCode, purpose, toEmail);
         // TODO: Cấu hình FluentEmail / MailKit / SendGrid để gửi email thực tế
         return Task.CompletedTask;

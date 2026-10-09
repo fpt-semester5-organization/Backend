@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -48,7 +49,7 @@ public class RedisService : IRedisService
             }
             catch (Exception ex)
             {
-                TriggerCooldown(ex);
+                TriggerCooldown(ex, $"GetAsync({key})");
             }
         }
 
@@ -90,7 +91,7 @@ public class RedisService : IRedisService
             }
             catch (Exception ex)
             {
-                TriggerCooldown(ex);
+                TriggerCooldown(ex, $"SetAsync({key})");
             }
         }
     }
@@ -110,7 +111,7 @@ public class RedisService : IRedisService
             }
             catch (Exception ex)
             {
-                TriggerCooldown(ex);
+                TriggerCooldown(ex, $"RemoveAsync({key})");
             }
         }
     }
@@ -131,7 +132,7 @@ public class RedisService : IRedisService
             }
             catch (Exception ex)
             {
-                TriggerCooldown(ex);
+                TriggerCooldown(ex, $"ExistsAsync({key})");
                 return false;
             }
         }
@@ -182,7 +183,7 @@ public class RedisService : IRedisService
             }
             catch (Exception ex)
             {
-                TriggerCooldown(ex);
+                TriggerCooldown(ex, $"IncrementAsync({key})");
             }
         }
 

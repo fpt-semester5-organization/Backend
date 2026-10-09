@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -13,8 +12,10 @@ using VeggieLife.BLL.Services.AI;
 using VeggieLife.BLL.Services.Auth;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.Email;
+using VeggieLife.BLL.Services.MasterData;
 using VeggieLife.BLL.Services.Media;
 using VeggieLife.BLL.Services.Payment;
+using VeggieLife.BLL.Services.Profile;
 using VeggieLife.DAL.External.Cloudinary;
 
 namespace VeggieLife.API.Extensions;
@@ -36,15 +37,11 @@ public static class ServiceExtensions
     /// </summary>
     public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
     {
-        var secretKey = configuration["Jwt:SecretKey"] 
-            ?? configuration["JwtSettings:SecretKey"] 
-            ?? "VeggieLifeSecretKeyForDevelopmentMustBe32CharsLong!";
-        var issuer = configuration["Jwt:Issuer"] 
-            ?? configuration["JwtSettings:Issuer"] 
-            ?? "VeggieLife.API";
-        var audience = configuration["Jwt:Audience"] 
-            ?? configuration["JwtSettings:Audience"] 
-            ?? "VeggieLife.Client";
+        var secretKey = configuration["Jwt:SecretKey"]
+            ?? configuration["JwtSettings:SecretKey"]
+            ?? throw new InvalidOperationException("Cấu hình 'Jwt:SecretKey' chưa được thiết lập trong appsettings.json.");
+        var issuer = configuration["Jwt:Issuer"] ?? configuration["JwtSettings:Issuer"] ?? "VeggieLife.API";
+        var audience = configuration["Jwt:Audience"] ?? configuration["JwtSettings:Audience"] ?? "VeggieLife.Client";
 
         services.AddAuthentication(options =>
         {
@@ -103,8 +100,8 @@ public static class ServiceExtensions
 
                     var errorResponse = new ApiErrorResponse(
                         StatusCodes.Status403Forbidden,
-                        errorCode,
-                        errorMessage);
+                        ErrorCodes.ErrAdmForbidden,
+                        "Bạn không có quyền truy cập vào tài nguyên này.");
 
                     await context.Response.WriteAsync(JsonSerializer.Serialize(errorResponse, JsonOptions));
                 }
@@ -215,8 +212,9 @@ public static class ServiceExtensions
     /// </summary>
     public static IServiceCollection AddApplicationServices(this IServiceCollection services, IConfiguration configuration)
     {
-        // Dịch vụ JWT & Cache
+        // Dịch vụ JWT, Auth & Cache
         services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.AddScoped<IAuthService, AuthService>();
 
         // Cấu hình & Dịch vụ Cloudinary CDN dùng chung
         services.Configure<CloudinarySettings>(configuration.GetSection(CloudinarySettings.SectionName));
@@ -224,8 +222,11 @@ public static class ServiceExtensions
         services.AddScoped<IMediaService, MediaService>();
 
         // Dịch vụ Hồ sơ cá nhân & Danh mục dùng chung
-        services.AddScoped<VeggieLife.BLL.Services.Profile.IProfileService, VeggieLife.BLL.Services.Profile.ProfileService>();
-        services.AddScoped<VeggieLife.BLL.Services.MasterData.IMasterDataService, VeggieLife.BLL.Services.MasterData.MasterDataService>();
+        services.AddScoped<IProfileService, ProfileService>();
+        services.AddScoped<IMasterDataService, MasterDataService>();
+
+        // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
+        services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();
 
         // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
         services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();

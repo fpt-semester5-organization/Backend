@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using VeggieLife.API.Extensions;
 using VeggieLife.API.Middlewares;
 using VeggieLife.DAL.Context;
@@ -12,27 +12,34 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // 2. Cấu hình bộ nhớ đệm phân tán Redis
 builder.Services.AddRedisCaching(builder.Configuration);
 
-// 3. Đăng ký các dịch vụ nghiệp vụ BLL, DAL & Cloudinary CDN
+// 3. Đăng ký các dịch vụ nghiệp vụ BLL, DAL, Cloudinary CDN & Auth
 builder.Services.AddApplicationServices(builder.Configuration);
 
-// 4. Cấu hình JWT Bearer & Phân quyền Role
+// 4. Cấu hình Xác thực JWT Bearer & Phân quyền Roles (GUEST, MEMBER, VIP, ADMIN)
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddRoleAuthorization();
 
-// 5. Cấu hình Controllers & Health Checks
-builder.Services.AddControllers();
+// 5. Cấu hình Controllers với JSON Serialization quy chuẩn camelCase
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+    });
+
+// 6. Cấu hình Health Checks
 builder.Services.AddAppHealthChecks();
 
-// 6. Cấu hình Swagger UI kèm Authentication
+// 7. Cấu hình Swagger UI kèm Bearer Token Authentication
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerWithAuth();
 
 var app = builder.Build();
 
-// 7. Middleware xử lý ngoại lệ tập trung toàn cục (Chuẩn D52 Envelope)
+// 8. Pipeline: Xử lý ngoại lệ tập trung toàn cục (Global Exception Handling)
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-// 8. Swagger UI phục vụ kiểm thử
+// 9. Pipeline: Swagger UI phục vụ kiểm thử
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -51,11 +58,11 @@ else
     app.UseHttpsRedirection();
 }
 
-// 9. Xác thực & Phân quyền
+// 10. Pipeline: Authentication & Authorization
 app.UseAuthentication();
 app.UseAuthorization();
 
-// 10. Map Controllers & Custom Health Checks
+// 11. Pipeline: Map Controllers & Custom Health Checks
 app.MapControllers();
 app.MapCustomHealthCheck();
 
