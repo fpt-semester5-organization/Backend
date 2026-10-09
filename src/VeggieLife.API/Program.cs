@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using VeggieLife.API.Extensions;
 using VeggieLife.API.Middlewares;
 using VeggieLife.DAL.Context;
@@ -60,6 +60,7 @@ else
 
 // 10. Pipeline: Authentication & Authorization
 app.UseAuthentication();
+app.UseMiddleware<GuestSecurityMiddleware>();
 app.UseAuthorization();
 
 // 11. Pipeline: Map Controllers & Custom Health Checks

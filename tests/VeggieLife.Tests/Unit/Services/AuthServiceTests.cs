@@ -81,6 +81,61 @@ public class AuthServiceTests
             _storage[key] = (current, expireAt);
             return Task.FromResult(current);
         }
+
+        public Task<(bool Allowed, long Current, long Remaining)> TryConsumeQuotaAsync(string key, int maxLimit, TimeSpan? expiry = null, CancellationToken ct = default)
+        {
+            lock (_storage)
+            {
+                long current = 0;
+                if (_storage.TryGetValue(key, out var entry))
+                {
+                    if (entry.Value is long l) current = l;
+                    else if (long.TryParse(entry.Value.ToString(), out var parsed)) current = parsed;
+                }
+
+                if (current >= maxLimit)
+                {
+                    return Task.FromResult((false, current, 0L));
+                }
+
+                current++;
+                var expireAt = DateTime.UtcNow.Add(expiry ?? TimeSpan.FromDays(1));
+                _storage[key] = (current, expireAt);
+                return Task.FromResult((true, current, (long)(maxLimit - current)));
+            }
+        }
+
+        public Task<(bool Allowed, bool IsBanned, long CurrentCount, TimeSpan? RetryAfter)> CheckIpRateLimitAsync(string clientIp, int maxRequestsPerMinute = 10, int banDurationMinutes = 10, CancellationToken ct = default)
+        {
+            lock (_storage)
+            {
+                var banKey = $"ban:{clientIp}";
+                if (_storage.TryGetValue(banKey, out var banEntry) && DateTime.UtcNow <= banEntry.ExpireAt)
+                {
+                    return Task.FromResult((false, true, 0L, (TimeSpan?)(banEntry.ExpireAt - DateTime.UtcNow)));
+                }
+
+                var countKey = $"count:{clientIp}";
+                long count = 0;
+                if (_storage.TryGetValue(countKey, out var countEntry) && DateTime.UtcNow <= countEntry.ExpireAt)
+                {
+                    if (countEntry.Value is long l) count = l;
+                    else if (long.TryParse(countEntry.Value.ToString(), out var parsed)) count = parsed;
+                }
+
+                count++;
+                _storage[countKey] = (count, DateTime.UtcNow.AddMinutes(1));
+
+                if (count > maxRequestsPerMinute)
+                {
+                    var banUntil = DateTime.UtcNow.AddMinutes(banDurationMinutes);
+                    _storage[banKey] = ("banned", banUntil);
+                    return Task.FromResult((false, true, count, (TimeSpan?)TimeSpan.FromMinutes(banDurationMinutes)));
+                }
+
+                return Task.FromResult((true, false, count, (TimeSpan?)null));
+            }
+        }
     }
 
     private class TestEmailService : IEmailService
