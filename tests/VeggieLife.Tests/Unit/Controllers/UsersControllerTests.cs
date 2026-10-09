@@ -144,4 +144,138 @@ public class UsersControllerTests
         envelope!.StatusCode.Should().Be(200);
         envelope.Message.Should().Be("Cập nhật dị ứng thành công.");
     }
+
+    #region FN-PROF-03: Upload Avatar Tests
+
+    [Fact]
+    public async Task UploadCurrentUserAvatar_WhenValidFile_ShouldReturnOkEnvelope()
+    {
+        var content = new byte[] { 1, 2, 3, 4 };
+        var fileName = "avatar.png";
+        var stream = new System.IO.MemoryStream(content);
+        var mockFile = new Mock<IFormFile>();
+        mockFile.Setup(f => f.OpenReadStream()).Returns(stream);
+        mockFile.Setup(f => f.FileName).Returns(fileName);
+        mockFile.Setup(f => f.Length).Returns(content.Length);
+
+        var expectedResponse = new UploadCurrentUserAvatarResponse
+        {
+            AvatarUrl = "https://res.cloudinary.com/veggielife/avatars/user101_500x500.webp"
+        };
+
+        _mockService.Setup(s => s.UploadAvatarAsync(101, It.IsAny<System.IO.Stream>(), fileName, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedResponse);
+
+        var actionResult = await _controller.UploadCurrentUserAvatar(mockFile.Object, CancellationToken.None);
+
+        var okResult = actionResult as OkObjectResult;
+        okResult.Should().NotBeNull();
+        var envelope = okResult!.Value as ApiResponse<UploadCurrentUserAvatarResponse>;
+        envelope.Should().NotBeNull();
+        envelope!.StatusCode.Should().Be(200);
+        envelope.Message.Should().Be("Cập nhật ảnh đại diện thành công.");
+        envelope.Data!.AvatarUrl.Should().Be(expectedResponse.AvatarUrl);
+    }
+
+    [Fact]
+    public async Task UploadCurrentUserAvatar_WhenFileNull_ShouldThrowBadRequest()
+    {
+        var act = async () => await _controller.UploadCurrentUserAvatar(null, CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrMediaInvalidFile);
+    }
+
+    [Fact]
+    public async Task UploadCurrentUserAvatar_WhenFileOver5MB_ShouldThrowPayloadTooLarge()
+    {
+        var mockFile = new Mock<IFormFile>();
+        mockFile.Setup(f => f.Length).Returns(6 * 1024 * 1024); // 6 MB
+
+        var act = async () => await _controller.UploadCurrentUserAvatar(mockFile.Object, CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(413);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrMediaFileTooLarge);
+    }
+
+    [Fact]
+    public async Task UploadCurrentUserAvatar_WhenGuest_ShouldThrowForbidden()
+    {
+        SetupUserClaims(userId: 101, role: UserRoles.Guest);
+        var mockFile = new Mock<IFormFile>();
+        mockFile.Setup(f => f.Length).Returns(1024);
+
+        var act = async () => await _controller.UploadCurrentUserAvatar(mockFile.Object, CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrGuestPersonalizationRestricted);
+    }
+
+    #endregion
+
+    #region FN-PROF-06: Weight History Tests
+
+    [Fact]
+    public async Task CreateCurrentUserWeightEntry_WhenValid_ShouldReturnCreatedEnvelope()
+    {
+        var request = new CreateCurrentUserWeightEntryRequest
+        {
+            WeightKg = 54.0m,
+            LoggedDate = new System.DateOnly(2026, 10, 5),
+            Note = "Ghi mốc"
+        };
+
+        var expectedResponse = new CreateCurrentUserWeightEntryResponse
+        {
+            LogId = 88,
+            WeightKg = 54.0m,
+            Bmi = 20.6m,
+            TargetDailyCalories = 1200.0m
+        };
+
+        _mockService.Setup(s => s.CreateWeightEntryAsync(101, request, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedResponse);
+
+        var actionResult = await _controller.CreateCurrentUserWeightEntry(request, CancellationToken.None);
+
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(201);
+        var envelope = objectResult.Value as ApiResponse<CreateCurrentUserWeightEntryResponse>;
+        envelope.Should().NotBeNull();
+        envelope!.StatusCode.Should().Be(201);
+        envelope.Message.Should().Be("Đã ghi cân nặng.");
+        envelope.Data!.LogId.Should().Be(88);
+        envelope.Data.WeightKg.Should().Be(54.0m);
+    }
+
+    [Fact]
+    public async Task ListCurrentUserWeightHistory_WhenValid_ShouldReturnPagedEnvelope()
+    {
+        var items = new List<WeightHistoryEntryDto>
+        {
+            new() { LogId = 88, WeightKg = 54.0m, LoggedDate = new System.DateOnly(2026, 10, 5) }
+        };
+        var meta = new PagedMeta(1, 20, 1);
+
+        _mockService.Setup(s => s.ListWeightHistoryAsync(101, null, null, 1, 20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((items, meta));
+
+        var actionResult = await _controller.ListCurrentUserWeightHistory(null, null, 1, 20, CancellationToken.None);
+
+        var okResult = actionResult as OkObjectResult;
+        okResult.Should().NotBeNull();
+        var envelope = okResult!.Value as ApiResponse<IReadOnlyList<WeightHistoryEntryDto>>;
+        envelope.Should().NotBeNull();
+        envelope!.StatusCode.Should().Be(200);
+        envelope.Message.Should().Be("OK");
+        envelope.Data.Should().HaveCount(1);
+        envelope.Meta.Should().NotBeNull();
+        envelope.Meta!.Total.Should().Be(1);
+    }
+
+    #endregion
 }

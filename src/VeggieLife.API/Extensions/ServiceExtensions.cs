@@ -84,6 +84,20 @@ public static class ServiceExtensions
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     context.Response.ContentType = "application/json; charset=utf-8";
 
+                    var principal = context.Principal ?? context.HttpContext?.User;
+                    var isGuest = principal?.IsInRole(UserRoles.Guest) == true ||
+                                  principal?.Claims.Any(c => 
+                                      (c.Type == ClaimTypes.Role || c.Type == "role" || c.Type.EndsWith("/role")) && 
+                                      string.Equals(c.Value, UserRoles.Guest, StringComparison.OrdinalIgnoreCase)) == true;
+
+                    var errorCode = isGuest
+                        ? ErrorCodes.ErrGuestPersonalizationRestricted
+                        : ErrorCodes.ErrAdmForbidden;
+
+                    var errorMessage = isGuest
+                        ? "Khách vãng lai gọi tính năng cá nhân hóa (FN-AUTH-03)."
+                        : "Bạn không có quyền truy cập vào tài nguyên này.";
+
                     var errorResponse = new ApiErrorResponse(
                         StatusCodes.Status403Forbidden,
                         ErrorCodes.ErrAdmForbidden,
@@ -211,14 +225,13 @@ public static class ServiceExtensions
         services.AddScoped<IProfileService, ProfileService>();
         services.AddScoped<IMasterDataService, MasterDataService>();
 
-<<<<<<< HEAD
-        // Các interface dịch vụ dùng chung khác (Bản mẫu rỗng để các thành viên khác hoàn thiện)
-=======
+        // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
+        services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();
+
         // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
         services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();
 
         // Các interface dịch vụ dùng chung khác
->>>>>>> f8f9378d7d4f9d79ec35b6d177bb9d4e5c7fb367
         services.AddScoped<IAiService, AiServiceStub>();
         services.AddScoped<IVectorDbService, VectorDbServiceStub>();
         services.AddScoped<IEmailService, EmailServiceStub>();
