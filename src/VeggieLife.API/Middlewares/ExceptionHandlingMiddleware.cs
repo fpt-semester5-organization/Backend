@@ -53,8 +53,27 @@ public class ExceptionHandlingMiddleware
             await HandleExceptionAsync(context, StatusCodes.Status400BadRequest, ErrorCodes.ErrValidation, 
                 "Cấu trúc yêu cầu HTTP không hợp lệ hoặc dữ liệu gửi lên sai định dạng.");
         }
+        catch (System.Data.Common.DbException dbEx)
+        {
+            _logger.LogError(dbEx, "Lỗi kết nối CSDL SQL Server: {Message}", dbEx.Message);
+
+            await HandleExceptionAsync(context, StatusCodes.Status500InternalServerError, ErrorCodes.ErrSysDatabaseUnavailable, 
+                "Không kết nối được SQL Server.");
+        }
         catch (Exception ex)
         {
+            if (ex is System.Data.Common.DbException ||
+                ex.InnerException is System.Data.Common.DbException ||
+                ex.GetType().Name.Contains("SqlException") ||
+                ex.InnerException?.GetType().Name.Contains("SqlException") == true)
+            {
+                _logger.LogError(ex, "Lỗi kết nối CSDL SQL Server: {Message}", ex.Message);
+
+                await HandleExceptionAsync(context, StatusCodes.Status500InternalServerError, ErrorCodes.ErrSysDatabaseUnavailable, 
+                    "Không kết nối được SQL Server.");
+                return;
+            }
+
             _logger.LogError(ex, "Ngoại lệ hệ thống chưa được kiểm soát (Unhandled Exception): {Message}", ex.Message);
 
             await HandleExceptionAsync(context, StatusCodes.Status500InternalServerError, ErrorCodes.ErrInternal, 
