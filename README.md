@@ -30,6 +30,39 @@ Thứ tự đọc cho một task: **README này → thẻ FN → Data Dictionary
 
 ## 2. Kiến trúc 3 layer
 
+### Thứ tự ưu tiên giải quyết xung đột tài liệu:
+```
+VeggieLife.API  ──►  VeggieLife.BLL  ──►  VeggieLife.DAL  ──►  SQL Server / Redis / AI service / dịch vụ ngoài
+(Presentation)       (Business Logic)      (Data Access)
+```
+
+| Cần tra cứu | Tài liệu chính thức | Nội dung cốt lõi |
+|---|---|---|
+| **Quyết định chốt** | **Decision Log** (`D1` – `D115`) | **Luôn thắng mọi tài liệu khác nếu có xung đột**. |
+| **Quy tắc nghiệp vụ** | **01. Business Rules.docx** | 90 quy tắc nghiệp vụ (`BR-xxx`) theo ma trận Karl Wiegers. |
+| **Cơ sở dữ liệu** | **06. Logical Data Model Specification.docx** | 38 thực thể dữ liệu logic chuẩn 3NF (v3.1), kiểu dữ liệu, PK, FK, CHECK. |
+| **Từ điển dữ liệu & Hằng số** | **9. Data Dictionary and Constants.docx** | Từ điển cột, Enums, hằng số (`MEDICAL_DISCLAIMER`, guest quota), Redis keys. |
+| **Hợp đồng API & Mã lỗi** | **07. API Specification.docx** & **08. OpenAPI Specification.yaml** | 113 API endpoints, chuẩn Envelope Response D52, bảng mã lỗi `ERR_...`. |
+| **Kiến trúc & Tích hợp** | **05. Architecture and Deployment.docx** | Phân định tác vụ Gemini trực tiếp vs AI Service, Qdrant RAG, hạ tầng. |
+| **Quy chuẩn Git & Team** | **Nguyên tắc làm việc nhóm.docx** | Quy chuẩn commit, phân nhánh GitFlow, bảo mật API keys & secrets. |
+
+*❌ Tuyệt đối không tự ý bịa đặt tên mới cho bảng, cột, endpoint, hay DTO ngoài tài liệu. Nếu thiếu thì hỏi Leader.*
+
+**Ranh giới AI (D118, D119):** Backend **không** giữ khóa Gemini và **không** truy cập Qdrant. Mọi nghiệp vụ AI đi qua `IAiServiceClient`:
+- **ai-service** trên VPS cùng Qdrant: chat RAG, thực đơn tuần, kiểm duyệt nội dung, nhận diện ảnh tủ lạnh, kho tri thức.
+- **stt-service** trên Cloud Run: video → công thức.
+
+Backend chỉ làm phần nghiệp vụ quanh lời gọi AI:
+- kiểm hạn mức;
+- đọc hồ sơ/dị ứng/công thức đã lọc rồi **gửi kèm trong yêu cầu**;
+- lưu kết quả cùng `usage`/`audit` mà AI service trả về (`AIQuotaLogs`, `AuditLogs`).
+
+**Middleware (đúng thứ tự):** `ExceptionHandling` → `CorrelationId` → `Serilog request logging` → `GeoRestriction` → `RateLimit (Guest 10 req/phút/IP)` → `Authentication (JWT)` → `Authorization (policy)` → `GuestQuota filter` → Controller.
+
+---
+
+## 2. Kiến trúc 3 layer
+
 ```
 VeggieLife.API  ──►  VeggieLife.BLL  ──►  VeggieLife.DAL  ──►  SQL Server / Redis / AI service / dịch vụ ngoài
 (Presentation)       (Business Logic)      (Data Access)
@@ -125,9 +158,9 @@ Module theo mã FN; hạn mức và hằng số tra ở `docs/10. Data Dictionar
 
 **VIP (D104):** `Users.Role ∈ {MEMBER, VIP, ADMIN}`. IPN thành công thì đặt VIP; `VipExpiryJob` hạ về MEMBER sau 23:59:59 ngày hết hạn. JWT mang `role` (GUEST/MEMBER/VIP/ADMIN) và claim `isVip`. Không có bảng `VipSubscriptions`.
 
----
+Module theo mã FN; hạn mức và hằng số tra ở `docs/10. Data Dictionary and Constants.docx` mục 3.
 
-## 5. Database-first: quy trình bắt buộc
+## 5. CHUẨN ENVELOPE RESPONSE (QUYẾT ĐỊNH D52)
 
 **38 bảng:** Users, DietarySchools, HealthProfiles, UserWeightHistory, SubscriptionPlans, PaymentTransactions, Allergens, UserAllergies, AIQuotaLogs, Posts, Comments, ViolationReports, Videos, VideoTranscripts, Recipes, FoodCategories, Ingredients, RecipeIngredients, MealPlans, MealSlots, ShoppingLists, ShoppingListItems, Products, ENumberDictionary, Product_ENumbers, ProductAllergens, UserScanHistory, FridgeSessions, FridgeInventory, VeganVenues, VenueMenuItems, VenueCategories, ChatSessions, ChatMessages, Surveys, AuditLogs, Votes, IngredientAllergens.
 
@@ -149,7 +182,7 @@ Code tùy biến (enum ↔ chuỗi, query filter xóa mềm…) chỉ viết tro
 
 ---
 
-## 6. Quy ước code
+## 6. PHÂN ĐỊNH TÁC VỤ AI & DỊCH VỤ NGOÀI
 
 | Thứ | Quy ước |
 |---|---|
@@ -170,7 +203,25 @@ Code tùy biến (enum ↔ chuỗi, query filter xóa mềm…) chỉ viết tro
 | Khóa Redis | Đúng tên trong thẻ FN, hằng số ở `DAL/Cache/RedisKeys.cs`; đếm hạn mức bằng Lua/`INCR` nguyên tử |
 | Dapper | Chỉ dùng cho truy vấn thống kê Admin |
 
-**Muốn thêm… thì đặt ở đâu?**
+```
+                      ┌──────────────────────────────────────────────┐
+                      │            VeggieLife Backend (.NET 8)       │
+                      └───────┬──────────────────────┬───────────────┘
+                              │                      │
+                 Trực tiếp    │                      │ Bất đồng bộ
+                 (HTTP/gRPC)  ▼                      ▼ (REST API)
+          ┌───────────────────────────┐      ┌─────────────────────────────┐
+          │  Google Gemini 2.5 Flash  │      │  veggielife-ai-service      │
+          │  & Qdrant Vector DB       │      │  (Python FastAPI)           │
+          ├───────────────────────────┤      ├─────────────────────────────┤
+          │ • RAG Chatbot Dinh dưỡng  │      │ • Video STT (faster-whisper)│
+          │ • Qdrant: collection      │      │ • Fridge OCR (Gemini Vision)│
+          │   veggielife_knowledge    │      └─────────────────────────────┘
+          │ • Sinh thực đơn MealPlan  │
+          │ • Tự động duyệt nội dung  │
+          │ • Text Embedding (768-d)  │
+          └───────────────────────────┘
+```
 
 | Muốn thêm | Đặt tại |
 |---|---|
@@ -225,7 +276,10 @@ python scripts/check_contract.py
 
 CI khi mở PR chạy các lệnh trên cùng `gitleaks` và coverage; **bỏ qua** nhóm test `AiServiceIntegration`. Khi merge `develop`, CI chạy thêm nhóm này: ai-service thật qua Testcontainers, gọi Gemini thật bằng khóa trong GitHub Secrets (D119).
 
----
+```bash
+docker compose up -d                 # SQL Server, Redis, API, ai-service, Qdrant (+ stt-service khi cần)
+bash database/scripts/run_all.sh     # 38 bảng + dữ liệu gốc
+```
 
 ## 9. Quy trình làm việc (Jira + GitHub)
 
@@ -241,6 +295,7 @@ CI khi mở PR chạy các lệnh trên cùng `gitleaks` và coverage; **bỏ qu
 
 ## 10. Khởi tạo (Leader chạy 1 lần)
 
+### Lệnh Scaffold Entity EF Core:
 ```bash
 dotnet new sln -n VeggieLife
 dotnet new webapi   -o src/VeggieLife.API --use-controllers -f net8.0
@@ -260,6 +315,18 @@ Package chính:
 - Test: Moq, FluentAssertions, Testcontainers.
 
 Không thêm thư viện lớn ngoài danh sách này khi chưa hỏi Leader.
+
+### 7.4. Khởi tạo Database & Kiểm tra nghiệm thu tự động (1-Click Pipeline):
+Dành cho thành viên nhóm khi clone repository về máy local:
+1. **Khởi tạo trọn gói CSDL & Model Entity (1 Click):**
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File "./database/scripts/rebuild_all.ps1"
+   ```
+2. **Kiểm tra nghiệm thu tính toàn vẹn (38 bảng & 312 cột):**
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File "./database/scripts/generate_schema.ps1" -VerifyDb
+   ```
+> 📖 *Xem hướng dẫn chi tiết toàn bộ các công cụ và script tại: [database/README.md](file:///d:/FALL%2026/SWP391/Backend/database/README.md)*.
 
 ---
 
