@@ -87,6 +87,18 @@ public class AuthService : IAuthService
             existingUser.FullName = request.FullName.Trim();
             existingUser.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, workFactor: 12);
             existingUser.UpdatedAt = DateTime.UtcNow;
+
+            _dbContext.AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = existingUser.UserId,
+                ActorRole = UserRoles.Member,
+                Action = "USER_REGISTERED",
+                TargetTable = "Users",
+                TargetId = existingUser.UserId.ToString(),
+                CreatedAt = DateTime.UtcNow,
+                Note = "Cập nhật lại thông tin đăng ký (chưa kích hoạt) qua Email."
+            });
+
             await _dbContext.SaveChangesAsync(ct);
         }
         else
@@ -104,6 +116,19 @@ public class AuthService : IAuthService
             };
 
             _dbContext.Users.Add(newUser);
+            await _dbContext.SaveChangesAsync(ct);
+
+            // 5. Ghi AuditLogs (Actor_Role = MEMBER, Action = USER_REGISTERED) theo FN-AUTH-04
+            _dbContext.AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = newUser.UserId,
+                ActorRole = UserRoles.Member,
+                Action = "USER_REGISTERED",
+                TargetTable = "Users",
+                TargetId = newUser.UserId.ToString(),
+                CreatedAt = DateTime.UtcNow,
+                Note = "Đăng ký tài khoản mới qua Email và Mật khẩu."
+            });
             await _dbContext.SaveChangesAsync(ct);
         }
 
@@ -240,12 +265,33 @@ public class AuthService : IAuthService
             }
         }
 
+        // 7. Ghi AuditLogs (Actor_Role = MEMBER, Action = USER_ACTIVATED) theo FN-AUTH-05
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            ActorUserId = user.UserId,
+            ActorRole = user.Role ?? UserRoles.Member,
+            Action = "USER_ACTIVATED",
+            TargetTable = "Users",
+            TargetId = user.UserId.ToString(),
+            CreatedAt = DateTime.UtcNow,
+            Note = "Kích hoạt tài khoản thành công qua xác thực OTP email."
+        });
+
         await _dbContext.SaveChangesAsync(ct);
 
-        // 7. Cấp Access Token và Refresh Token
-        var tokenResult = _jwtTokenService.GenerateUserToken(user);
+        // 8. Kiểm tra trạng thái VIP: còn PaymentTransactions SUCCESS có EndsAt > DateTime.UtcNow (D104)
+        var isVip = user.Role == UserRoles.Vip || await _dbContext.PaymentTransactions
+            .AnyAsync(pt => pt.UserId == user.UserId && pt.TransactionStatus == "SUCCESS" && pt.EndsAt > DateTime.UtcNow, ct);
 
-        // Kiểm tra xem người dùng có hồ sơ dinh dưỡng ban đầu chưa
+        // 9. Cấp Access Token 15 phút và Refresh Token 7 ngày
+        var tokenResult = _jwtTokenService.GenerateUserToken(user, isVip);
+
+        // 10. Lưu refresh:{tokenHash} vào Redis với TTL 7 ngày (BR-AUTH-004)
+        var refreshTokenHash = ComputeSha256(tokenResult.RefreshToken);
+        var refreshKey = $"refresh:{refreshTokenHash}";
+        await _redisService.SetAsync(refreshKey, user.UserId.ToString(), TimeSpan.FromDays(7), ct);
+
+        // 11. Kiểm tra xem người dùng có hồ sơ dinh dưỡng ban đầu chưa (BR-USR-01)
         var isProfileCompleted = await _dbContext.HealthProfiles
             .AnyAsync(hp => hp.UserId == user.UserId, ct);
 
@@ -261,10 +307,10 @@ public class AuthService : IAuthService
             {
                 UserId = user.UserId,
                 Email = user.Email,
-                FullName = user.FullName,
-                Role = user.Role,
-                IsVip = user.Role == UserRoles.Vip,
-                AccountStatus = user.AccountStatus,
+                FullName = user.FullName ?? string.Empty,
+                Role = user.Role ?? UserRoles.Member,
+                IsVip = isVip,
+                AccountStatus = user.AccountStatus ?? AccountStatuses.Active,
                 IsProfileCompleted = isProfileCompleted
             },
             RedirectUrl = isProfileCompleted ? "/dashboard" : "/onboarding/health-profile"
@@ -275,7 +321,7 @@ public class AuthService : IAuthService
     {
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
 
-        // 1. Kiểm tra khóa 15 phút (otp_lock:{email})
+        // 1. Kiểm tra khóa 15 phút (otp_lock:{email}) theo BR-USR-AUTH-01
         var lockKey = $"otp_lock:{normalizedEmail}";
         if (await _redisService.ExistsAsync(lockKey, ct))
         {
@@ -284,40 +330,55 @@ public class AuthService : IAuthService
                 "Chức năng gửi lại mã OTP đang bị tạm khóa trong 15 phút do nhập sai quá nhiều lần. Vui lòng thử lại sau.");
         }
 
+        // Chuẩn hóa Purpose (mặc định EMAIL_VERIFY nếu để trống)
+        var purpose = string.IsNullOrWhiteSpace(request.Purpose)
+            ? OtpPurposes.EmailVerify
+            : request.Purpose.Trim().ToUpperInvariant();
+
         // 2. Tìm người dùng trong CSDL:
-        // Theo FN-AUTH-06: EMAIL_VERIFY yêu cầu tài khoản PENDING_ACTIVATION;
-        // Nếu không thỏa, bỏ qua xử lý gửi mã nhưng VẪN TRẢ THÀNH CÔNG để không làm lộ email đã đăng ký hay chưa.
+        // Theo FN-AUTH-06: EMAIL_VERIFY yêu cầu tài khoản PENDING_ACTIVATION; PASSWORD_RESET yêu cầu ACTIVE.
+        // Nếu không thỏa: bỏ qua xử lý gửi mã nhưng VẪN TRẢ THÀNH CÔNG để không làm lộ email đã đăng ký hay chưa.
         var user = await _dbContext.Users
             .FirstOrDefaultAsync(u => u.Email == normalizedEmail, ct);
 
-        if (user == null || user.AccountStatus != AccountStatuses.PendingActivation)
+        bool isEligible = false;
+        if (purpose == OtpPurposes.EmailVerify)
+        {
+            isEligible = user != null && user.AccountStatus == AccountStatuses.PendingActivation;
+        }
+        else if (purpose == OtpPurposes.PasswordReset)
+        {
+            isEligible = user != null && user.AccountStatus == AccountStatuses.Active;
+        }
+
+        if (!isEligible)
         {
             _logger.LogInformation(
-                "Yêu cầu gửi lại OTP cho {Email} bị bỏ qua do người dùng không tồn tại hoặc không ở trạng thái PENDING_ACTIVATION.", 
-                normalizedEmail);
+                "Yêu cầu gửi lại OTP cho {Email} với mục đích {Purpose} bị bỏ qua do người dùng không tồn tại hoặc trạng thái tài khoản không thỏa điều kiện.", 
+                normalizedEmail, purpose);
             return;
         }
 
-        // 3. Sinh OTP mới 6 số
+        // 3. Sinh OTP mới 6 số bằng CSPRNG
         var otpCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         var otpHash = ComputeSha256(otpCode);
 
-        // 4. Ghi đè OTP cũ trên Redis với thời hạn 5 phút (TTL 300s)
-        var otpKey = $"otp:EMAIL_VERIFY:{normalizedEmail}";
+        // 4. Ghi đè OTP cũ trên Redis với thời hạn 5 phút (TTL 300s): otp:{purpose}:{email} (SET, TTL 5m)
+        var otpKey = $"otp:{purpose}:{normalizedEmail}";
         var cacheItem = new OtpCacheItem
         {
             OtpHash = otpHash,
             FailedAttempts = 0,
             CreatedAt = DateTime.UtcNow,
-            Purpose = OtpPurposes.EmailVerify
+            Purpose = purpose
         };
 
         await _redisService.SetAsync(otpKey, cacheItem, TimeSpan.FromSeconds(OtpExpirySeconds), ct);
 
-        // 5. Gửi email
-        await _emailService.SendOtpEmailAsync(normalizedEmail, otpCode, OtpPurposes.EmailVerify, ct);
+        // 5. Gửi email bất đồng bộ
+        await _emailService.SendOtpEmailAsync(normalizedEmail, otpCode, purpose, ct);
 
-        _logger.LogInformation("Đã gửi lại mã OTP thành công cho {Email}.", normalizedEmail);
+        _logger.LogInformation("Đã gửi lại mã OTP thành công cho {Email} với mục đích {Purpose}.", normalizedEmail, purpose);
     }
 
     private static string ComputeSha256(string raw)

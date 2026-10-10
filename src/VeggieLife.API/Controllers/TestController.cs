@@ -182,6 +182,36 @@ public class TestController : BaseApiController
     }
 
     /// <summary>
+    /// Thao tác ghi cộng đồng (Thích, Bình luận, Đăng bài): Chặn Khách vãng lai và trả thông báo mời đăng ký (FN-AUTH-03).
+    /// </summary>
+    [HttpPost("auth/community-action")]
+    [VeggieLife.API.Authorization.RequireMember(MemberFeatureType.Community)]
+    public IActionResult TestCommunityAction()
+    {
+        return OkResponse(new
+        {
+            userId = CurrentUserId,
+            action = "Like/Comment/Post",
+            status = "Executed"
+        }, "Thực hiện thao tác cộng đồng thành công.");
+    }
+
+    /// <summary>
+    /// Thao tác cá nhân hóa (BMI/TDEE, Hồ sơ, Thực đơn cá nhân): Chặn Khách vãng lai và trả thông báo mời đăng ký (FN-AUTH-03).
+    /// </summary>
+    [HttpGet("auth/personalization-action")]
+    [VeggieLife.API.Authorization.RequireMember(MemberFeatureType.Personalization)]
+    public IActionResult TestPersonalizationAction()
+    {
+        return OkResponse(new
+        {
+            userId = CurrentUserId,
+            feature = "Personalization/Profile/MealPlan",
+            status = "Accessed"
+        }, "Truy cập tính năng cá nhân hóa thành công.");
+    }
+
+    /// <summary>
     /// Endpoint yêu cầu quyền VIP trở lên (VIP, ADMIN).
     /// </summary>
     [HttpGet("auth/vip-only")]

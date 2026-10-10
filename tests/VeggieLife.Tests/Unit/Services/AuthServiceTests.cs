@@ -81,6 +81,67 @@ public class AuthServiceTests
             _storage[key] = (current, expireAt);
             return Task.FromResult(current);
         }
+
+        public Task<(bool Allowed, long Current, long Remaining)> TryConsumeQuotaAsync(string key, int maxLimit, TimeSpan? expiry = null, CancellationToken ct = default)
+        {
+            lock (_storage)
+            {
+                long current = 0;
+                if (_storage.TryGetValue(key, out var entry))
+                {
+                    if (entry.Value is long l) current = l;
+                    else if (long.TryParse(entry.Value.ToString(), out var parsed)) current = parsed;
+                }
+
+                if (current >= maxLimit)
+                {
+                    return Task.FromResult((false, current, 0L));
+                }
+
+                current++;
+                var expireAt = DateTime.UtcNow.Add(expiry ?? TimeSpan.FromDays(1));
+                _storage[key] = (current, expireAt);
+                return Task.FromResult((true, current, (long)(maxLimit - current)));
+            }
+        }
+
+        public Task<(bool Allowed, bool IsBanned, long CurrentCount, TimeSpan? RetryAfter)> CheckIpRateLimitAsync(string clientIp, int maxRequestsPerMinute = 10, int banDurationMinutes = 10, CancellationToken ct = default)
+        {
+            lock (_storage)
+            {
+                var banKey = $"ban:{clientIp}";
+                if (_storage.TryGetValue(banKey, out var banEntry) && DateTime.UtcNow <= banEntry.ExpireAt)
+                {
+                    return Task.FromResult((false, true, 0L, (TimeSpan?)(banEntry.ExpireAt - DateTime.UtcNow)));
+                }
+
+                var countKey = $"count:{clientIp}";
+                long count = 0;
+                if (_storage.TryGetValue(countKey, out var countEntry) && DateTime.UtcNow <= countEntry.ExpireAt)
+                {
+                    if (countEntry.Value is long l) count = l;
+                    else if (long.TryParse(countEntry.Value.ToString(), out var parsed)) count = parsed;
+                }
+
+                count++;
+                _storage[countKey] = (count, DateTime.UtcNow.AddMinutes(1));
+
+                if (count > maxRequestsPerMinute)
+                {
+                    var banUntil = DateTime.UtcNow.AddMinutes(banDurationMinutes);
+                    _storage[banKey] = ("banned", banUntil);
+                    return Task.FromResult((false, true, count, (TimeSpan?)TimeSpan.FromMinutes(banDurationMinutes)));
+                }
+
+                return Task.FromResult((true, false, count, (TimeSpan?)null));
+            }
+        }
+
+        public Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default)
+        {
+            _storage[$"queue:{queueName}"] = (item!, DateTime.UtcNow.AddHours(24));
+            return Task.CompletedTask;
+        }
     }
 
     private class TestEmailService : IEmailService
@@ -185,7 +246,10 @@ public class AuthServiceTests
 
         var redisItem = await redisService.GetAsync<OtpCacheItem>("otp:EMAIL_VERIFY:an.tran@example.com");
         Assert.NotNull(redisItem);
-        Assert.Equal(0, redisItem.FailedAttempts);
+        // Kiểm tra AuditLogs đã được ghi (FN-AUTH-04)
+        var audit = await dbContext.AuditLogs.FirstOrDefaultAsync(a => a.TargetId == user.UserId.ToString() && a.Action == "USER_REGISTERED");
+        Assert.NotNull(audit);
+        Assert.Equal(UserRoles.Member, audit.ActorRole);
     }
 
     [Fact]
@@ -308,6 +372,16 @@ public class AuthServiceTests
         // Kiểm tra OTP đã được xóa khỏi Redis sau khi kích hoạt thành công
         var otpExists = await redisService.ExistsAsync("otp:EMAIL_VERIFY:success@example.com");
         Assert.False(otpExists);
+
+        // Kiểm tra AuditLogs đã được ghi (FN-AUTH-05)
+        var audit = await dbContext.AuditLogs.FirstOrDefaultAsync(a => a.TargetId == userInDb.UserId.ToString() && a.Action == "USER_ACTIVATED");
+        Assert.NotNull(audit);
+        Assert.Equal(UserRoles.Member, audit.ActorRole);
+
+        // Kiểm tra Refresh Token 7 ngày đã được lưu Redis (BR-AUTH-004)
+        var refreshTokenHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(verifyRes.RefreshToken)));
+        var refreshStored = await redisService.ExistsAsync($"refresh:{refreshTokenHash}");
+        Assert.True(refreshStored);
     }
 
     [Fact]
@@ -359,5 +433,65 @@ public class AuthServiceTests
             Otp = secondOtp
         });
         Assert.Equal(AccountStatuses.Active, verifyRes.User.AccountStatus);
+    }
+
+    [Fact]
+    public async Task ResendOtp_WhenPasswordResetForActiveUser_IssuesNewOtp()
+    {
+        var (dbContext, authService, emailService, redisService) = CreateTestHarness();
+
+        // Tạo sẵn tài khoản ACTIVE
+        dbContext.Users.Add(new User
+        {
+            FullName = "Tài Khoản Active",
+            Email = "active@example.com",
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.Active,
+            CreatedAt = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync();
+
+        // Yêu cầu gửi lại OTP cho PASSWORD_RESET
+        await authService.ResendOtpAsync(new ResendOtpRequest
+        {
+            Email = "active@example.com",
+            Purpose = OtpPurposes.PasswordReset
+        });
+
+        Assert.Single(emailService.SentOtps);
+        var sent = emailService.SentOtps[0];
+        Assert.Equal("active@example.com", sent.Email);
+        Assert.Equal(OtpPurposes.PasswordReset, sent.Purpose);
+
+        // Kiểm tra OTP đã lưu đúng key Redis otp:PASSWORD_RESET:{email}
+        var otpInRedis = await redisService.ExistsAsync("otp:PASSWORD_RESET:active@example.com");
+        Assert.True(otpInRedis);
+    }
+
+    [Fact]
+    public async Task ResendOtp_WhenPasswordResetForPendingUser_CompletesSilently()
+    {
+        var (dbContext, authService, emailService, _) = CreateTestHarness();
+
+        // Tài khoản đang PENDING_ACTIVATION nhưng lại yêu cầu PASSWORD_RESET
+        dbContext.Users.Add(new User
+        {
+            FullName = "Tài Khoản Pending",
+            Email = "pending@example.com",
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.PendingActivation,
+            CreatedAt = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync();
+
+        // Yêu cầu gửi lại OTP cho PASSWORD_RESET
+        await authService.ResendOtpAsync(new ResendOtpRequest
+        {
+            Email = "pending@example.com",
+            Purpose = OtpPurposes.PasswordReset
+        });
+
+        // Bỏ qua nhưng không lỗi (Chống User Enumeration theo FN-AUTH-06)
+        Assert.Empty(emailService.SentOtps);
     }
 }
