@@ -93,8 +93,14 @@ public static class ServiceExtensions
                                       string.Equals(c.Value, UserRoles.Guest, StringComparison.OrdinalIgnoreCase)) == true;
 
                     var path = context.HttpContext?.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
-                    var isCommunity = path.Contains("/community") || path.Contains("/posts") ||
-                                      path.Contains("/comments") || path.Contains("/likes");
+                    var isCommunity = path.Contains("/community") || 
+                                      path.Contains("/videos") || 
+                                      path.Contains("/posts") || 
+                                      path.Contains("/comments") || 
+                                      path.Contains("/likes") || 
+                                      path.Contains("/votes") || 
+                                      path.Contains("/violations") ||
+                                      (path.Contains("/recipes") && context.HttpContext?.Request.Method != "GET");
 
                     var errorCode = isGuest
                         ? (isCommunity ? ErrorCodes.ErrGuestCommunityActionDenied : ErrorCodes.ErrGuestPersonalizationRestricted)
@@ -249,6 +255,8 @@ public static class ServiceExtensions
         // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
         services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();
 
+        // Dịch vụ Video & Phương tiện nấu ăn (FN-POST-08)
+        services.AddScoped<VeggieLife.BLL.Services.Videos.IVideoService, VeggieLife.BLL.Services.Videos.VideoService>();
         // Các interface dịch vụ dùng chung khác
         services.AddScoped<IAiService, AiServiceStub>();
         services.AddScoped<IVectorDbService, VectorDbServiceStub>();

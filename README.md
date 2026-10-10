@@ -328,6 +328,18 @@ Package chính:
 
 Không thêm thư viện lớn ngoài danh sách này khi chưa hỏi Leader.
 
+### 7.4. Khởi tạo Database & Kiểm tra nghiệm thu tự động (1-Click Pipeline):
+Dành cho thành viên nhóm khi clone repository về máy local:
+1. **Khởi tạo trọn gói CSDL & Model Entity (1 Click):**
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File "./database/scripts/rebuild_all.ps1"
+   ```
+2. **Kiểm tra nghiệm thu tính toàn vẹn (38 bảng & 312 cột):**
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File "./database/scripts/generate_schema.ps1" -VerifyDb
+   ```
+> 📖 *Xem hướng dẫn chi tiết toàn bộ các công cụ và script tại: [database/README.md](file:///d:/FALL%2026/SWP391/Backend/database/README.md)*.
+
 ---
 
 ## 11. Ngoài phạm vi MVP: không code

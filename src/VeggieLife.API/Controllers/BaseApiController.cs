@@ -37,6 +37,14 @@ public abstract class BaseApiController : ControllerBase
     }
 
     /// <summary>
+    /// Trả về phản hồi đã tiếp nhận xử lý: { statusCode: 202, message, data }.
+    /// </summary>
+    protected IActionResult AcceptedResponse<T>(T data, string message = "Đã nhận video, đang xử lý.")
+    {
+        return StatusCode(StatusCodes.Status202Accepted, new ApiResponse<T>(StatusCodes.Status202Accepted, message, data));
+    }
+
+    /// <summary>
     /// Trả về kết quả phân trang chuẩn PagedResult.
     /// </summary>
     protected IActionResult PagedResponse<T>(PagedResult<T> pagedResult, string message = "Lấy danh sách thành công.")

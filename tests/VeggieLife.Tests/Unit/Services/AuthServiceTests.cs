@@ -139,6 +139,7 @@ public class AuthServiceTests
 
         public Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default)
         {
+            _storage[$"queue:{queueName}"] = (item!, DateTime.UtcNow.AddHours(24));
             return Task.CompletedTask;
         }
     }
