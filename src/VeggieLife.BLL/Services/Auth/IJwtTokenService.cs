@@ -22,7 +22,7 @@ public interface IJwtTokenService
     /// <summary>
     /// Sinh Access Token và Refresh Token cho người dùng đã đăng nhập (Member, VIP, Admin).
     /// </summary>
-    TokenResult GenerateUserToken(User user);
+    TokenResult GenerateUserToken(User user, bool isVip = false);
 
     /// <summary>
     /// Sinh Anonymous JWT cho khách vãng lai mang claim Role=GUEST và Guest_UUID.

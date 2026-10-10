@@ -1,14 +1,17 @@
+using System;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Hosting;
+using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.DTOs.Auth;
 using VeggieLife.BLL.Services.Auth;
 using VeggieLife.BLL.Services.Email;
-
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using VeggieLife.BLL.Services.Guest;
 
 namespace VeggieLife.API.Controllers;
@@ -86,7 +89,105 @@ public class AuthController : BaseApiController
     public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpRequest request, CancellationToken ct)
     {
         var result = await _authService.VerifyOtpAsync(request, ct);
+        SetRefreshTokenCookie(result.RefreshToken);
         return OkResponse(result, "Kích hoạt tài khoản thành công.");
+    }
+
+    /// <summary>
+    /// FN-AUTH-08: Đăng nhập bằng Email và Mật khẩu.
+    /// Khóa đăng nhập 15 phút sau 5 lần sai liên tiếp, cấp cặp Token đăng nhập (Access Token 15 phút, Refresh Token 7 ngày).
+    /// </summary>
+    /// <param name="request">Thông tin đăng nhập gồm email, password, restoreAccount, guestUuid.</param>
+    /// <param name="ct">Cancellation Token.</param>
+    /// <returns>HTTP 200 OK kèm Access Token và thông tin tài khoản.</returns>
+    [HttpPost("login")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken ct)
+    {
+        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = Request.Headers.UserAgent.ToString();
+
+        // Nhận diện GuestUuid từ request hoặc cookie nếu có để hợp nhất ngữ cảnh (BR-GUEST-AUTH-01)
+        if (string.IsNullOrEmpty(request.GuestUuid))
+        {
+            if (Request.Cookies.TryGetValue("guest_uuid", out var cookieGuestUuid))
+            {
+                request.GuestUuid = cookieGuestUuid;
+            }
+            else if (Request.Headers.TryGetValue("X-Guest-UUID", out var headerGuestUuid))
+            {
+                request.GuestUuid = headerGuestUuid.ToString().Trim();
+            }
+        }
+
+        var result = await _authService.LoginAsync(request, clientIp, userAgent, ct);
+
+        // Thiết lập Cookie HttpOnly cho Refresh Token (BR-AUTH-004)
+        SetRefreshTokenCookie(result.RefreshToken);
+
+        return OkResponse(result, "Đăng nhập thành công.");
+    }
+
+    /// <summary>
+    /// FN-AUTH-09: Làm mới Access Token và xoay vòng Refresh Token (Token Rotation).
+    /// Phát hiện Refresh Token đã thu hồi bị dùng lại thì hủy toàn bộ phiên của tài khoản.
+    /// </summary>
+    /// <param name="ct">Cancellation Token.</param>
+    /// <returns>HTTP 200 OK kèm Access Token mới và hiệu lực 900 giây.</returns>
+    [HttpPost("refresh-token")]
+    [AllowAnonymous]
+    public async Task<IActionResult> RefreshToken(CancellationToken ct)
+    {
+        Request.Cookies.TryGetValue("refresh_token", out var refreshToken);
+        if (string.IsNullOrEmpty(refreshToken) && Request.Headers.TryGetValue("X-Refresh-Token", out var headerToken))
+        {
+            refreshToken = headerToken.ToString().Trim();
+        }
+
+        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = Request.Headers.UserAgent.ToString();
+
+        var result = await _authService.RefreshTokenAsync(refreshToken, clientIp, userAgent, ct);
+
+        // Cập nhật lại Cookie HttpOnly với Refresh Token mới xoay vòng
+        SetRefreshTokenCookie(result.RefreshToken);
+
+        return OkResponse(result, "Làm mới phiên thành công.");
+    }
+
+    /// <summary>
+    /// FN-AUTH-10: Đăng xuất khỏi hệ thống.
+    /// Thu hồi Refresh Token hiện tại và đưa jti của Access Token vào danh sách đen Redis đến khi hết hạn.
+    /// </summary>
+    /// <param name="ct">Cancellation Token.</param>
+    /// <returns>HTTP 200 OK.</returns>
+    [HttpPost("logout")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    public async Task<IActionResult> Logout(CancellationToken ct)
+    {
+        Request.Cookies.TryGetValue("refresh_token", out var refreshToken);
+        if (string.IsNullOrEmpty(refreshToken) && Request.Headers.TryGetValue("X-Refresh-Token", out var headerToken))
+        {
+            refreshToken = headerToken.ToString().Trim();
+        }
+
+        var jti = User.FindFirstValue(JwtRegisteredClaimNames.Jti)
+                  ?? User.FindFirstValue("jti")
+                  ?? User.FindFirstValue("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/jwtid");
+
+        DateTime? expiryUtc = null;
+        var expClaim = User.FindFirstValue("exp");
+        if (long.TryParse(expClaim, out var expSeconds))
+        {
+            expiryUtc = DateTimeOffset.FromUnixTimeSeconds(expSeconds).UtcDateTime;
+        }
+
+        await _authService.LogoutAsync(CurrentUserId ?? 0, CurrentUserRole, jti, expiryUtc, refreshToken, ct);
+
+        // Xóa Cookie refresh_token trên client
+        DeleteRefreshTokenCookie();
+
+        return OkResponse<object?>(null, "Đăng xuất thành công.");
     }
 
     /// <summary>
@@ -122,5 +223,30 @@ public class AuthController : BaseApiController
         }
 
         return NotFound(new { message = "Chưa có mã OTP nào được gửi tới email này trong phiên chạy hiện tại." });
+    }
+
+    private void SetRefreshTokenCookie(string refreshToken)
+    {
+        if (string.IsNullOrEmpty(refreshToken)) return;
+
+        Response.Cookies.Append("refresh_token", refreshToken, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = Request.IsHttps,
+            SameSite = SameSiteMode.Strict,
+            Path = "/",
+            Expires = DateTimeOffset.UtcNow.AddDays(7)
+        });
+    }
+
+    private void DeleteRefreshTokenCookie()
+    {
+        Response.Cookies.Delete("refresh_token", new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = Request.IsHttps,
+            SameSite = SameSiteMode.Strict,
+            Path = "/"
+        });
     }
 }

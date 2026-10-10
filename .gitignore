@@ -39,6 +39,7 @@ appsettings.Local.json
 !appsettings.Example.json
 !.env.example
 
-## OS files
+## OS and Office temp files
 .DS_Store
 Thumbs.db
+~$*

@@ -23,35 +23,45 @@ public class JwtTokenService : IJwtTokenService
         _configuration = configuration;
     }
 
-    public TokenResult GenerateUserToken(User user)
+    public TokenResult GenerateUserToken(User user, bool isVip = false)
     {
+        var jti = Guid.NewGuid().ToString("N");
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
+            new(JwtRegisteredClaimNames.Sub, user.UserId.ToString()),
             new(ClaimTypes.Email, user.Email),
             new(ClaimTypes.Name, user.FullName),
             new(ClaimTypes.Role, user.Role),
-            new("AccountStatus", user.AccountStatus)
+            new("role", user.Role),
+            new("AccountStatus", user.AccountStatus),
+            new(JwtRegisteredClaimNames.Jti, jti),
+            new("isVip", isVip ? "true" : "false")
         };
 
-        return BuildToken(claims);
+        return BuildToken(claims, TimeSpan.FromMinutes(15));
     }
 
     public TokenResult GenerateGuestToken(string guestUuid)
     {
+        var jti = Guid.NewGuid().ToString("N");
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, guestUuid),
+            new(JwtRegisteredClaimNames.Sub, guestUuid),
             new(ClaimTypes.Role, UserRoles.Guest),
-            new("Guest_UUID", guestUuid)
+            new("role", UserRoles.Guest),
+            new("Guest_UUID", guestUuid),
+            new(JwtRegisteredClaimNames.Jti, jti)
         };
 
-        return BuildToken(claims);
+        return BuildToken(claims, TimeSpan.FromHours(24));
     }
 
     public ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)
     {
         var secretKey = _configuration["Jwt:SecretKey"]
+            ?? _configuration["JwtSettings:SecretKey"]
             ?? throw new InvalidOperationException("Cấu hình 'Jwt:SecretKey' chưa được thiết lập trong appsettings.json.");
         var tokenValidationParameters = new TokenValidationParameters
         {
@@ -80,18 +90,29 @@ public class JwtTokenService : IJwtTokenService
         }
     }
 
-    private TokenResult BuildToken(IEnumerable<Claim> claims)
+    private TokenResult BuildToken(IEnumerable<Claim> claims, TimeSpan? customExpiry = null)
     {
         var secretKey = _configuration["Jwt:SecretKey"]
+            ?? _configuration["JwtSettings:SecretKey"]
             ?? throw new InvalidOperationException("Cấu hình 'Jwt:SecretKey' chưa được thiết lập trong appsettings.json.");
-        var issuer = _configuration["Jwt:Issuer"] ?? "VeggieLife.API";
-        var audience = _configuration["Jwt:Audience"] ?? "VeggieLife.Client";
-        var expiryMinutesStr = _configuration["Jwt:AccessTokenExpiryMinutes"];
-        var expiryMinutes = int.TryParse(expiryMinutesStr, out var mins) ? mins : 120;
+        var issuer = _configuration["Jwt:Issuer"] ?? _configuration["JwtSettings:Issuer"] ?? "VeggieLife.API";
+        var audience = _configuration["Jwt:Audience"] ?? _configuration["JwtSettings:Audience"] ?? "VeggieLife.Client";
+
+        TimeSpan expiry;
+        if (customExpiry.HasValue)
+        {
+            expiry = customExpiry.Value;
+        }
+        else
+        {
+            var expiryMinutesStr = _configuration["Jwt:AccessTokenExpiryMinutes"];
+            var expiryMinutes = int.TryParse(expiryMinutesStr, out var mins) ? mins : 15;
+            expiry = TimeSpan.FromMinutes(expiryMinutes);
+        }
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-        var expires = DateTime.UtcNow.AddMinutes(expiryMinutes);
+        var expires = DateTime.UtcNow.Add(expiry);
 
         var tokenDescriptor = new JwtSecurityToken(
             issuer: issuer,
@@ -108,7 +129,7 @@ public class JwtTokenService : IJwtTokenService
         {
             AccessToken = accessToken,
             RefreshToken = refreshToken,
-            ExpiresInSeconds = expiryMinutes * 60
+            ExpiresInSeconds = (int)expiry.TotalSeconds
         };
     }
 

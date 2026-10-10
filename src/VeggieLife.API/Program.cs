@@ -1,6 +1,9 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using VeggieLife.API.Extensions;
 using VeggieLife.API.Middlewares;
+using VeggieLife.BLL.Common.Constants;
+using VeggieLife.BLL.Common.Responses;
 using VeggieLife.DAL.Context;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,8 +22,27 @@ builder.Services.AddApplicationServices(builder.Configuration);
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddRoleAuthorization();
 
-// 5. Cấu hình Controllers với JSON Serialization quy chuẩn camelCase
+// 5. Cấu hình Controllers với JSON Serialization quy chuẩn camelCase & chuẩn hóa lỗi Validation
 builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var firstError = context.ModelState
+                .Values
+                .SelectMany(v => v.Errors)
+                .Select(e => e.ErrorMessage)
+                .FirstOrDefault(msg => !string.IsNullOrEmpty(msg))
+                ?? "Dữ liệu đầu vào sai định dạng hoặc thiếu trường bắt buộc.";
+
+            var errorResponse = new ApiErrorResponse(
+                StatusCodes.Status400BadRequest,
+                ErrorCodes.ErrValidation,
+                firstError);
+
+            return new BadRequestObjectResult(errorResponse);
+        };
+    })
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;

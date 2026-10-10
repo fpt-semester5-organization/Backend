@@ -57,6 +57,18 @@ public class ExceptionHandlingMiddleware
         {
             _logger.LogError(ex, "Ngoại lệ hệ thống chưa được kiểm soát (Unhandled Exception): {Message}", ex.Message);
 
+            if (ex is System.Data.Common.DbException ||
+                ex.InnerException is System.Data.Common.DbException ||
+                ex.GetType().Name.Contains("SqlException") ||
+                (ex.InnerException != null && ex.InnerException.GetType().Name.Contains("SqlException")) ||
+                (ex.Message.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) && 
+                 ex.Message.Contains("connection", StringComparison.OrdinalIgnoreCase)))
+            {
+                await HandleExceptionAsync(context, StatusCodes.Status500InternalServerError, ErrorCodes.ErrSysDatabaseUnavailable,
+                    "Không kết nối được SQL Server. Vui lòng thử lại sau.");
+                return;
+            }
+
             await HandleExceptionAsync(context, StatusCodes.Status500InternalServerError, ErrorCodes.ErrInternal, 
                 "Đã xảy ra lỗi nội bộ máy chủ. Vui lòng thử lại sau hoặc liên hệ quản trị viên.");
         }
