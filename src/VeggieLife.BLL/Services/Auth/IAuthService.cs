@@ -23,4 +23,19 @@ public interface IAuthService
     /// Gửi lại mã OTP mới có hiệu lực 5 phút (FN-AUTH-06).
     /// </summary>
     Task ResendOtpAsync(ResendOtpRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Đăng nhập bằng Email và Mật khẩu, khóa đăng nhập 15 phút sau 5 lần sai liên tiếp, cấp cặp token (FN-AUTH-08).
+    /// </summary>
+    Task<LoginResponse> LoginAsync(LoginRequest request, string? clientIp = null, string? userAgent = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Làm mới Access Token và xoay vòng Refresh Token; phát hiện dùng lại token bị thu hồi (FN-AUTH-09).
+    /// </summary>
+    Task<RefreshTokenResponse> RefreshTokenAsync(string? refreshToken, string? clientIp = null, string? userAgent = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Đăng xuất khỏi hệ thống: Thu hồi Refresh Token và đưa jti của Access Token vào danh sách đen Redis (FN-AUTH-10).
+    /// </summary>
+    Task LogoutAsync(long userId, string? userRole, string? jti, System.DateTime? tokenExpiryUtc, string? refreshToken, CancellationToken ct = default);
 }

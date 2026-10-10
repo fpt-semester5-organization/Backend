@@ -47,4 +47,7 @@ public class AppException : Exception
 
     public static AppException BadGateway(string errorCode = ErrorCodes.ErrExtCloudinaryFailed, string message = "Không thể kết nối đến máy chủ dịch vụ bên ngoài (502 Bad Gateway).", object? details = null)
         => new(502, errorCode, message, details);
+
+    public static AppException ServiceUnavailable(string errorCode = ErrorCodes.ErrSysRedisUnavailable, string message = "Dịch vụ tạm thời không khả dụng.", object? details = null)
+        => new(503, errorCode, message, details);
 }

@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -68,6 +69,24 @@ public static class ServiceExtensions
 
             options.Events = new JwtBearerEvents
             {
+                OnTokenValidated = async context =>
+                {
+                    var redis = context.HttpContext.RequestServices.GetService<IRedisService>();
+                    if (redis != null)
+                    {
+                        var jti = context.Principal?.FindFirst(JwtRegisteredClaimNames.Jti)?.Value
+                                  ?? context.Principal?.FindFirst("jti")?.Value
+                                  ?? context.Principal?.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/jwtid")?.Value;
+                        if (!string.IsNullOrEmpty(jti))
+                        {
+                            var isBlacklisted = await redis.ExistsAsync($"blacklist:{jti}", context.HttpContext.RequestAborted);
+                            if (isBlacklisted)
+                            {
+                                context.Fail("Token đã bị thu hồi trong danh sách đen.");
+                            }
+                        }
+                    }
+                },
                 OnChallenge = async context =>
                 {
                     context.HandleResponse();

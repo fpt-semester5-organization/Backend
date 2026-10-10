@@ -9,6 +9,9 @@ public static class AccountStatuses
     public const string Active = "ACTIVE";
     public const string Quarantined = "QUARANTINED";
     public const string Suspended = "SUSPENDED";
+    public const string Banned = "BANNED";
+    public const string SoftDeleted = "SOFT_DELETED";
+    public const string AnonymizedDeleted = "ANONYMIZED_DELETED";
 }
 
 /// <summary>
