@@ -7,20 +7,60 @@ using VeggieLife.BLL.DTOs.Auth;
 using VeggieLife.BLL.Services.Auth;
 using VeggieLife.BLL.Services.Email;
 
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using VeggieLife.BLL.Services.Guest;
+
 namespace VeggieLife.API.Controllers;
 
 /// <summary>
-/// Controller xử lý xác thực tài khoản: Đăng ký, Xác thực OTP và Gửi lại OTP (FN-AUTH-04, FN-AUTH-05, FN-AUTH-06).
+/// Controller xử lý xác thực tài khoản: Khởi tạo phiên khách, Đăng ký, Xác thực OTP và Gửi lại OTP (FN-AUTH-01, FN-AUTH-04, FN-AUTH-05, FN-AUTH-06).
 /// </summary>
 public class AuthController : BaseApiController
 {
     private readonly IAuthService _authService;
+    private readonly IGuestService _guestService;
     private readonly IWebHostEnvironment _environment;
 
-    public AuthController(IAuthService _authService, IWebHostEnvironment environment)
+    public AuthController(
+        IAuthService authService,
+        IGuestService guestService,
+        IWebHostEnvironment environment)
     {
-        this._authService = _authService;
+        _authService = authService;
+        _guestService = guestService;
         _environment = environment;
+    }
+
+    /// <summary>
+    /// FN-AUTH-01: Khởi tạo phiên khách vãng lai (Guest UUID).
+    /// Nhận diện thiết bị bằng Cookie guest_uuid, cấp Anonymous JWT hiệu lực 24 giờ.
+    /// </summary>
+    [HttpPost("anonymous")]
+    [AllowAnonymous]
+    public async Task<IActionResult> CreateAnonymousSession(CancellationToken ct)
+    {
+        Request.Cookies.TryGetValue("guest_uuid", out var cookieGuestUuid);
+        if (string.IsNullOrEmpty(cookieGuestUuid) && Request.Headers.TryGetValue("X-Guest-UUID", out var headerGuestUuid))
+        {
+            cookieGuestUuid = headerGuestUuid.ToString().Trim();
+        }
+
+        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var clientCountry = Request.Headers.TryGetValue("X-Country-Code", out var cVal) ? cVal.ToString() : null;
+
+        var result = await _guestService.CreateAnonymousSessionAsync(cookieGuestUuid, clientIp, clientCountry, ct);
+
+        // Thiết lập Cookie guest_uuid cho Client
+        Response.Cookies.Append("guest_uuid", result.GuestId, new CookieOptions
+        {
+            HttpOnly = false,
+            Secure = Request.IsHttps,
+            SameSite = SameSiteMode.Lax,
+            Expires = DateTimeOffset.UtcNow.AddDays(365)
+        });
+
+        return OkResponse(result, "Khởi tạo phiên khách thành công.");
     }
 
     /// <summary>

@@ -15,6 +15,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
@@ -41,10 +42,6 @@ public class VideosEndpointIntegrationTests : IClassFixture<WebApplicationFactor
     private readonly Mock<ICloudinaryClient> _mockCloudinaryClient = new();
     private readonly Mock<IRedisService> _mockRedisService = new();
     private readonly string _testDbName = "VeggieLifeVideosIntegrationDb_" + Guid.NewGuid();
-
-    private const string JwtSecret = "YOUR_DEV_JWT_SECRET_KEY_MIN_32_CHARACTERS_LONG";
-    private const string JwtIssuer = "VeggieLife";
-    private const string JwtAudience = "VeggieLifeUsers";
 
     public VideosEndpointIntegrationTests(WebApplicationFactory<Program> factory)
     {
@@ -184,8 +181,16 @@ public class VideosEndpointIntegrationTests : IClassFixture<WebApplicationFactor
 
     private string GenerateJwtToken(int userId, string role)
     {
+        using var scope = _factory.Services.CreateScope();
+        var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        var secretKey = config["Jwt:SecretKey"] 
+            ?? config["JwtSettings:SecretKey"] 
+            ?? throw new InvalidOperationException("Cấu hình 'Jwt:SecretKey' chưa được thiết lập.");
+        var issuer = config["Jwt:Issuer"] ?? config["JwtSettings:Issuer"] ?? "VeggieLife.API";
+        var audience = config["Jwt:Audience"] ?? config["JwtSettings:Audience"] ?? "VeggieLife.Client";
+
         var tokenHandler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
-        var key = Encoding.UTF8.GetBytes(JwtSecret);
+        var key = Encoding.UTF8.GetBytes(secretKey);
 
         var tokenDescriptor = new SecurityTokenDescriptor
         {
@@ -196,8 +201,8 @@ public class VideosEndpointIntegrationTests : IClassFixture<WebApplicationFactor
                 new Claim(ClaimTypes.Email, $"user{userId}@veggielife.vn")
             }),
             Expires = DateTime.UtcNow.AddHours(2),
-            Issuer = JwtIssuer,
-            Audience = JwtAudience,
+            Issuer = issuer,
+            Audience = audience,
             SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
         };
 

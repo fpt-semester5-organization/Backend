@@ -29,7 +29,8 @@ public static class ServiceExtensions
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
     /// <summary>
@@ -92,34 +93,24 @@ public static class ServiceExtensions
                                       string.Equals(c.Value, UserRoles.Guest, StringComparison.OrdinalIgnoreCase)) == true;
 
                     var path = context.HttpContext?.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
-                    var isCommunityAction = path.Contains("/videos") || 
-                                           path.Contains("/posts") || 
-                                           path.Contains("/comments") || 
-                                           path.Contains("/votes") || 
-                                           path.Contains("/violations") ||
-                                           (path.Contains("/recipes") && context.HttpContext?.Request.Method != "GET");
+                    var isCommunity = path.Contains("/community") || 
+                                      path.Contains("/videos") || 
+                                      path.Contains("/posts") || 
+                                      path.Contains("/comments") || 
+                                      path.Contains("/likes") || 
+                                      path.Contains("/votes") || 
+                                      path.Contains("/violations") ||
+                                      (path.Contains("/recipes") && context.HttpContext?.Request.Method != "GET");
 
-                    string errorCode;
-                    string errorMessage;
+                    var errorCode = isGuest
+                        ? (isCommunity ? ErrorCodes.ErrGuestCommunityActionDenied : ErrorCodes.ErrGuestPersonalizationRestricted)
+                        : ErrorCodes.ErrAdmForbidden;
 
-                    if (isGuest)
-                    {
-                        if (isCommunityAction)
-                        {
-                            errorCode = ErrorCodes.ErrGuestCommunityActionDenied;
-                            errorMessage = "Khách vãng lai thực hiện thao tác ghi cộng đồng (FN-AUTH-03).";
-                        }
-                        else
-                        {
-                            errorCode = ErrorCodes.ErrGuestPersonalizationRestricted;
-                            errorMessage = "Khách vãng lai gọi tính năng cá nhân hóa (FN-AUTH-03).";
-                        }
-                    }
-                    else
-                    {
-                        errorCode = ErrorCodes.ErrAdmForbidden;
-                        errorMessage = "Bạn không có quyền truy cập vào tài nguyên này.";
-                    }
+                    var errorMessage = isGuest
+                        ? (isCommunity
+                            ? "Khách vãng lai thực hiện thao tác ghi cộng đồng (FN-AUTH-03). Vui lòng đăng ký tài khoản để thích, bình luận và chia sẻ bài viết."
+                            : "Khách vãng lai gọi tính năng cá nhân hóa (FN-AUTH-03). Vui lòng đăng ký tài khoản để sử dụng tính năng cá nhân.")
+                        : "Bạn không có quyền truy cập vào tài nguyên này.";
 
                     var errorResponse = new ApiErrorResponse(
                         StatusCodes.Status403Forbidden,
@@ -225,19 +216,32 @@ public static class ServiceExtensions
             options.InstanceName = "VeggieLife_";
         });
 
+        // Đăng ký IConnectionMultiplexer hỗ trợ Lua Scripting nguyên tử (ngắt kết nối tự phục hồi)
+        services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(sp =>
+        {
+            var options = StackExchange.Redis.ConfigurationOptions.Parse(redisConn);
+            options.AbortOnConnectFail = false;
+            return StackExchange.Redis.ConnectionMultiplexer.Connect(options);
+        });
+
         services.AddSingleton<IRedisService, RedisService>();
 
         return services;
     }
 
     /// <summary>
-    /// Đăng ký các dịch vụ cốt lõi và các interface nghiệp vụ dùng chung (AI, Vector DB, Email, Media, Payment, Auth).
+    /// Đăng ký các dịch vụ cốt lõi và các interface nghiệp vụ dùng chung (AI, Vector DB, Email, Media, Payment, Auth, Guest).
     /// </summary>
     public static IServiceCollection AddApplicationServices(this IServiceCollection services, IConfiguration configuration)
     {
         // Dịch vụ JWT, Auth & Cache
         services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddScoped<IAuthService, AuthService>();
+
+        // Cấu hình & Dịch vụ Khách vãng lai (FN-AUTH-01, FN-AUTH-02, BR-GUEST-SEC-01)
+        services.Configure<VeggieLife.BLL.Common.Settings.GuestSecuritySettings>(
+            configuration.GetSection(VeggieLife.BLL.Common.Settings.GuestSecuritySettings.SectionName));
+        services.AddScoped<VeggieLife.BLL.Services.Guest.IGuestService, VeggieLife.BLL.Services.Guest.GuestService>();
 
         // Cấu hình & Dịch vụ Cloudinary CDN dùng chung
         services.Configure<CloudinarySettings>(configuration.GetSection(CloudinarySettings.SectionName));
@@ -251,12 +255,8 @@ public static class ServiceExtensions
         // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
         services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();
 
-        // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
-        services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();
-
         // Dịch vụ Video & Phương tiện nấu ăn (FN-POST-08)
         services.AddScoped<VeggieLife.BLL.Services.Videos.IVideoService, VeggieLife.BLL.Services.Videos.VideoService>();
-
         // Các interface dịch vụ dùng chung khác
         services.AddScoped<IAiService, AiServiceStub>();
         services.AddScoped<IVectorDbService, VectorDbServiceStub>();

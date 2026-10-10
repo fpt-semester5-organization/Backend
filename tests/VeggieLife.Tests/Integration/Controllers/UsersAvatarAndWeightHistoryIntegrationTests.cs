@@ -43,9 +43,9 @@ public class UsersAvatarAndWeightHistoryIntegrationTests : IClassFixture<WebAppl
     private readonly Mock<IRedisService> _mockRedisService = new();
     private readonly string _testDbName = "VeggieLifeIntegrationDb_" + Guid.NewGuid();
 
-    private const string JwtSecret = "YOUR_DEV_JWT_SECRET_KEY_MIN_32_CHARACTERS_LONG";
-    private const string JwtIssuer = "VeggieLife";
-    private const string JwtAudience = "VeggieLifeUsers";
+    private const string JwtSecret = "VeggieLifeSecretKeyForDevelopmentMustBe32CharsLong!";
+    private const string JwtIssuer = "VeggieLife.API";
+    private const string JwtAudience = "VeggieLife.Client";
 
     public UsersAvatarAndWeightHistoryIntegrationTests(WebApplicationFactory<Program> factory)
     {
