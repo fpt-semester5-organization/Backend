@@ -23,14 +23,16 @@ public class JwtTokenService : IJwtTokenService
         _configuration = configuration;
     }
 
-    public TokenResult GenerateUserToken(User user)
+    public TokenResult GenerateUserToken(User user, bool isVip = false)
     {
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
+            new(JwtRegisteredClaimNames.Sub, user.UserId.ToString()),
             new(ClaimTypes.Email, user.Email),
             new(ClaimTypes.Name, user.FullName),
             new(ClaimTypes.Role, user.Role),
+            new("isVip", isVip.ToString().ToLowerInvariant()),
             new("AccountStatus", user.AccountStatus)
         };
 
@@ -87,7 +89,7 @@ public class JwtTokenService : IJwtTokenService
         var issuer = _configuration["Jwt:Issuer"] ?? "VeggieLife.API";
         var audience = _configuration["Jwt:Audience"] ?? "VeggieLife.Client";
         var expiryMinutesStr = _configuration["Jwt:AccessTokenExpiryMinutes"];
-        var expiryMinutes = int.TryParse(expiryMinutesStr, out var mins) ? mins : 120;
+        var expiryMinutes = int.TryParse(expiryMinutesStr, out var mins) && mins > 0 ? mins : 15;
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);

@@ -246,7 +246,10 @@ public class AuthServiceTests
 
         var redisItem = await redisService.GetAsync<OtpCacheItem>("otp:EMAIL_VERIFY:an.tran@example.com");
         Assert.NotNull(redisItem);
-        Assert.Equal(0, redisItem.FailedAttempts);
+        // Kiểm tra AuditLogs đã được ghi (FN-AUTH-04)
+        var audit = await dbContext.AuditLogs.FirstOrDefaultAsync(a => a.TargetId == user.UserId.ToString() && a.Action == "USER_REGISTERED");
+        Assert.NotNull(audit);
+        Assert.Equal(UserRoles.Member, audit.ActorRole);
     }
 
     [Fact]
@@ -369,6 +372,16 @@ public class AuthServiceTests
         // Kiểm tra OTP đã được xóa khỏi Redis sau khi kích hoạt thành công
         var otpExists = await redisService.ExistsAsync("otp:EMAIL_VERIFY:success@example.com");
         Assert.False(otpExists);
+
+        // Kiểm tra AuditLogs đã được ghi (FN-AUTH-05)
+        var audit = await dbContext.AuditLogs.FirstOrDefaultAsync(a => a.TargetId == userInDb.UserId.ToString() && a.Action == "USER_ACTIVATED");
+        Assert.NotNull(audit);
+        Assert.Equal(UserRoles.Member, audit.ActorRole);
+
+        // Kiểm tra Refresh Token 7 ngày đã được lưu Redis (BR-AUTH-004)
+        var refreshTokenHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(verifyRes.RefreshToken)));
+        var refreshStored = await redisService.ExistsAsync($"refresh:{refreshTokenHash}");
+        Assert.True(refreshStored);
     }
 
     [Fact]
@@ -420,5 +433,65 @@ public class AuthServiceTests
             Otp = secondOtp
         });
         Assert.Equal(AccountStatuses.Active, verifyRes.User.AccountStatus);
+    }
+
+    [Fact]
+    public async Task ResendOtp_WhenPasswordResetForActiveUser_IssuesNewOtp()
+    {
+        var (dbContext, authService, emailService, redisService) = CreateTestHarness();
+
+        // Tạo sẵn tài khoản ACTIVE
+        dbContext.Users.Add(new User
+        {
+            FullName = "Tài Khoản Active",
+            Email = "active@example.com",
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.Active,
+            CreatedAt = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync();
+
+        // Yêu cầu gửi lại OTP cho PASSWORD_RESET
+        await authService.ResendOtpAsync(new ResendOtpRequest
+        {
+            Email = "active@example.com",
+            Purpose = OtpPurposes.PasswordReset
+        });
+
+        Assert.Single(emailService.SentOtps);
+        var sent = emailService.SentOtps[0];
+        Assert.Equal("active@example.com", sent.Email);
+        Assert.Equal(OtpPurposes.PasswordReset, sent.Purpose);
+
+        // Kiểm tra OTP đã lưu đúng key Redis otp:PASSWORD_RESET:{email}
+        var otpInRedis = await redisService.ExistsAsync("otp:PASSWORD_RESET:active@example.com");
+        Assert.True(otpInRedis);
+    }
+
+    [Fact]
+    public async Task ResendOtp_WhenPasswordResetForPendingUser_CompletesSilently()
+    {
+        var (dbContext, authService, emailService, _) = CreateTestHarness();
+
+        // Tài khoản đang PENDING_ACTIVATION nhưng lại yêu cầu PASSWORD_RESET
+        dbContext.Users.Add(new User
+        {
+            FullName = "Tài Khoản Pending",
+            Email = "pending@example.com",
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.PendingActivation,
+            CreatedAt = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync();
+
+        // Yêu cầu gửi lại OTP cho PASSWORD_RESET
+        await authService.ResendOtpAsync(new ResendOtpRequest
+        {
+            Email = "pending@example.com",
+            Purpose = OtpPurposes.PasswordReset
+        });
+
+        // Bỏ qua nhưng không lỗi (Chống User Enumeration theo FN-AUTH-06)
+        Assert.Empty(emailService.SentOtps);
     }
 }

@@ -299,13 +299,13 @@ public static class ServiceExtensions
         // Dịch vụ Hồ sơ cá nhân & Danh mục dùng chung
         services.AddScoped<IProfileService, ProfileService>();
         services.AddScoped<IMasterDataService, MasterDataService>();
-
         // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
         services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();
 
         // Dịch vụ Video & Phương tiện nấu ăn (FN-POST-08)
         services.AddScoped<VeggieLife.BLL.Services.Videos.IVideoService, VeggieLife.BLL.Services.Videos.VideoService>();
-        // Các interface dịch vụ dùng chung khác
+
+        // Các interface dịch vụ dùng chung khác (Bản mẫu rỗng để các thành viên khác hoàn thiện)
         services.AddScoped<IAiService, AiServiceStub>();
         services.AddScoped<IVectorDbService, VectorDbServiceStub>();
         services.AddScoped<IEmailService, EmailServiceStub>();

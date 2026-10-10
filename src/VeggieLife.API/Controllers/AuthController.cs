@@ -85,7 +85,35 @@ public class AuthController : BaseApiController
     [HttpPost("verify-otp")]
     public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpRequest request, CancellationToken ct)
     {
+        // Tự động nhận diện Guest UUID từ Cookie hoặc Header nếu client không truyền trực tiếp trong body
+        if (string.IsNullOrWhiteSpace(request.GuestUuid))
+        {
+            Request.Cookies.TryGetValue("guest_uuid", out var cookieGuestUuid);
+            if (string.IsNullOrEmpty(cookieGuestUuid) && Request.Headers.TryGetValue("X-Guest-UUID", out var headerGuestUuid))
+            {
+                cookieGuestUuid = headerGuestUuid.ToString().Trim();
+            }
+
+            if (!string.IsNullOrEmpty(cookieGuestUuid))
+            {
+                request.GuestUuid = cookieGuestUuid;
+            }
+        }
+
         var result = await _authService.VerifyOtpAsync(request, ct);
+
+        // Thiết lập Refresh Token an toàn qua HttpOnly Cookie (BR-AUTH-004)
+        if (!string.IsNullOrEmpty(result.RefreshToken))
+        {
+            Response.Cookies.Append("refreshToken", result.RefreshToken, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = Request.IsHttps,
+                SameSite = SameSiteMode.Strict,
+                Expires = DateTimeOffset.UtcNow.AddDays(7)
+            });
+        }
+
         return OkResponse(result, "Kích hoạt tài khoản thành công.");
     }
 
