@@ -210,7 +210,7 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
     }
 
     [Fact]
-    public async Task TrialEndpoint_20ConcurrentRequests_ShouldNeverExceedLimitOf5()
+    public async Task TrialEndpoint_20ConcurrentRequests_ShouldNeverExceedLimitOf3()
     {
         // Arrange: Mục tiêu nghiệm thu: Thử 20 yêu cầu cùng lúc không vượt hạn mức
         var client = CreateTestClient();
@@ -243,8 +243,8 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
         await Task.WhenAll(tasks);
 
         // Assert
-        successCount.Should().Be(5, "Hạn mức dùng thử tối đa là đúng 5 lượt");
-        quotaExceededCount.Should().Be(15, "15 yêu cầu cùng lúc còn lại phải bị từ chối 429 Too Many Requests");
+        successCount.Should().Be(3, "Hạn mức dùng thử tối đa là đúng 3 lượt");
+        quotaExceededCount.Should().Be(17, "17 yêu cầu cùng lúc còn lại phải bị từ chối 429 Too Many Requests");
 
         // Tra cứu lại quota
         var quotaReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/guest/quota");
@@ -253,7 +253,7 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
 
         quotaResp.StatusCode.Should().Be(HttpStatusCode.OK);
         var quotaBody = await quotaResp.Content.ReadFromJsonAsync<ApiResponse<GetGuestQuotaResponse>>();
-        quotaBody!.Data!.Ai.Used.Should().Be(5);
+        quotaBody!.Data!.Ai.Used.Should().Be(3);
         quotaBody.Data.Ai.Remaining.Should().Be(0);
     }
 

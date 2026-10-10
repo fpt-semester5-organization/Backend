@@ -200,8 +200,8 @@ public class GuestServiceTests
         // Assert
         result.Should().NotBeNull();
         result.Used.Should().Be(1);
-        result.Limit.Should().Be(5);
-        result.Remaining.Should().Be(4);
+        result.Limit.Should().Be(3);
+        result.Remaining.Should().Be(2);
     }
 
     [Fact]
@@ -211,13 +211,13 @@ public class GuestServiceTests
         var service = CreateService();
         var guestUuid = Guid.NewGuid().ToString();
 
-        // Dùng hết 5 lượt cho phép
-        for (int i = 0; i < 5; i++)
+        // Dùng hết 3 lượt cho phép
+        for (int i = 0; i < 3; i++)
         {
             await service.ConsumeTrialQuotaAsync(guestUuid, GuestTrialType.Ai);
         }
 
-        // Act: lượt thứ 6
+        // Act: lượt thứ 4
         var act = () => service.ConsumeTrialQuotaAsync(guestUuid, GuestTrialType.Ai);
 
         // Assert
@@ -227,7 +227,7 @@ public class GuestServiceTests
     }
 
     [Fact]
-    public async Task ConsumeTrialQuotaAsync_20ConcurrentRequests_ShouldNeverExceedLimitOf5()
+    public async Task ConsumeTrialQuotaAsync_20ConcurrentRequests_ShouldNeverExceedLimitOf3()
     {
         // Arrange: Mục tiêu nghiệm thu: Thử 20 yêu cầu cùng lúc không vượt hạn mức
         var service = CreateService();
@@ -255,12 +255,12 @@ public class GuestServiceTests
         await Task.WhenAll(tasks);
 
         // Assert
-        successfulCount.Should().Be(5, "Hạn mức tối đa chỉ cho phép đúng 5 lượt AI dùng thử");
-        rejectedCount.Should().Be(15, "15 yêu cầu còn lại phải bị từ chối với lỗi ERR_QUOTA_AI_EXCEEDED");
+        successfulCount.Should().Be(3, "Hạn mức tối đa chỉ cho phép đúng 3 lượt AI dùng thử");
+        rejectedCount.Should().Be(17, "17 yêu cầu còn lại phải bị từ chối với lỗi ERR_QUOTA_AI_EXCEEDED");
 
         // Kiểm tra tra cứu lại hạn mức
         var quota = await service.GetGuestQuotaAsync(guestUuid);
-        quota.Ai.Used.Should().Be(5);
+        quota.Ai.Used.Should().Be(3);
         quota.Ai.Remaining.Should().Be(0);
     }
 }

@@ -22,7 +22,7 @@ public class GuestService : IGuestService
     private readonly GuestSecuritySettings _securitySettings;
     private readonly ILogger<GuestService> _logger;
 
-    public const int DefaultAiTrialLimit = 5;
+    public const int DefaultAiTrialLimit = 3;
     public const int DefaultBarcodeDailyLimit = 3;
     public const int DefaultMapSearchLimit = 3;
 
@@ -143,7 +143,7 @@ public class GuestService : IGuestService
                 limit = DefaultAiTrialLimit;
                 expiry = TimeSpan.FromHours(24);
                 errorCode = ErrorCodes.ErrQuotaAiExceeded;
-                exceededMessage = "Khách đã dùng hết 03 lượt AI dùng thử (FN-AUTH-02, BR-GUEST-AI-01). Vui lòng đăng ký tài khoản để tiếp tục nhận trợ giúp từ AI.";
+                exceededMessage = $"Khách đã dùng hết {DefaultAiTrialLimit:D2} lượt AI dùng thử (FN-AUTH-02, BR-GUEST-AI-01). Vui lòng đăng ký tài khoản để tiếp tục nhận trợ giúp từ AI.";
                 successMessage = "Sử dụng thành công 01 lượt AI dùng thử.";
                 break;
 
