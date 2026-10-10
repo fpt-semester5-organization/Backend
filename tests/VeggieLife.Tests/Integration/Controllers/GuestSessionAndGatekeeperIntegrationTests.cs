@@ -45,7 +45,7 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
         _factory = factory;
     }
 
-    private HttpClient CreateTestClient(Action<Dictionary<string, string?>>? configOverride = null)
+    private (HttpClient Client, IServiceProvider Services) CreateTestContext(Action<Dictionary<string, string?>>? configOverride = null)
     {
         var inMemoryConfig = new Dictionary<string, string?>
         {
@@ -55,7 +55,7 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
         };
         configOverride?.Invoke(inMemoryConfig);
 
-        return _factory.WithWebHostBuilder(builder =>
+        var customFactory = _factory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
             builder.ConfigureAppConfiguration((_, config) =>
@@ -71,7 +71,14 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
                     opt.UseInMemoryDatabase("GatekeeperTestDb_" + Guid.NewGuid());
                 });
             });
-        }).CreateClient();
+        });
+
+        return (customFactory.CreateClient(), customFactory.Services);
+    }
+
+    private HttpClient CreateTestClient(Action<Dictionary<string, string?>>? configOverride = null)
+    {
+        return CreateTestContext(configOverride).Client;
     }
 
     private static string GenerateJwt(string role, string? guestUuid = null, int? userId = null)
@@ -109,7 +116,7 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
     }
 
     // =========================================================================
-    // 1. CHẶN KHÁCH DÙNG TÍNH NĂNG THÀNH VIÊN VÀ TRẢ THÔNG BÁO MỜI ĐĂNG KÝ
+    // 1. CHẶN KHÁCH DÙNG TÍNH NĂNG THÀNH VIÊN VÀ TRẢ THÔNG BÁO MỜI ĐĂNG KÝ (FN-AUTH-03)
     // =========================================================================
 
     [Fact]
@@ -123,12 +130,70 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
         // Act: Khách bấm thao tác ghi cộng đồng (Thích / Bình luận / Đăng bài)
         var response = await client.PostAsync("/api/v1/test/auth/community-action", null);
 
-        // Assert: Chặn Khách và trả thông báo mời đăng ký
+        // Assert: Chặn Khách và trả thông báo mời đăng ký kèm login/register URLs
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var error = await response.Content.ReadFromJsonAsync<ApiErrorResponse>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         error.Should().NotBeNull();
         error!.ErrorCode.Should().Be(ErrorCodes.ErrGuestCommunityActionDenied);
         error.Message.Should().Contain("đăng ký");
+
+        var detailsElement = (JsonElement)error.Details!;
+        detailsElement.GetProperty("registerUrl").GetString().Should().Be("/register");
+        detailsElement.GetProperty("loginUrl").GetString().Should().Be("/login");
+    }
+
+    [Fact]
+    public async Task CommunityAction_WhenCalledByGuest_WithReturnUrlAndPendingActionHeaders_ShouldStoreContextInRedis()
+    {
+        // Arrange
+        var guestUuid = Guid.NewGuid().ToString();
+        var (client, services) = CreateTestContext();
+        var guestToken = GenerateJwt(UserRoles.Guest, guestUuid: guestUuid);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/test/auth/community-action");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", guestToken);
+        request.Headers.Add("X-Return-Url", "/recipes/10/comments");
+        request.Headers.Add("X-Pending-Action", "COMMENT");
+
+        // Act
+        var response = await client.SendAsync(request);
+
+        // Assert 1: Chặn 403 Forbidden
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var error = await response.Content.ReadFromJsonAsync<ApiErrorResponse>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        error.Should().NotBeNull();
+        error!.ErrorCode.Should().Be(ErrorCodes.ErrGuestCommunityActionDenied);
+
+        // Assert 2: Kiểm tra dữ liệu được lưu vào Redis guest_return:{guestId} (TTL 15m)
+        var redis = services.GetRequiredService<IRedisService>();
+        var savedContext = await redis.GetAsync<GuestReturnContextDto>($"guest_return:{guestUuid}");
+        savedContext.Should().NotBeNull();
+        savedContext!.ReturnUrl.Should().Be("/recipes/10/comments");
+        savedContext.PendingAction.Should().Be("COMMENT");
+    }
+
+    [Fact]
+    public async Task CommunityAction_WhenCalledByGuest_WithInvalidReturnUrlOrPendingAction_ShouldNotStoreInRedis()
+    {
+        // Arrange
+        var guestUuid = Guid.NewGuid().ToString();
+        var (client, services) = CreateTestContext();
+        var guestToken = GenerateJwt(UserRoles.Guest, guestUuid: guestUuid);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/test/auth/community-action");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", guestToken);
+        request.Headers.Add("X-Return-Url", "https://malicious.com/phishing"); // Không bắt đầu bằng '/'
+        request.Headers.Add("X-Pending-Action", "INVALID_ACTION"); // Không thuộc danh mục enum
+
+        // Act
+        var response = await client.SendAsync(request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var redis = services.GetRequiredService<IRedisService>();
+        var savedContext = await redis.GetAsync<GuestReturnContextDto>($"guest_return:{guestUuid}");
+        savedContext.Should().BeNull("Không được lưu vào Redis nếu returnUrl không an toàn hoặc pendingAction không hợp lệ");
     }
 
     [Fact]
@@ -148,6 +213,10 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
         error.Should().NotBeNull();
         error!.ErrorCode.Should().Be(ErrorCodes.ErrGuestPersonalizationRestricted);
         error.Message.Should().Contain("đăng ký");
+
+        var detailsElement = (JsonElement)error.Details!;
+        detailsElement.GetProperty("registerUrl").GetString().Should().Be("/register");
+        detailsElement.GetProperty("loginUrl").GetString().Should().Be("/login");
     }
 
     [Fact]
@@ -161,8 +230,13 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain(ErrorCodes.ErrAuthInvalidToken);
+        var error = await response.Content.ReadFromJsonAsync<ApiErrorResponse>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        error.Should().NotBeNull();
+        error!.ErrorCode.Should().Be(ErrorCodes.ErrAuthInvalidToken);
+
+        var detailsElement = (JsonElement)error.Details!;
+        detailsElement.GetProperty("registerUrl").GetString().Should().Be("/register");
+        detailsElement.GetProperty("loginUrl").GetString().Should().Be("/login");
     }
 
     [Fact]
