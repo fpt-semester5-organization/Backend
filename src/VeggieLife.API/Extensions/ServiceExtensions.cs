@@ -302,6 +302,9 @@ public static class ServiceExtensions
         // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
         services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();
 
+        // Dịch vụ Bài viết cộng đồng (FN-POST-05, FN-POST-06)
+        services.AddScoped<VeggieLife.BLL.Services.Posts.IPostService, VeggieLife.BLL.Services.Posts.PostService>();
+
         // Dịch vụ Video & Phương tiện nấu ăn (FN-POST-08)
         services.AddScoped<VeggieLife.BLL.Services.Videos.IVideoService, VeggieLife.BLL.Services.Videos.VideoService>();
 
