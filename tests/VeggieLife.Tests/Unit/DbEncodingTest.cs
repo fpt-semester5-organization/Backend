@@ -24,6 +24,20 @@ public class DbEncodingTest
             .Options;
 
         using var db = new AppDbContext(options);
+        try
+        {
+            if (!db.Database.CanConnect())
+            {
+                _output.WriteLine("Local SQL Server VeggieLifeDb is not reachable. Skipping encoding check.");
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            _output.WriteLine($"Cannot connect to database ({ex.Message}). Skipping encoding check.");
+            return;
+        }
+
         var items = db.EnumberDictionaries.Take(5).ToList();
         foreach (var item in items)
         {

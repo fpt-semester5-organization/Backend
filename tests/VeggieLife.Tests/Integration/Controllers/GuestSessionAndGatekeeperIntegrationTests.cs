@@ -51,7 +51,10 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
         {
             ["Jwt:SecretKey"] = JwtSecret,
             ["Jwt:Issuer"] = JwtIssuer,
-            ["Jwt:Audience"] = JwtAudience
+            ["Jwt:Audience"] = JwtAudience,
+            ["JwtSettings:SecretKey"] = JwtSecret,
+            ["JwtSettings:Issuer"] = JwtIssuer,
+            ["JwtSettings:Audience"] = JwtAudience
         };
         configOverride?.Invoke(inMemoryConfig);
 

@@ -19,7 +19,7 @@ using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
 using Xunit;
 
-namespace VeggieLife.Tests.Integration;
+namespace VeggieLife.Tests.Integration.Controllers;
 
 /// <summary>
 /// Bộ kiểm thử tích hợp (Integration Tests) gọi trực tiếp qua pipeline HTTP của Web API đối với endpoint Recipes (FN-POST-01, FN-POST-02).
