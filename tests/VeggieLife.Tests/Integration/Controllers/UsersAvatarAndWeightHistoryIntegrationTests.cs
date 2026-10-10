@@ -52,6 +52,18 @@ public class UsersAvatarAndWeightHistoryIntegrationTests : IClassFixture<WebAppl
         _factory = factory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
+            builder.ConfigureAppConfiguration((_, config) =>
+            {
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Jwt:SecretKey"] = JwtSecret,
+                    ["Jwt:Issuer"] = JwtIssuer,
+                    ["Jwt:Audience"] = JwtAudience,
+                    ["JwtSettings:SecretKey"] = JwtSecret,
+                    ["JwtSettings:Issuer"] = JwtIssuer,
+                    ["JwtSettings:Audience"] = JwtAudience
+                });
+            });
             builder.ConfigureServices(services =>
             {
                 // Thay thế DbContext bằng InMemory database riêng biệt

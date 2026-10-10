@@ -96,7 +96,8 @@ public static class ServiceExtensions
                     var errorResponse = new ApiErrorResponse(
                         StatusCodes.Status401Unauthorized,
                         ErrorCodes.ErrAuthInvalidToken,
-                        "Yêu cầu chưa được xác thực hoặc phiên đăng nhập đã hết hạn.");
+                        "Yêu cầu chưa được xác thực hoặc phiên đăng nhập đã hết hạn. Vui lòng đăng nhập hoặc đăng ký tài khoản.",
+                        new { registerUrl = "/register", loginUrl = "/login" });
 
                     await context.Response.WriteAsync(JsonSerializer.Serialize(errorResponse, JsonOptions));
                 },
@@ -131,10 +132,57 @@ public static class ServiceExtensions
                             : "Khách vãng lai gọi tính năng cá nhân hóa (FN-AUTH-03). Vui lòng đăng ký tài khoản để sử dụng tính năng cá nhân.")
                         : "Bạn không có quyền truy cập vào tài nguyên này.";
 
+                    // Lưu ngữ cảnh quay lại vào Redis guest_return:{guestId} TTL 15 phút (BR-GUEST-AUTH-01, FN-AUTH-03)
+                    if (isGuest && context.HttpContext != null)
+                    {
+                        var httpContext = context.HttpContext;
+                        string? returnUrl = null;
+                        if (httpContext.Request.Headers.TryGetValue("X-Return-Url", out var returnUrlHeader))
+                        {
+                            var rawUrl = returnUrlHeader.ToString().Trim();
+                            if (rawUrl.StartsWith('/') && rawUrl.Length <= 500)
+                            {
+                                returnUrl = rawUrl;
+                            }
+                        }
+
+                        string? pendingAction = null;
+                        if (httpContext.Request.Headers.TryGetValue("X-Pending-Action", out var pendingActionHeader))
+                        {
+                            var rawAction = pendingActionHeader.ToString().Trim().ToUpperInvariant();
+                            if (PendingActions.IsValid(rawAction))
+                            {
+                                pendingAction = rawAction;
+                            }
+                        }
+
+                        var guestId = principal?.FindFirst("Guest_UUID")?.Value
+                                      ?? principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                                      ?? (httpContext.Request.Cookies.TryGetValue("guest_uuid", out var cookieId) ? cookieId : null);
+
+                        if (!string.IsNullOrEmpty(guestId) && (!string.IsNullOrEmpty(returnUrl) || !string.IsNullOrEmpty(pendingAction)))
+                        {
+                            var redis = httpContext.RequestServices.GetService<IRedisService>();
+                            if (redis != null)
+                            {
+                                var returnContext = new VeggieLife.BLL.DTOs.Guest.Responses.GuestReturnContextDto
+                                {
+                                    ReturnUrl = returnUrl,
+                                    PendingAction = pendingAction,
+                                    CreatedAt = DateTime.UtcNow
+                                };
+                                await redis.SetAsync($"guest_return:{guestId}", returnContext, TimeSpan.FromMinutes(15));
+                            }
+                        }
+                    }
+
+                    var details = isGuest ? new { registerUrl = "/register", loginUrl = "/login" } : null;
+
                     var errorResponse = new ApiErrorResponse(
                         StatusCodes.Status403Forbidden,
                         errorCode,
-                        errorMessage);
+                        errorMessage,
+                        details);
 
                     await context.Response.WriteAsync(JsonSerializer.Serialize(errorResponse, JsonOptions));
                 }
@@ -270,13 +318,16 @@ public static class ServiceExtensions
         // Dịch vụ Hồ sơ cá nhân & Danh mục dùng chung
         services.AddScoped<IProfileService, ProfileService>();
         services.AddScoped<IMasterDataService, MasterDataService>();
-
         // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
         services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();
 
+        // Dịch vụ Bài viết cộng đồng (FN-POST-05, FN-POST-06)
+        services.AddScoped<VeggieLife.BLL.Services.Posts.IPostService, VeggieLife.BLL.Services.Posts.PostService>();
+
         // Dịch vụ Video & Phương tiện nấu ăn (FN-POST-08)
         services.AddScoped<VeggieLife.BLL.Services.Videos.IVideoService, VeggieLife.BLL.Services.Videos.VideoService>();
-        // Các interface dịch vụ dùng chung khác
+
+        // Các interface dịch vụ dùng chung khác (Bản mẫu rỗng để các thành viên khác hoàn thiện)
         services.AddScoped<IAiService, AiServiceStub>();
         services.AddScoped<IVectorDbService, VectorDbServiceStub>();
         services.AddScoped<IEmailService, EmailServiceStub>();

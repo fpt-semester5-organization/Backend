@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -187,7 +188,6 @@ public class RedisService : IRedisService
             {
                 current = memVal;
             }
-
             current += value;
 
             if (_memoryCache != null)

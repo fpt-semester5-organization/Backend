@@ -88,8 +88,24 @@ public class AuthController : BaseApiController
     [HttpPost("verify-otp")]
     public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpRequest request, CancellationToken ct)
     {
+        // Tự động nhận diện Guest UUID từ Cookie hoặc Header nếu client không truyền trực tiếp trong body
+        if (string.IsNullOrWhiteSpace(request.GuestUuid))
+        {
+            Request.Cookies.TryGetValue("guest_uuid", out var cookieGuestUuid);
+            if (string.IsNullOrEmpty(cookieGuestUuid) && Request.Headers.TryGetValue("X-Guest-UUID", out var headerGuestUuid))
+            {
+                cookieGuestUuid = headerGuestUuid.ToString().Trim();
+            }
+
+            if (!string.IsNullOrEmpty(cookieGuestUuid))
+            {
+                request.GuestUuid = cookieGuestUuid;
+            }
+        }
+
         var result = await _authService.VerifyOtpAsync(request, ct);
         SetRefreshTokenCookie(result.RefreshToken);
+
         return OkResponse(result, "Kích hoạt tài khoản thành công.");
     }
 
@@ -241,12 +257,15 @@ public class AuthController : BaseApiController
 
     private void DeleteRefreshTokenCookie()
     {
-        Response.Cookies.Delete("refresh_token", new CookieOptions
+        var cookieOptions = new CookieOptions
         {
             HttpOnly = true,
             Secure = Request.IsHttps,
             SameSite = SameSiteMode.Strict,
             Path = "/"
-        });
+        };
+
+        Response.Cookies.Delete("refresh_token", cookieOptions);
+        Response.Cookies.Delete("refreshToken", cookieOptions);
     }
 }
