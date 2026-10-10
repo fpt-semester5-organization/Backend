@@ -7,7 +7,7 @@ API của VeggieLife. **ASP.NET Core 8 Web API · C# · EF Core 8 (Database-firs
 
 ---
 
-## 1. NGUỒN SỰ THẬT & THỨ TỰ ƯU TIÊN
+## 1. Nguồn sự thật
 
 Đặc tả nằm trong `docs/` (bản sao của `plan/16. Context implement`; bảng số tệp ở `docs/README.md`). **Không sửa tay** các tệp này.
 
@@ -30,23 +30,16 @@ Thứ tự đọc cho một task: **README này → thẻ FN → Data Dictionary
 
 ## 2. Kiến trúc 3 layer
 
-### Thứ tự ưu tiên giải quyết xung đột tài liệu:
 ```
 VeggieLife.API  ──►  VeggieLife.BLL  ──►  VeggieLife.DAL  ──►  SQL Server / Redis / AI service / dịch vụ ngoài
 (Presentation)       (Business Logic)      (Data Access)
 ```
 
-| Cần tra cứu | Tài liệu chính thức | Nội dung cốt lõi |
-|---|---|---|
-| **Quyết định chốt** | **Decision Log** (`D1` – `D115`) | **Luôn thắng mọi tài liệu khác nếu có xung đột**. |
-| **Quy tắc nghiệp vụ** | **01. Business Rules.docx** | 90 quy tắc nghiệp vụ (`BR-xxx`) theo ma trận Karl Wiegers. |
-| **Cơ sở dữ liệu** | **06. Logical Data Model Specification.docx** | 38 thực thể dữ liệu logic chuẩn 3NF (v3.1), kiểu dữ liệu, PK, FK, CHECK. |
-| **Từ điển dữ liệu & Hằng số** | **9. Data Dictionary and Constants.docx** | Từ điển cột, Enums, hằng số (`MEDICAL_DISCLAIMER`, guest quota), Redis keys. |
-| **Hợp đồng API & Mã lỗi** | **07. API Specification.docx** & **08. OpenAPI Specification.yaml** | 113 API endpoints, chuẩn Envelope Response D52, bảng mã lỗi `ERR_...`. |
-| **Kiến trúc & Tích hợp** | **05. Architecture and Deployment.docx** | Phân định tác vụ Gemini trực tiếp vs AI Service, Qdrant RAG, hạ tầng. |
-| **Quy chuẩn Git & Team** | **Nguyên tắc làm việc nhóm.docx** | Quy chuẩn commit, phân nhánh GitFlow, bảo mật API keys & secrets. |
-
-*❌ Tuyệt đối không tự ý bịa đặt tên mới cho bảng, cột, endpoint, hay DTO ngoài tài liệu. Nếu thiếu thì hỏi Leader.*
+| Được phép | Không được phép |
+|---|---|
+| API gọi BLL qua interface service | Controller dùng DbContext hoặc Entity |
+| BLL gọi DAL qua repository / client interface | DAL tham chiếu BLL |
+| `Program.cs` tham chiếu DAL để đăng ký DI | Trả Entity ra JSON (phải qua DTO) |
 
 **Ranh giới AI (D118, D119):** Backend **không** giữ khóa Gemini và **không** truy cập Qdrant. Mọi nghiệp vụ AI đi qua `IAiServiceClient`:
 - **ai-service** trên VPS cùng Qdrant: chat RAG, thực đơn tuần, kiểm duyệt nội dung, nhận diện ảnh tủ lạnh, kho tri thức.
@@ -61,33 +54,7 @@ Backend chỉ làm phần nghiệp vụ quanh lời gọi AI:
 
 ---
 
-## 2. KIẾN TRÚC 3 TẦNG (CLEAN ARCHITECTURE)
-
-Hệ thống tuân thủ nghiêm ngặt mô hình phân tầng hướng phụ thuộc một chiều:
-
-```
-VeggieLife.API (Presentation Layer)
-       │
-       ▼
-VeggieLife.BLL (Business Logic Layer)
-       │
-       ▼
-VeggieLife.DAL (Data Access Layer) ──► SQL Server 2022 / Redis / Qdrant / External APIs
-```
-
-### Ranh giới kiến trúc bất khả xâm phạm:
-
-| ĐƯỢC PHÉP | TUYỆT ĐỐI CẤM (Vi phạm = Reject PR) |
-|---|---|
-| API gọi BLL thông qua service interface (`IService`) | ❌ Controller gọi trực tiếp `DbContext` hoặc thao tác với `Entity` |
-| BLL gọi DAL qua repository interface hoặc external client | ❌ Controller chứa logic nghiệp vụ hoặc dùng `try/catch` (để Exception Middleware xử lý) |
-| `Program.cs` tham chiếu DAL chỉ để đăng ký Dependency Injection | ❌ DAL tham chiếu ngược lại BLL |
-| BLL map Entity sang DTO rồi mới trả về Controller | ❌ Trả trực tiếp `Entity` ra response JSON (bắt buộc qua DTO và bọc `ApiResponse<T>`) |
-| BLL ném `BusinessException` kèm mã lỗi chuẩn `ERR_...` | ❌ Hardcode mã lỗi dạng text tùy ý hoặc tự bịa mã lỗi ngoài danh mục spec |
-
----
-
-## 3. CÂY THƯ MỤC CHUẨN CỦA BACKEND
+## 3. Cây thư mục
 
 ```
 veggielife-backend/
@@ -160,7 +127,7 @@ Module theo mã FN; hạn mức và hằng số tra ở `docs/10. Data Dictionar
 
 ---
 
-## 5. CHUẨN ENVELOPE RESPONSE (QUYẾT ĐỊNH D52)
+## 5. Database-first: quy trình bắt buộc
 
 **38 bảng:** Users, DietarySchools, HealthProfiles, UserWeightHistory, SubscriptionPlans, PaymentTransactions, Allergens, UserAllergies, AIQuotaLogs, Posts, Comments, ViolationReports, Videos, VideoTranscripts, Recipes, FoodCategories, Ingredients, RecipeIngredients, MealPlans, MealSlots, ShoppingLists, ShoppingListItems, Products, ENumberDictionary, Product_ENumbers, ProductAllergens, UserScanHistory, FridgeSessions, FridgeInventory, VeganVenues, VenueMenuItems, VenueCategories, ChatSessions, ChatMessages, Surveys, AuditLogs, Votes, IngredientAllergens.
 
@@ -182,7 +149,7 @@ Code tùy biến (enum ↔ chuỗi, query filter xóa mềm…) chỉ viết tro
 
 ---
 
-## 6. PHÂN ĐỊNH TÁC VỤ AI & DỊCH VỤ NGOÀI
+## 6. Quy ước code
 
 | Thứ | Quy ước |
 |---|---|
@@ -203,25 +170,7 @@ Code tùy biến (enum ↔ chuỗi, query filter xóa mềm…) chỉ viết tro
 | Khóa Redis | Đúng tên trong thẻ FN, hằng số ở `DAL/Cache/RedisKeys.cs`; đếm hạn mức bằng Lua/`INCR` nguyên tử |
 | Dapper | Chỉ dùng cho truy vấn thống kê Admin |
 
-```
-                      ┌──────────────────────────────────────────────┐
-                      │            VeggieLife Backend (.NET 8)       │
-                      └───────┬──────────────────────┬───────────────┘
-                              │                      │
-                 Trực tiếp    │                      │ Bất đồng bộ
-                 (HTTP/gRPC)  ▼                      ▼ (REST API)
-          ┌───────────────────────────┐      ┌─────────────────────────────┐
-          │  Google Gemini 2.5 Flash  │      │  veggielife-ai-service      │
-          │  & Qdrant Vector DB       │      │  (Python FastAPI)           │
-          ├───────────────────────────┤      ├─────────────────────────────┤
-          │ • RAG Chatbot Dinh dưỡng  │      │ • Video STT (faster-whisper)│
-          │ • Qdrant: collection      │      │ • Fridge OCR (Gemini Vision)│
-          │   veggielife_knowledge    │      └─────────────────────────────┘
-          │ • Sinh thực đơn MealPlan  │
-          │ • Tự động duyệt nội dung  │
-          │ • Text Embedding (768-d)  │
-          └───────────────────────────┘
-```
+**Muốn thêm… thì đặt ở đâu?**
 
 | Muốn thêm | Đặt tại |
 |---|---|
@@ -256,22 +205,7 @@ Code tùy biến (enum ↔ chuỗi, query filter xóa mềm…) chỉ viết tro
 
 Backend **không** có biến `Gemini__*`, `Qdrant__*`, `Embedding__*`, `Rag__*` (D118).
 
-### Thứ tự 38 file DDL trong `database/schema/` (chuẩn theo thứ tự khóa ngoại):
-```
-01_DietarySchools.sql          02_Allergens.sql               03_Users.sql
-04_HealthProfiles.sql          05_UserWeightHistory.sql       06_UserAllergies.sql
-07_SubscriptionPlans.sql       08_PaymentTransactions.sql     09_AIQuotaLogs.sql
-10_AuditLogs.sql               11_FoodCategories.sql          12_Ingredients.sql
-13_IngredientAllergens.sql     14_Posts.sql                   15_Recipes.sql
-16_RecipeIngredients.sql       17_Videos.sql                  18_VideoTranscripts.sql
-19_Comments.sql                20_Votes.sql                   21_ViolationReports.sql
-22_MealPlans.sql               23_MealSlots.sql               24_ShoppingLists.sql
-25_ShoppingListItems.sql       26_Products.sql                27_ENumberDictionary.sql
-28_Product_ENumbers.sql        29_ProductAllergens.sql        30_UserScanHistory.sql
-31_FridgeSessions.sql          32_FridgeInventory.sql         33_VeganVenues.sql
-34_VenueMenuItems.sql          35_VenueCategories.sql         36_ChatSessions.sql
-37_ChatMessages.sql            38_Surveys.sql
-```
+---
 
 ## 8. Chạy local và kiểm tra
 
@@ -307,7 +241,6 @@ CI khi mở PR chạy các lệnh trên cùng `gitleaks` và coverage; **bỏ qu
 
 ## 10. Khởi tạo (Leader chạy 1 lần)
 
-### Lệnh Scaffold Entity EF Core:
 ```bash
 dotnet new sln -n VeggieLife
 dotnet new webapi   -o src/VeggieLife.API --use-controllers -f net8.0
@@ -327,18 +260,6 @@ Package chính:
 - Test: Moq, FluentAssertions, Testcontainers.
 
 Không thêm thư viện lớn ngoài danh sách này khi chưa hỏi Leader.
-
-### 7.4. Khởi tạo Database & Kiểm tra nghiệm thu tự động (1-Click Pipeline):
-Dành cho thành viên nhóm khi clone repository về máy local:
-1. **Khởi tạo trọn gói CSDL & Model Entity (1 Click):**
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File "./database/scripts/rebuild_all.ps1"
-   ```
-2. **Kiểm tra nghiệm thu tính toàn vẹn (38 bảng & 312 cột):**
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File "./database/scripts/generate_schema.ps1" -VerifyDb
-   ```
-> 📖 *Xem hướng dẫn chi tiết toàn bộ các công cụ và script tại: [database/README.md](file:///d:/FALL%2026/SWP391/Backend/database/README.md)*.
 
 ---
 
