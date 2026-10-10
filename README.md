@@ -7,7 +7,7 @@ API của VeggieLife. **ASP.NET Core 8 Web API · C# · EF Core 8 (Database-firs
 
 ---
 
-## 1. NGUỒN SỰ THẬT & THỨ TỰ ƯU TIÊN
+## 1. Nguồn sự thật
 
 Đặc tả nằm trong `docs/` (bản sao của `plan/16. Context implement`; bảng số tệp ở `docs/README.md`). **Không sửa tay** các tệp này.
 
@@ -61,33 +61,33 @@ Backend chỉ làm phần nghiệp vụ quanh lời gọi AI:
 
 ---
 
-## 2. KIẾN TRÚC 3 TẦNG (CLEAN ARCHITECTURE)
-
-Hệ thống tuân thủ nghiêm ngặt mô hình phân tầng hướng phụ thuộc một chiều:
+## 2. Kiến trúc 3 layer
 
 ```
-VeggieLife.API (Presentation Layer)
-       │
-       ▼
-VeggieLife.BLL (Business Logic Layer)
-       │
-       ▼
-VeggieLife.DAL (Data Access Layer) ──► SQL Server 2022 / Redis / Qdrant / External APIs
+VeggieLife.API  ──►  VeggieLife.BLL  ──►  VeggieLife.DAL  ──►  SQL Server / Redis / AI service / dịch vụ ngoài
+(Presentation)       (Business Logic)      (Data Access)
 ```
 
-### Ranh giới kiến trúc bất khả xâm phạm:
-
-| ĐƯỢC PHÉP | TUYỆT ĐỐI CẤM (Vi phạm = Reject PR) |
+| Được phép | Không được phép |
 |---|---|
-| API gọi BLL thông qua service interface (`IService`) | ❌ Controller gọi trực tiếp `DbContext` hoặc thao tác với `Entity` |
-| BLL gọi DAL qua repository interface hoặc external client | ❌ Controller chứa logic nghiệp vụ hoặc dùng `try/catch` (để Exception Middleware xử lý) |
-| `Program.cs` tham chiếu DAL chỉ để đăng ký Dependency Injection | ❌ DAL tham chiếu ngược lại BLL |
-| BLL map Entity sang DTO rồi mới trả về Controller | ❌ Trả trực tiếp `Entity` ra response JSON (bắt buộc qua DTO và bọc `ApiResponse<T>`) |
-| BLL ném `BusinessException` kèm mã lỗi chuẩn `ERR_...` | ❌ Hardcode mã lỗi dạng text tùy ý hoặc tự bịa mã lỗi ngoài danh mục spec |
+| API gọi BLL qua interface service | Controller dùng DbContext hoặc Entity |
+| BLL gọi DAL qua repository / client interface | DAL tham chiếu BLL |
+| `Program.cs` tham chiếu DAL để đăng ký DI | Trả Entity ra JSON (phải qua DTO) |
+
+**Ranh giới AI (D118, D119):** Backend **không** giữ khóa Gemini và **không** truy cập Qdrant. Mọi nghiệp vụ AI đi qua `IAiServiceClient`:
+- **ai-service** trên VPS cùng Qdrant: chat RAG, thực đơn tuần, kiểm duyệt nội dung, nhận diện ảnh tủ lạnh, kho tri thức.
+- **stt-service** trên Cloud Run: video → công thức.
+
+Backend chỉ làm phần nghiệp vụ quanh lời gọi AI:
+- kiểm hạn mức;
+- đọc hồ sơ/dị ứng/công thức đã lọc rồi **gửi kèm trong yêu cầu**;
+- lưu kết quả cùng `usage`/`audit` mà AI service trả về (`AIQuotaLogs`, `AuditLogs`).
+
+**Middleware (đúng thứ tự):** `ExceptionHandling` → `CorrelationId` → `Serilog request logging` → `GeoRestriction` → `RateLimit (Guest 10 req/phút/IP)` → `Authentication (JWT)` → `Authorization (policy)` → `GuestQuota filter` → Controller.
 
 ---
 
-## 3. CÂY THƯ MỤC CHUẨN CỦA BACKEND
+## 3. Cây thư mục
 
 ```
 veggielife-backend/
@@ -158,7 +158,7 @@ Module theo mã FN; hạn mức và hằng số tra ở `docs/10. Data Dictionar
 
 **VIP (D104):** `Users.Role ∈ {MEMBER, VIP, ADMIN}`. IPN thành công thì đặt VIP; `VipExpiryJob` hạ về MEMBER sau 23:59:59 ngày hết hạn. JWT mang `role` (GUEST/MEMBER/VIP/ADMIN) và claim `isVip`. Không có bảng `VipSubscriptions`.
 
----
+Module theo mã FN; hạn mức và hằng số tra ở `docs/10. Data Dictionary and Constants.docx` mục 3.
 
 ## 5. CHUẨN ENVELOPE RESPONSE (QUYẾT ĐỊNH D52)
 
@@ -256,22 +256,7 @@ Code tùy biến (enum ↔ chuỗi, query filter xóa mềm…) chỉ viết tro
 
 Backend **không** có biến `Gemini__*`, `Qdrant__*`, `Embedding__*`, `Rag__*` (D118).
 
-### Thứ tự 38 file DDL trong `database/schema/` (chuẩn theo thứ tự khóa ngoại):
-```
-01_DietarySchools.sql          02_Allergens.sql               03_Users.sql
-04_HealthProfiles.sql          05_UserWeightHistory.sql       06_UserAllergies.sql
-07_SubscriptionPlans.sql       08_PaymentTransactions.sql     09_AIQuotaLogs.sql
-10_AuditLogs.sql               11_FoodCategories.sql          12_Ingredients.sql
-13_IngredientAllergens.sql     14_Posts.sql                   15_Recipes.sql
-16_RecipeIngredients.sql       17_Videos.sql                  18_VideoTranscripts.sql
-19_Comments.sql                20_Votes.sql                   21_ViolationReports.sql
-22_MealPlans.sql               23_MealSlots.sql               24_ShoppingLists.sql
-25_ShoppingListItems.sql       26_Products.sql                27_ENumberDictionary.sql
-28_Product_ENumbers.sql        29_ProductAllergens.sql        30_UserScanHistory.sql
-31_FridgeSessions.sql          32_FridgeInventory.sql         33_VeganVenues.sql
-34_VenueMenuItems.sql          35_VenueCategories.sql         36_ChatSessions.sql
-37_ChatMessages.sql            38_Surveys.sql
-```
+---
 
 ## 8. Chạy local và kiểm tra
 
@@ -291,7 +276,10 @@ python scripts/check_contract.py
 
 CI khi mở PR chạy các lệnh trên cùng `gitleaks` và coverage; **bỏ qua** nhóm test `AiServiceIntegration`. Khi merge `develop`, CI chạy thêm nhóm này: ai-service thật qua Testcontainers, gọi Gemini thật bằng khóa trong GitHub Secrets (D119).
 
----
+```bash
+docker compose up -d                 # SQL Server, Redis, API, ai-service, Qdrant (+ stt-service khi cần)
+bash database/scripts/run_all.sh     # 38 bảng + dữ liệu gốc
+```
 
 ## 9. Quy trình làm việc (Jira + GitHub)
 
