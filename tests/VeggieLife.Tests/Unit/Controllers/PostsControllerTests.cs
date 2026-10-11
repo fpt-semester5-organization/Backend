@@ -198,4 +198,157 @@ public class PostsControllerTests
         envelope.Data.MemberActions.CanComment.Should().BeTrue();
         _mockService.Verify(s => s.GetPostByIdAsync(postId, false, 1024, It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    // =========================================================================
+    // FN-POST-07: CONTROLLER TESTS (CREATE, UPDATE, DELETE)
+    // =========================================================================
+
+    [Fact]
+    public async Task CreatePost_Unauthenticated_ShouldThrowUnauthorized_401()
+    {
+        // Arrange: Chưa đăng nhập
+        _controller.ControllerContext.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity());
+
+        var req = new CreatePostRequest { Title = "Tiêu đề hợp lệ từ 10 ký tự", Content = "Nội dung bài viết..." };
+
+        var act = async () => await _controller.CreatePost(req, CancellationToken.None);
+        var ex = await act.Should().ThrowAsync<VeggieLife.BLL.Common.Exceptions.AppException>();
+        ex.Which.StatusCode.Should().Be(401);
+        ex.Which.ErrorCode.Should().Be(VeggieLife.BLL.Common.Constants.ErrorCodes.ErrAuthInvalidToken);
+    }
+
+    [Fact]
+    public async Task CreatePost_GuestUser_ShouldThrowForbidden_403()
+    {
+        // Arrange: Khách vãng lai (GUEST)
+        var user = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, "guest-uuid-123"),
+            new Claim(ClaimTypes.Role, "GUEST")
+        }, "GuestAuth"));
+        _controller.ControllerContext.HttpContext.User = user;
+
+        var req = new CreatePostRequest { Title = "Tiêu đề hợp lệ từ 10 ký tự", Content = "Nội dung bài viết..." };
+
+        var act = async () => await _controller.CreatePost(req, CancellationToken.None);
+        var ex = await act.Should().ThrowAsync<VeggieLife.BLL.Common.Exceptions.AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(VeggieLife.BLL.Common.Constants.ErrorCodes.ErrGuestCommunityActionDenied);
+    }
+
+    [Fact]
+    public async Task CreatePost_AuthenticatedMember_ShouldReturnCreated201()
+    {
+        // Arrange: Member hợp lệ
+        var user = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, "1024"),
+            new Claim(ClaimTypes.Role, "MEMBER")
+        }, "TestAuth"));
+        _controller.ControllerContext.HttpContext.User = user;
+
+        var req = new CreatePostRequest
+        {
+            Title = "Một tuần ăn chay đầu tiên",
+            Content = "Chia sẻ trải nghiệm ăn chay...",
+            Visibility = "PUBLIC",
+            Submit = true
+        };
+
+        var responseDto = new CreatePostResponseDto
+        {
+            PostId = 77,
+            ModerationStatus = "APPROVED_ACTIVE"
+        };
+
+        _mockService.Setup(s => s.CreatePostAsync(req, 1024, "MEMBER", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseDto);
+
+        // Act
+        var result = await _controller.CreatePost(req, CancellationToken.None);
+
+        // Assert
+        var objectResult = result as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(201);
+
+        var envelope = objectResult.Value as ApiResponse<CreatePostResponseDto>;
+        envelope.Should().NotBeNull();
+        envelope!.StatusCode.Should().Be(201);
+        envelope.Message.Should().Be("Đã đăng bài.");
+        envelope.Data.Should().NotBeNull();
+        envelope.Data!.PostId.Should().Be(77);
+        envelope.Data.ModerationStatus.Should().Be("APPROVED_ACTIVE");
+    }
+
+    [Fact]
+    public async Task UpdatePost_AuthenticatedMember_ShouldReturnOk200()
+    {
+        // Arrange: Member hợp lệ
+        var user = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, "1024"),
+            new Claim(ClaimTypes.Role, "MEMBER")
+        }, "TestAuth"));
+        _controller.ControllerContext.HttpContext.User = user;
+
+        var req = new UpdatePostRequest
+        {
+            Title = "Một tuần ăn chay đầu tiên (bản sửa)"
+        };
+
+        var responseDto = new UpdatePostResponseDto
+        {
+            PostId = 77,
+            ModerationStatus = "PENDING_REVIEW"
+        };
+
+        _mockService.Setup(s => s.UpdatePostAsync(77, req, 1024, "MEMBER", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseDto);
+
+        // Act
+        var result = await _controller.UpdatePost(77, req, CancellationToken.None);
+
+        // Assert
+        var okResult = result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+
+        var envelope = okResult.Value as ApiResponse<UpdatePostResponseDto>;
+        envelope.Should().NotBeNull();
+        envelope!.StatusCode.Should().Be(200);
+        envelope.Message.Should().Be("Đã cập nhật.");
+        envelope.Data!.PostId.Should().Be(77);
+        envelope.Data.ModerationStatus.Should().Be("PENDING_REVIEW");
+    }
+
+    [Fact]
+    public async Task DeletePost_AuthenticatedMember_ShouldReturnOk200WithNullData()
+    {
+        // Arrange: Member hợp lệ
+        var user = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, "1024"),
+            new Claim(ClaimTypes.Role, "MEMBER")
+        }, "TestAuth"));
+        _controller.ControllerContext.HttpContext.User = user;
+
+        _mockService.Setup(s => s.DeletePostAsync(77, 1024, "MEMBER", It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _controller.DeletePost(77, CancellationToken.None);
+
+        // Assert
+        var okResult = result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+
+        var envelope = okResult.Value as ApiResponse<object?>;
+        envelope.Should().NotBeNull();
+        envelope!.StatusCode.Should().Be(200);
+        envelope.Message.Should().Be("Đã xóa bài viết.");
+        envelope.Data.Should().BeNull();
+    }
 }
+

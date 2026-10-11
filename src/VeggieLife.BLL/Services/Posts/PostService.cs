@@ -16,26 +16,39 @@ using VeggieLife.BLL.Services.Cache;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
 
+using System.Text.Json;
+using VeggieLife.BLL.Services.Knowledge;
+using VeggieLife.BLL.Services.Moderation;
+
 namespace VeggieLife.BLL.Services.Posts;
 
 /// <summary>
-/// Dịch vụ xử lý tìm kiếm, lọc danh sách và xem chi tiết bài viết cộng đồng (FN-POST-05, FN-POST-06).
-/// Tuân thủ các quy tắc nghiệp vụ: BR-GUEST-01, BR-ADM-CNT-001, BR-AUTH-03, BR-GUEST-AUTH-01.
+/// Dịch vụ xử lý tìm kiếm, lọc danh sách, xem chi tiết và quản lý bài viết cộng đồng (FN-POST-05, FN-POST-06, FN-POST-07).
+/// Tuân thủ các quy tắc nghiệp vụ: BR-GUEST-01, BR-ADM-CNT-001, BR-ADM-CNT-002, BR-AUTH-03, BR-GUEST-AUTH-01, BR-USR-03, BR-USR-04.
 /// </summary>
 public class PostService : IPostService
 {
     private readonly AppDbContext _db;
     private readonly IRedisService _redis;
     private readonly ILogger<PostService> _logger;
+    private readonly IContentModerationService _moderationService;
+    private readonly IKnowledgeSyncQueue _knowledgeSyncQueue;
 
     private static readonly TimeSpan PostListCacheTtl = TimeSpan.FromMinutes(5); // BR-SYS-CACHE (TTL 5m)
     private static readonly TimeSpan GuestHistoryTtl = TimeSpan.FromHours(24);   // BR-GUEST-AUTH-01
 
-    public PostService(AppDbContext db, IRedisService redis, ILogger<PostService> logger)
+    public PostService(
+        AppDbContext db,
+        IRedisService redis,
+        ILogger<PostService> logger,
+        IContentModerationService? moderationService = null,
+        IKnowledgeSyncQueue? knowledgeSyncQueue = null)
     {
         _db = db;
         _redis = redis;
         _logger = logger;
+        _moderationService = moderationService ?? new SimulatedContentModerationService(new Microsoft.Extensions.Logging.Abstractions.NullLogger<SimulatedContentModerationService>());
+        _knowledgeSyncQueue = knowledgeSyncQueue ?? new KnowledgeSyncQueueStub(new Microsoft.Extensions.Logging.Abstractions.NullLogger<KnowledgeSyncQueueStub>());
     }
 
     /// <summary>
@@ -360,6 +373,491 @@ public class PostService : IPostService
     }
 
     /// <summary>
+    /// Đăng bài viết chia sẻ mới (lưu nháp hoặc gửi kiểm duyệt AI) (FN-POST-07).
+    /// </summary>
+    public async Task<CreatePostResponseDto> CreatePostAsync(
+        CreatePostRequest request,
+        int userId,
+        string userRole,
+        CancellationToken ct = default)
+    {
+        // 1. Kiểm tra tính hợp lệ của dữ liệu đầu vào
+        ValidateCreatePostRequest(request);
+
+        var normalizedVisibility = string.IsNullOrWhiteSpace(request.Visibility)
+            ? "PUBLIC"
+            : request.Visibility.Trim().ToUpperInvariant();
+
+        var shouldSubmit = request.Submit ?? false;
+        string status;
+        ContentModerationResult? modResult = null;
+
+        if (shouldSubmit)
+        {
+            // 2. Kiểm tra giới hạn đăng bài trong ngày (BR-USR-04):
+            // Tài khoản < 3 ngày tối đa 02 bài/ngày, từ 3 ngày trở lên tối đa 10 bài/ngày.
+            await CheckDailyPostLimitAsync(userId, ct);
+
+            // 3. Quét kiểm duyệt AI tự động (BR-USR-03, BR-ADM-CNT-002)
+            modResult = await _moderationService.ModeratePostAsync(
+                request.Title,
+                request.Content,
+                request.ImageUrl,
+                ct);
+
+            // Ghi nhật ký định mức AIQuotaLogs (Feature_Code: CONTENT_MODERATION)
+            await LogAiQuotaAsync(userId, modResult, ct);
+
+            if (modResult.ViolationScore >= 85.0)
+            {
+                status = "QUARANTINED_HIDDEN";
+            }
+            else
+            {
+                status = "APPROVED_ACTIVE";
+            }
+        }
+        else
+        {
+            status = "DRAFT";
+        }
+
+        // 4. Lưu bài viết vào cơ sở dữ liệu (Posts)
+        var post = new Post
+        {
+            UserId = userId,
+            Title = request.Title.Trim(),
+            Content = request.Content.Trim(),
+            ImageUrl = string.IsNullOrWhiteSpace(request.ImageUrl) ? null : request.ImageUrl.Trim(),
+            Visibility = normalizedVisibility,
+            ModerationStatus = status,
+            ViewCount = 0,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _db.Posts.Add(post);
+        await _db.SaveChangesAsync(ct);
+
+        // 5. Nếu bị cách ly do AI gắn cờ vi phạm (>= 85%), ghi ViolationReports
+        if (status == "QUARANTINED_HIDDEN" && modResult != null)
+        {
+            var violationReport = new ViolationReport
+            {
+                PostId = post.PostId,
+                ViolationType = modResult.ViolationType ?? "VIO_HATE",
+                EvidenceSummary = (modResult.Note ?? "AI phát hiện vi phạm nội dung (điểm vi phạm >= 85%).").Length > 500
+                    ? (modResult.Note ?? "AI phát hiện vi phạm nội dung.").Substring(0, 500)
+                    : (modResult.Note ?? "AI phát hiện vi phạm nội dung."),
+                ReportSource = "AI_SCAN",
+                Status = "PENDING",
+                CreatedAt = DateTime.UtcNow
+            };
+            _db.ViolationReports.Add(violationReport);
+            await _db.SaveChangesAsync(ct);
+        }
+
+        // 6. Nếu được duyệt công khai (APPROVED_ACTIVE và PUBLIC), đồng bộ sang kho tri thức AI RAG (FN-CHAT-07)
+        if (status == "APPROVED_ACTIVE" && post.Visibility == "PUBLIC")
+        {
+            await _knowledgeSyncQueue.EnqueueUpsertAsync("POST", post.PostId, ct);
+        }
+
+        // 7. Xóa bộ nhớ đệm danh sách bài viết
+        await InvalidatePostListCacheAsync(ct);
+
+        return new CreatePostResponseDto
+        {
+            PostId = post.PostId,
+            ModerationStatus = post.ModerationStatus
+        };
+    }
+
+    /// <summary>
+    /// Cập nhật bài viết của mình, gỡ khỏi cộng đồng (chuyển PRIVATE) hoặc gửi duyệt lại (FN-POST-07).
+    /// </summary>
+    public async Task<UpdatePostResponseDto> UpdatePostAsync(
+        int id,
+        UpdatePostRequest request,
+        int userId,
+        string userRole,
+        CancellationToken ct = default)
+    {
+        if (id <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã bài viết không hợp lệ (phải > 0).");
+        }
+
+        if (request == null)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Dữ liệu cập nhật không được để trống.");
+        }
+
+        var post = await _db.Posts.FirstOrDefaultAsync(p => p.PostId == id, ct);
+        if (post == null || post.ModerationStatus == "DELETED")
+        {
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
+        }
+
+        if (post.UserId != userId)
+        {
+            throw AppException.Forbidden(ErrorCodes.ErrContentNotOwner, "Không phải tác giả của nội dung.");
+        }
+
+        // Validate các trường cập nhật nếu có
+        if (request.Title != null)
+        {
+            if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Trim().Length < 10 || request.Title.Trim().Length > 150)
+            {
+                throw AppException.BadRequest(ErrorCodes.ErrValidation, "Tiêu đề bài viết phải từ 10 đến 150 ký tự.");
+            }
+        }
+
+        if (request.Content != null)
+        {
+            if (string.IsNullOrWhiteSpace(request.Content))
+            {
+                throw AppException.BadRequest(ErrorCodes.ErrValidation, "Nội dung bài viết không được để trống.");
+            }
+        }
+
+        if (request.Visibility != null)
+        {
+            var vis = request.Visibility.Trim().ToUpperInvariant();
+            if (vis == "FOLLOWERS")
+            {
+                throw AppException.BadRequest(
+                    ErrorCodes.ErrPostVisibilityUnsupported,
+                    "Visibility FOLLOWERS chưa hỗ trợ (Phase 2).");
+            }
+
+            if (vis != "PUBLIC" && vis != "PRIVATE")
+            {
+                throw AppException.BadRequest(
+                    ErrorCodes.ErrValidation,
+                    "Chế độ hiển thị không hợp lệ (chỉ chấp nhận: PUBLIC, PRIVATE).");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ImageUrl))
+        {
+            if (!Uri.TryCreate(request.ImageUrl, UriKind.Absolute, out var uri) ||
+                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                throw AppException.BadRequest(ErrorCodes.ErrValidation, "Đường dẫn ảnh không hợp lệ.");
+            }
+        }
+
+        // Lưu trữ giá trị cũ cho AuditLogs
+        var oldValueJson = JsonSerializer.Serialize(new
+        {
+            title = post.Title,
+            content = post.Content,
+            imageUrl = post.ImageUrl,
+            visibility = post.Visibility,
+            moderationStatus = post.ModerationStatus
+        });
+
+        bool titleOrContentChanged = false;
+
+        if (request.Title != null && request.Title.Trim() != post.Title)
+        {
+            post.Title = request.Title.Trim();
+            titleOrContentChanged = true;
+        }
+
+        if (request.Content != null && request.Content.Trim() != post.Content)
+        {
+            post.Content = request.Content.Trim();
+            titleOrContentChanged = true;
+        }
+
+        if (request.ImageUrl != null)
+        {
+            post.ImageUrl = string.IsNullOrWhiteSpace(request.ImageUrl) ? null : request.ImageUrl.Trim();
+        }
+
+        if (request.Visibility != null)
+        {
+            post.Visibility = request.Visibility.Trim().ToUpperInvariant();
+        }
+
+        post.UpdatedAt = DateTime.UtcNow;
+
+        // Xử lý gửi duyệt bản nháp (submit = true khi đang DRAFT)
+        if (request.Submit == true && post.ModerationStatus == "DRAFT")
+        {
+            await CheckDailyPostLimitAsync(userId, ct);
+
+            var modResult = await _moderationService.ModeratePostAsync(post.Title, post.Content, post.ImageUrl, ct);
+            await LogAiQuotaAsync(userId, modResult, ct);
+
+            if (modResult.ViolationScore >= 85.0)
+            {
+                post.ModerationStatus = "QUARANTINED_HIDDEN";
+                _db.ViolationReports.Add(new ViolationReport
+                {
+                    PostId = post.PostId,
+                    ViolationType = modResult.ViolationType ?? "VIO_HATE",
+                    EvidenceSummary = (modResult.Note ?? "AI phát hiện vi phạm nội dung.").Length > 500
+                        ? (modResult.Note ?? "AI phát hiện vi phạm nội dung.").Substring(0, 500)
+                        : (modResult.Note ?? "AI phát hiện vi phạm nội dung."),
+                    ReportSource = "AI_SCAN",
+                    Status = "PENDING",
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                post.ModerationStatus = "APPROVED_ACTIVE";
+                if (post.Visibility == "PUBLIC")
+                {
+                    await _knowledgeSyncQueue.EnqueueUpsertAsync("POST", post.PostId, ct);
+                }
+            }
+        }
+        else if (post.ModerationStatus == "APPROVED_ACTIVE" && titleOrContentChanged)
+        {
+            // Bài viết đã công khai sửa nội dung -> quét lại AI và chuyển PENDING_REVIEW (hoặc QUARANTINED_HIDDEN nếu vi phạm)
+            var modResult = await _moderationService.ModeratePostAsync(post.Title, post.Content, post.ImageUrl, ct);
+            await LogAiQuotaAsync(userId, modResult, ct);
+
+            if (modResult.ViolationScore >= 85.0)
+            {
+                post.ModerationStatus = "QUARANTINED_HIDDEN";
+                _db.ViolationReports.Add(new ViolationReport
+                {
+                    PostId = post.PostId,
+                    ViolationType = modResult.ViolationType ?? "VIO_HATE",
+                    EvidenceSummary = (modResult.Note ?? "AI phát hiện vi phạm nội dung.").Length > 500
+                        ? (modResult.Note ?? "AI phát hiện vi phạm nội dung.").Substring(0, 500)
+                        : (modResult.Note ?? "AI phát hiện vi phạm nội dung."),
+                    ReportSource = "AI_SCAN",
+                    Status = "PENDING",
+                    CreatedAt = DateTime.UtcNow
+                });
+                await _knowledgeSyncQueue.EnqueueDeleteAsync("POST", post.PostId, ct);
+            }
+            else
+            {
+                post.ModerationStatus = "PENDING_REVIEW";
+            }
+        }
+
+        var newValueJson = JsonSerializer.Serialize(new
+        {
+            title = post.Title,
+            content = post.Content,
+            imageUrl = post.ImageUrl,
+            visibility = post.Visibility,
+            moderationStatus = post.ModerationStatus
+        });
+
+        // Ghi nhật ký kiểm toán AuditLog
+        _db.AuditLogs.Add(new AuditLog
+        {
+            ActorUserId = userId,
+            ActorRole = userRole,
+            Action = "UPDATE_POST",
+            TargetTable = "Posts",
+            TargetId = post.PostId.ToString(),
+            OldValue = oldValueJson,
+            NewValue = newValueJson,
+            Note = "Cập nhật bài viết",
+            CreatedAt = DateTime.UtcNow
+        });
+
+        await _db.SaveChangesAsync(ct);
+        await InvalidatePostListCacheAsync(ct);
+
+        return new UpdatePostResponseDto
+        {
+            PostId = post.PostId,
+            ModerationStatus = post.ModerationStatus
+        };
+    }
+
+    /// <summary>
+    /// Xóa mềm bài viết của mình (chuyển trạng thái sang DELETED) (FN-POST-07).
+    /// </summary>
+    public async Task DeletePostAsync(
+        int id,
+        int userId,
+        string userRole,
+        CancellationToken ct = default)
+    {
+        if (id <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã bài viết không hợp lệ (phải > 0).");
+        }
+
+        var post = await _db.Posts.FirstOrDefaultAsync(p => p.PostId == id, ct);
+        if (post == null || post.ModerationStatus == "DELETED")
+        {
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
+        }
+
+        if (post.UserId != userId)
+        {
+            throw AppException.Forbidden(ErrorCodes.ErrContentNotOwner, "Không phải tác giả của nội dung.");
+        }
+
+        var oldStatus = post.ModerationStatus;
+        post.ModerationStatus = "DELETED";
+        post.UpdatedAt = DateTime.UtcNow;
+
+        // Ghi AuditLog
+        _db.AuditLogs.Add(new AuditLog
+        {
+            ActorUserId = userId,
+            ActorRole = userRole,
+            Action = "DELETE_POST",
+            TargetTable = "Posts",
+            TargetId = post.PostId.ToString(),
+            OldValue = JsonSerializer.Serialize(new { moderationStatus = oldStatus }),
+            NewValue = JsonSerializer.Serialize(new { moderationStatus = "DELETED" }),
+            Note = "Xóa mềm bài viết",
+            CreatedAt = DateTime.UtcNow
+        });
+
+        await _db.SaveChangesAsync(ct);
+
+        if (oldStatus == "APPROVED_ACTIVE")
+        {
+            await _knowledgeSyncQueue.EnqueueDeleteAsync("POST", post.PostId, ct);
+        }
+
+        await InvalidatePostListCacheAsync(ct);
+    }
+
+    /// <summary>
+    /// Kiểm tra ràng buộc hợp lệ cho yêu cầu tạo bài viết mới.
+    /// </summary>
+    private static void ValidateCreatePostRequest(CreatePostRequest request)
+    {
+        if (request == null)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Dữ liệu yêu cầu không được để trống.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Trim().Length < 10 || request.Title.Trim().Length > 150)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Tiêu đề bài viết phải từ 10 đến 150 ký tự.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Content))
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Nội dung bài viết không được để trống.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Visibility))
+        {
+            var vis = request.Visibility.Trim().ToUpperInvariant();
+            if (vis == "FOLLOWERS")
+            {
+                throw AppException.BadRequest(
+                    ErrorCodes.ErrPostVisibilityUnsupported,
+                    "Visibility FOLLOWERS chưa hỗ trợ (Phase 2).");
+            }
+
+            if (vis != "PUBLIC" && vis != "PRIVATE")
+            {
+                throw AppException.BadRequest(
+                    ErrorCodes.ErrValidation,
+                    "Chế độ hiển thị không hợp lệ (chỉ chấp nhận: PUBLIC, PRIVATE).");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ImageUrl))
+        {
+            if (!Uri.TryCreate(request.ImageUrl, UriKind.Absolute, out var uri) ||
+                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                throw AppException.BadRequest(ErrorCodes.ErrValidation, "Đường dẫn ảnh không hợp lệ.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Kiểm tra định mức đăng bài/ngày (BR-USR-04): tài khoản < 3 ngày tối đa 02 bài, tài khoản >= 3 ngày tối đa 10 bài.
+    /// Áp dụng cho tổng số Recipes + Posts gửi đăng trong ngày (không tính DRAFT).
+    /// </summary>
+    private async Task CheckDailyPostLimitAsync(int userId, CancellationToken ct)
+    {
+        var user = await _db.Users.FindAsync(new object[] { userId }, ct);
+        if (user == null)
+        {
+            throw AppException.Unauthorized(ErrorCodes.ErrAuthInvalidToken, "Người dùng không tồn tại hoặc phiên đăng nhập không hợp lệ.");
+        }
+
+        var isNewAccount = (DateTime.UtcNow - user.CreatedAt).TotalDays < 3.0;
+        var dailyLimit = isNewAccount ? 2 : 10;
+
+        var todayStart = DateTime.UtcNow.Date;
+        var todayEnd = todayStart.AddDays(1);
+
+        var postsToday = await _db.Posts
+            .CountAsync(p => p.UserId == userId
+                && p.CreatedAt >= todayStart
+                && p.CreatedAt < todayEnd
+                && p.ModerationStatus != "DRAFT", ct);
+
+        var recipesToday = await _db.Recipes
+            .CountAsync(r => r.UserId == userId
+                && r.CreatedAt >= todayStart
+                && r.CreatedAt < todayEnd
+                && r.Status != "DRAFT", ct);
+
+        var totalSubmitted = postsToday + recipesToday;
+        if (totalSubmitted >= dailyLimit)
+        {
+            throw AppException.TooManyRequests(
+                ErrorCodes.ErrPostDailyLimitExceeded,
+                "Vượt giới hạn số bài đăng trong ngày (BR-USR-04).");
+        }
+    }
+
+    /// <summary>
+    /// Xóa bộ nhớ đệm phân tán Redis cho danh sách bài viết.
+    /// </summary>
+    private async Task InvalidatePostListCacheAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _redis.RemoveAsync("post_list:*", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi khi xóa bộ nhớ đệm post_list:* trên Redis.");
+        }
+    }
+
+    /// <summary>
+    /// Ghi nhật ký định mức sử dụng AI vào bảng AIQuotaLogs.
+    /// </summary>
+    private async Task LogAiQuotaAsync(int userId, ContentModerationResult modResult, CancellationToken ct)
+    {
+        try
+        {
+            var quotaLog = new AiquotaLog
+            {
+                UserId = userId,
+                FeatureCode = "CONTENT_MODERATION",
+                TokensConsumed = modResult.TokensConsumed,
+                CostEstimateUsd = modResult.CostEstimateUsd,
+                RequestStatus = "SUCCESS",
+                ExecutionTimeMs = modResult.ExecutionTimeMs,
+                CreatedAt = DateTime.UtcNow
+            };
+            _db.AiquotaLogs.Add(quotaLog);
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi khi ghi nhật ký AIQuotaLogs cho người dùng {UserId}.", userId);
+        }
+    }
+
+    /// <summary>
     /// Lớp bọc nội bộ phục vụ việc lưu trữ kết quả phân trang tìm kiếm vào cache Redis.
     /// </summary>
     private class PostSearchResultCache
@@ -368,3 +866,4 @@ public class PostService : IPostService
         public int Total { get; set; }
     }
 }
+

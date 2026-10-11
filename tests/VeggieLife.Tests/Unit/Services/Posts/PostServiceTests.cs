@@ -63,7 +63,7 @@ public class PostServiceTests : IDisposable
             Email = "nguyenan@example.com",
             Role = "MEMBER",
             AccountStatus = "ACTIVE",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow.AddDays(-10)
         };
 
         var user2 = new User
@@ -73,7 +73,7 @@ public class PostServiceTests : IDisposable
             Email = "tranbinh@example.com",
             Role = "MEMBER",
             AccountStatus = "ACTIVE",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow.AddDays(-10)
         };
 
         _db.Users.AddRange(user1, user2);
@@ -119,7 +119,7 @@ public class PostServiceTests : IDisposable
             IsVerified = true,
             Status = "APPROVED_ACTIVE",
             Source = "USER",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow.AddDays(-5)
         };
         _db.Recipes.Add(recipe);
 
@@ -204,7 +204,7 @@ public class PostServiceTests : IDisposable
             Visibility = "PUBLIC",
             ModerationStatus = "PENDING_REVIEW",
             ViewCount = 0,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow.AddDays(-2)
         };
 
         // Bài 5: DELETED (đã xóa mềm)
@@ -219,7 +219,7 @@ public class PostServiceTests : IDisposable
             Visibility = "PUBLIC",
             ModerationStatus = "DELETED",
             ViewCount = 0,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow.AddDays(-2)
         };
 
         _db.Posts.AddRange(post1, post2, post3, post4, post5);
@@ -512,4 +512,356 @@ public class PostServiceTests : IDisposable
             It.IsAny<TimeSpan?>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    // =========================================================================
+    // FN-POST-07: ĐĂNG, SỬA, GỠ VÀ XÓA BÀI VIẾT (BR-USR-03, BR-USR-04, BR-ADM-CNT-001/002)
+    // =========================================================================
+
+    [Fact]
+    public async Task CreatePost_DraftOnly_ShouldCreateDraftWithoutCheckingDailyQuotaOrAI()
+    {
+        // Arrange: Người dùng mới tạo tài khoản
+        var request = new CreatePostRequest
+        {
+            Title = "Bản nháp chia sẻ ăn chay tuần đầu",
+            Content = "Nội dung đang viết dở dang...",
+            Visibility = "PUBLIC",
+            Submit = false
+        };
+
+        // Act
+        var result = await _service.CreatePostAsync(request, 1024, "MEMBER");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.PostId.Should().BeGreaterThan(0);
+        result.ModerationStatus.Should().Be("DRAFT");
+
+        var dbPost = await _db.Posts.FindAsync(result.PostId);
+        dbPost.Should().NotBeNull();
+        dbPost!.ModerationStatus.Should().Be("DRAFT");
+        dbPost.Visibility.Should().Be("PUBLIC");
+
+        // Không ghi AIQuotaLogs cho bản nháp
+        var quotaLogs = await _db.AiquotaLogs.Where(l => l.UserId == 1024).ToListAsync();
+        quotaLogs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CreatePost_SubmitCleanContent_ShouldApproveActive_AndLogAiQuota()
+    {
+        // Arrange
+        var request = new CreatePostRequest
+        {
+            Title = "Hành trình một tháng ăn chay thuần thực vật",
+            Content = "Mình cảm thấy cơ thể nhẹ nhàng hơn rất nhiều sau khi chuyển sang chế độ thuần chay.",
+            Visibility = "PUBLIC",
+            Submit = true
+        };
+
+        // Act
+        var result = await _service.CreatePostAsync(request, 1024, "MEMBER");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.ModerationStatus.Should().Be("APPROVED_ACTIVE");
+
+        var dbPost = await _db.Posts.FindAsync(result.PostId);
+        dbPost.Should().NotBeNull();
+        dbPost!.ModerationStatus.Should().Be("APPROVED_ACTIVE");
+
+        // Kiểm tra AIQuotaLogs được ghi nhận
+        var quotaLog = await _db.AiquotaLogs.FirstOrDefaultAsync(l => l.UserId == 1024 && l.FeatureCode == "CONTENT_MODERATION");
+        quotaLog.Should().NotBeNull();
+        quotaLog!.RequestStatus.Should().Be("SUCCESS");
+
+        // Redis cache invalidation
+        _mockRedis.Verify(r => r.RemoveAsync("post_list:*", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreatePost_SubmitViolatingContent_ShouldQuarantine_AndCreateViolationReport()
+    {
+        // Arrange: Nội dung chứa từ khóa vi phạm động vật ("thịt bò")
+        var request = new CreatePostRequest
+        {
+            Title = "Chia sẻ món ăn chay nhưng có thịt bò",
+            Content = "Bài viết này hướng dẫn nấu món nhưng lại nhắc đến thịt bò xào thơm ngon.",
+            Visibility = "PUBLIC",
+            Submit = true
+        };
+
+        // Act
+        var result = await _service.CreatePostAsync(request, 1024, "MEMBER");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.ModerationStatus.Should().Be("QUARANTINED_HIDDEN");
+
+        var dbPost = await _db.Posts.FindAsync(result.PostId);
+        dbPost!.ModerationStatus.Should().Be("QUARANTINED_HIDDEN");
+
+        // Kiểm tra ViolationReports được tạo tự động
+        var report = await _db.ViolationReports.FirstOrDefaultAsync(r => r.PostId == result.PostId);
+        report.Should().NotBeNull();
+        report!.ViolationType.Should().Be("VIO_MEAT");
+        report.ReportSource.Should().Be("AI_SCAN");
+        report.Status.Should().Be("PENDING");
+    }
+
+    [Fact]
+    public async Task CreatePost_NewAccount_ThirdPostInDay_ShouldThrowDailyLimitExceeded_429()
+    {
+        // Arrange: Tạo tài khoản mới dưới 3 ngày (tạo cách đây 1 ngày)
+        var newUser = new User
+        {
+            UserId = 3001,
+            FullName = "Tân Binh Ăn Chay",
+            Email = "tanbinh@example.com",
+            Role = "MEMBER",
+            AccountStatus = "ACTIVE",
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+        _db.Users.Add(newUser);
+        await _db.SaveChangesAsync();
+
+        var req1 = new CreatePostRequest
+        {
+            Title = "Bài viết số 1 trong ngày của tài khoản mới",
+            Content = "Nội dung bài viết số 1...",
+            Submit = true
+        };
+        var req2 = new CreatePostRequest
+        {
+            Title = "Bài viết số 2 trong ngày của tài khoản mới",
+            Content = "Nội dung bài viết số 2...",
+            Submit = true
+        };
+        var req3 = new CreatePostRequest
+        {
+            Title = "Bài viết số 3 trong ngày của tài khoản mới",
+            Content = "Nội dung bài viết số 3 vượt hạn mức...",
+            Submit = true
+        };
+
+        // Act: Đăng bài 1 và 2 thành công
+        var res1 = await _service.CreatePostAsync(req1, 3001, "MEMBER");
+        res1.Should().NotBeNull();
+
+        var res2 = await _service.CreatePostAsync(req2, 3001, "MEMBER");
+        res2.Should().NotBeNull();
+
+        // Act & Assert: Bài thứ 3 trong ngày của tài khoản mới bị từ chối đúng mã lỗi 429 ERR_POST_DAILY_LIMIT_EXCEEDED
+        var act = async () => await _service.CreatePostAsync(req3, 3001, "MEMBER");
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(429);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrPostDailyLimitExceeded);
+        ex.Which.Message.Should().Contain("BR-USR-04");
+    }
+
+    [Fact]
+    public async Task CreatePost_NewAccount_DraftsDoNotCountTowardsDailyLimit()
+    {
+        // Arrange: Tài khoản mới < 3 ngày
+        var newUser = new User
+        {
+            UserId = 3002,
+            FullName = "Người Dùng Thích Nháp",
+            Email = "nhap@example.com",
+            Role = "MEMBER",
+            AccountStatus = "ACTIVE",
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+        _db.Users.Add(newUser);
+        await _db.SaveChangesAsync();
+
+        // Tạo 3 bản nháp DRAFT (submit = false)
+        for (int i = 1; i <= 3; i++)
+        {
+            await _service.CreatePostAsync(new CreatePostRequest
+            {
+                Title = $"Bản nháp số {i} không tính vào quota",
+                Content = $"Nội dung nháp {i}...",
+                Submit = false
+            }, 3002, "MEMBER");
+        }
+
+        // Đăng bài chính thức thứ 1 (submit = true) -> Thành công
+        var res1 = await _service.CreatePostAsync(new CreatePostRequest
+        {
+            Title = "Bài viết chính thức số 1 hợp lệ",
+            Content = "Nội dung bài 1...",
+            Submit = true
+        }, 3002, "MEMBER");
+        res1.Should().NotBeNull();
+
+        // Đăng bài chính thức thứ 2 (submit = true) -> Thành công
+        var res2 = await _service.CreatePostAsync(new CreatePostRequest
+        {
+            Title = "Bài viết chính thức số 2 hợp lệ",
+            Content = "Nội dung bài 2...",
+            Submit = true
+        }, 3002, "MEMBER");
+        res2.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task CreatePost_OlderAccount_AllowsUpToTenPostsPerDay()
+    {
+        // Arrange: Tài khoản tạo hơn 3 ngày trước (5 ngày trước)
+        var oldUser = new User
+        {
+            UserId = 3003,
+            FullName = "Thành Viên Lâu Năm",
+            Email = "launam@example.com",
+            Role = "MEMBER",
+            AccountStatus = "ACTIVE",
+            CreatedAt = DateTime.UtcNow.AddDays(-5)
+        };
+        _db.Users.Add(oldUser);
+        await _db.SaveChangesAsync();
+
+        // Đăng 10 bài thành công
+        for (int i = 1; i <= 10; i++)
+        {
+            var res = await _service.CreatePostAsync(new CreatePostRequest
+            {
+                Title = $"Bài viết hợp lệ số {i:D2} trong ngày",
+                Content = $"Nội dung chia sẻ số {i}...",
+                Submit = true
+            }, 3003, "MEMBER");
+            res.Should().NotBeNull();
+        }
+
+        // Bài thứ 11 trong ngày -> Bị từ chối HTTP 429 ERR_POST_DAILY_LIMIT_EXCEEDED
+        var act = async () => await _service.CreatePostAsync(new CreatePostRequest
+        {
+            Title = "Bài viết số 11 vượt giới hạn 10 bài",
+            Content = "Nội dung bài 11...",
+            Submit = true
+        }, 3003, "MEMBER");
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(429);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrPostDailyLimitExceeded);
+    }
+
+    [Fact]
+    public async Task CreatePost_ValidationFailures_ShouldThrowBadRequest()
+    {
+        // Title quá ngắn (< 10 ký tự)
+        var shortTitleReq = new CreatePostRequest { Title = "Ngắn", Content = "Nội dung hợp lệ..." };
+        var act1 = async () => await _service.CreatePostAsync(shortTitleReq, 1024, "MEMBER");
+        (await act1.Should().ThrowAsync<AppException>()).Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+
+        // Content rỗng
+        var emptyContentReq = new CreatePostRequest { Title = "Tiêu đề hợp lệ từ 10 ký tự", Content = "   " };
+        var act2 = async () => await _service.CreatePostAsync(emptyContentReq, 1024, "MEMBER");
+        (await act2.Should().ThrowAsync<AppException>()).Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+
+        // Visibility = FOLLOWERS (chưa hỗ trợ ở Phase 1)
+        var followersReq = new CreatePostRequest
+        {
+            Title = "Tiêu đề hợp lệ từ 10 ký tự",
+            Content = "Nội dung hợp lệ...",
+            Visibility = "FOLLOWERS"
+        };
+        var act3 = async () => await _service.CreatePostAsync(followersReq, 1024, "MEMBER");
+        var ex3 = await act3.Should().ThrowAsync<AppException>();
+        ex3.Which.StatusCode.Should().Be(400);
+        ex3.Which.ErrorCode.Should().Be(ErrorCodes.ErrPostVisibilityUnsupported);
+    }
+
+    [Fact]
+    public async Task UpdatePost_ValidAuthor_ShouldUpdateAndReturnPendingReview_AndWriteAuditLog()
+    {
+        // Arrange: Sửa bài viết số 1 (do user 1024 tạo)
+        var request = new UpdatePostRequest
+        {
+            Title = "Tiêu đề bài viết đã được chỉnh sửa hợp lệ",
+            Content = "Nội dung bài viết mới có thêm chi tiết bổ sung."
+        };
+
+        // Act
+        var result = await _service.UpdatePostAsync(1, request, 1024, "MEMBER");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.PostId.Should().Be(1);
+        result.ModerationStatus.Should().Be("PENDING_REVIEW");
+
+        var dbPost = await _db.Posts.FindAsync(1);
+        dbPost!.Title.Should().Be("Tiêu đề bài viết đã được chỉnh sửa hợp lệ");
+        dbPost.ModerationStatus.Should().Be("PENDING_REVIEW");
+
+        // Kiểm tra AuditLogs
+        var audit = await _db.AuditLogs.FirstOrDefaultAsync(a => a.TargetTable == "Posts" && a.TargetId == "1" && a.Action == "UPDATE_POST");
+        audit.Should().NotBeNull();
+        audit!.ActorUserId.Should().Be(1024);
+        audit.ActorRole.Should().Be("MEMBER");
+    }
+
+    [Fact]
+    public async Task UpdatePost_NotAuthor_ShouldThrowForbidden_403()
+    {
+        // User 2048 cố tình sửa bài 1 của User 1024
+        var request = new UpdatePostRequest
+        {
+            Title = "Tiêu đề bị sửa trái phép",
+            Content = "Nội dung hack..."
+        };
+
+        var act = async () => await _service.UpdatePostAsync(1, request, 2048, "MEMBER");
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrContentNotOwner);
+    }
+
+    [Fact]
+    public async Task UpdatePost_ChangeVisibilityToPrivate_ShouldUnpublishPost()
+    {
+        // Tác giả gỡ bài khỏi trang cộng đồng bằng cách chuyển sang PRIVATE
+        var request = new UpdatePostRequest
+        {
+            Visibility = "PRIVATE"
+        };
+
+        var result = await _service.UpdatePostAsync(1, request, 1024, "MEMBER");
+        result.Should().NotBeNull();
+
+        var dbPost = await _db.Posts.FindAsync(1);
+        dbPost!.Visibility.Should().Be("PRIVATE");
+    }
+
+    [Fact]
+    public async Task DeletePost_Success_ShouldSoftDelete_AndWriteAuditLog()
+    {
+        // Act: User 1024 xóa bài 1 của mình
+        await _service.DeletePostAsync(1, 1024, "MEMBER");
+
+        // Assert
+        var dbPost = await _db.Posts.FindAsync(1);
+        dbPost!.ModerationStatus.Should().Be("DELETED");
+
+        var audit = await _db.AuditLogs.FirstOrDefaultAsync(a => a.TargetTable == "Posts" && a.TargetId == "1" && a.Action == "DELETE_POST");
+        audit.Should().NotBeNull();
+        audit!.ActorUserId.Should().Be(1024);
+
+        // Thử xóa lại bài đã xóa -> Trả lỗi 404 ERR_CONTENT_NOT_FOUND
+        var actAgain = async () => await _service.DeletePostAsync(1, 1024, "MEMBER");
+        var ex = await actAgain.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrContentNotFound);
+    }
+
+    [Fact]
+    public async Task DeletePost_NotOwner_ShouldThrowForbidden_403()
+    {
+        // User 2048 cố tình xóa bài 1 của User 1024
+        var act = async () => await _service.DeletePostAsync(1, 2048, "MEMBER");
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrContentNotOwner);
+    }
 }
+

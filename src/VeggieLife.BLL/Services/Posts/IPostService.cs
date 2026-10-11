@@ -35,10 +35,53 @@ public interface IPostService
     /// <param name="isGuest">Cờ xác định người xem là khách vãng lai hay thành viên đã đăng nhập.</param>
     /// <param name="currentUserId">Mã người dùng hiện tại (nếu đã đăng nhập, cho phép tác giả xem bài của chính mình).</param>
     /// <param name="ct">CancellationToken.</param>
-    /// <returns>Chi tiết bài viết gồm nội dung, ảnh, video, công thức đính kèm và quyền tương tác memberActions.</returns>
     Task<PostDetailDto> GetPostByIdAsync(
         int id,
         bool isGuest,
         int? currentUserId = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Đăng bài viết chia sẻ mới (lưu nháp hoặc gửi kiểm duyệt AI) (FN-POST-07).
+    /// </summary>
+    /// <param name="request">Thông tin bài viết cần đăng.</param>
+    /// <param name="userId">Mã định danh tác giả.</param>
+    /// <param name="userRole">Vai trò của tác giả (MEMBER, VIP, ADMIN).</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>Thông tin bài viết được tạo gồm postId và moderationStatus.</returns>
+    Task<CreatePostResponseDto> CreatePostAsync(
+        CreatePostRequest request,
+        int userId,
+        string userRole,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Cập nhật bài viết của mình, gỡ khỏi cộng đồng (chuyển PRIVATE) hoặc gửi duyệt lại (FN-POST-07).
+    /// </summary>
+    /// <param name="id">Mã định danh bài viết (> 0).</param>
+    /// <param name="request">Thông tin cập nhật bài viết.</param>
+    /// <param name="userId">Mã định danh người thực hiện (phải là tác giả).</param>
+    /// <param name="userRole">Vai trò của người thực hiện.</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>Thông tin bài viết sau khi cập nhật gồm postId và moderationStatus.</returns>
+    Task<UpdatePostResponseDto> UpdatePostAsync(
+        int id,
+        UpdatePostRequest request,
+        int userId,
+        string userRole,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Xóa mềm bài viết của mình (chuyển trạng thái sang DELETED) (FN-POST-07).
+    /// </summary>
+    /// <param name="id">Mã định danh bài viết (> 0).</param>
+    /// <param name="userId">Mã định danh người thực hiện (phải là tác giả).</param>
+    /// <param name="userRole">Vai trò của người thực hiện.</param>
+    /// <param name="ct">CancellationToken.</param>
+    Task DeletePostAsync(
+        int id,
+        int userId,
+        string userRole,
+        CancellationToken ct = default);
 }
+

@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using VeggieLife.BLL.Common.Constants;
+using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.Posts.Requests;
 using VeggieLife.BLL.DTOs.Posts.Responses;
@@ -72,6 +74,100 @@ public class PostsController : BaseApiController
         var post = await _postService.GetPostByIdAsync(id, isGuest, currentUserId, ct);
         return OkResponse(post, "OK");
     }
+
+    /// <summary>
+    /// FN-POST-07: Đăng bài viết mới (lưu nháp hoặc gửi kiểm duyệt AI).
+    /// </summary>
+    /// <param name="request">Payload thông tin bài viết.</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>Mã bài viết vừa tạo và trạng thái kiểm duyệt ban đầu.</returns>
+    [HttpPost]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    [ProducesResponseType(typeof(ApiResponse<CreatePostResponseDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> CreatePost([FromBody] CreatePostRequest request, CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+
+        var userId = (int)CurrentUserId!.Value;
+        var role = CurrentUserRole ?? "MEMBER";
+
+        var result = await _postService.CreatePostAsync(request, userId, role, ct);
+        return CreatedResponse(result, "Đã đăng bài.");
+    }
+
+    /// <summary>
+    /// FN-POST-07: Sửa bài viết của mình, gỡ khỏi cộng đồng (chuyển PRIVATE) hoặc gửi duyệt lại.
+    /// </summary>
+    /// <param name="id">Mã định danh bài viết (> 0).</param>
+    /// <param name="request">Payload thông tin cập nhật.</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>Mã bài viết và trạng thái kiểm duyệt sau cập nhật.</returns>
+    [HttpPut("{id:int}")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    [ProducesResponseType(typeof(ApiResponse<UpdatePostResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdatePost([FromRoute] int id, [FromBody] UpdatePostRequest request, CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+
+        var userId = (int)CurrentUserId!.Value;
+        var role = CurrentUserRole ?? "MEMBER";
+
+        var result = await _postService.UpdatePostAsync(id, request, userId, role, ct);
+        return OkResponse(result, "Đã cập nhật.");
+    }
+
+    /// <summary>
+    /// FN-POST-07: Xóa mềm bài viết của mình (chuyển sang trạng thái DELETED).
+    /// </summary>
+    /// <param name="id">Mã định danh bài viết (> 0).</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>Phản hồi thành công không kèm payload.</returns>
+    [HttpDelete("{id:int}")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    [ProducesResponseType(typeof(ApiResponse<object?>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeletePost([FromRoute] int id, CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+
+        var userId = (int)CurrentUserId!.Value;
+        var role = CurrentUserRole ?? "MEMBER";
+
+        await _postService.DeletePostAsync(id, userId, role, ct);
+        return OkResponse<object?>(null, "Đã xóa bài viết.");
+    }
+
+    /// <summary>
+    /// Kiểm tra và xác thực quyền thành viên chính thức cho các tác vụ ghi dữ liệu cộng đồng (FN-AUTH-03).
+    /// </summary>
+    private void EnsureAuthorizedMember()
+    {
+        if (User?.Identity == null || !User.Identity.IsAuthenticated)
+        {
+            throw AppException.Unauthorized(ErrorCodes.ErrAuthInvalidToken, "Thiếu hoặc sai chữ ký, hết hạn JWT.");
+        }
+
+        if (IsGuestUser())
+        {
+            throw AppException.Forbidden(ErrorCodes.ErrGuestCommunityActionDenied, "Khách vãng lai thực hiện thao tác ghi cộng đồng (FN-AUTH-03).");
+        }
+
+        if (!CurrentUserId.HasValue)
+        {
+            throw AppException.Unauthorized(ErrorCodes.ErrAuthInvalidToken, "Thiếu thông tin người dùng trong token.");
+        }
+    }
+
 
     /// <summary>
     /// Xác định xem người dùng hiện tại là khách vãng lai hay thành viên đã đăng nhập.

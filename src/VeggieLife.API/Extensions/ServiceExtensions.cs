@@ -333,6 +333,8 @@ public static class ServiceExtensions
         services.AddScoped<IVectorDbService, VectorDbServiceStub>();
         services.AddScoped<IEmailService, EmailServiceStub>();
         services.AddScoped<IPaymentGatewayService, PaymentGatewayServiceStub>();
+        services.AddScoped<VeggieLife.BLL.Services.Moderation.IContentModerationService, VeggieLife.BLL.Services.Moderation.SimulatedContentModerationService>();
+        services.AddScoped<VeggieLife.BLL.Services.Knowledge.IKnowledgeSyncQueue, VeggieLife.BLL.Services.Knowledge.KnowledgeSyncQueueStub>();
 
         return services;
     }
