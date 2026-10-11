@@ -22,10 +22,10 @@ public class UsersController : BaseApiController
     private readonly IProfileService _profileService;
     private readonly IProductService _productService;
 
-    public UsersController(IProfileService profileService, IProductService productService)
+    public UsersController(IProfileService profileService, IProductService? productService = null)
     {
         _profileService = profileService;
-        _productService = productService;
+        _productService = productService!;
     }
 
     /// <summary>
