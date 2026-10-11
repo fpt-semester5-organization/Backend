@@ -282,8 +282,13 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
         body.Data.GuestId.Should().NotBeNullOrEmpty();
         body.Data.CountryCode.Should().Be("VN");
 
-        // Kiểm tra Cookie guest_uuid được trả về
+        // Kiểm tra Cookie guest_uuid được trả về với HttpOnly và SameSite=Strict
         response.Headers.Contains("Set-Cookie").Should().BeTrue();
+        var setCookieHeader = response.Headers.GetValues("Set-Cookie").FirstOrDefault()?.ToLowerInvariant();
+        setCookieHeader.Should().NotBeNull();
+        setCookieHeader.Should().Contain("guest_uuid");
+        setCookieHeader.Should().Contain("httponly");
+        setCookieHeader.Should().Contain("samesite=strict");
     }
 
     [Fact]
@@ -475,5 +480,104 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
 
         // Assert: Thành công 200 OK
         vnRes.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // =========================================================================
+    // 5. TRA CỨU HẠN MỨC DÙNG THỬ CÒN LẠI (FN-AUTH-02)
+    // =========================================================================
+
+    [Fact]
+    public async Task GetGuestQuota_WithAnonymousJwt_ShouldReturn200AndAccurateQuota()
+    {
+        // Arrange
+        var (client, services) = CreateTestContext();
+        var guestUuid = Guid.NewGuid().ToString();
+        var guestToken = GenerateJwt(UserRoles.Guest, guestUuid: guestUuid);
+
+        // Giả lập Redis: AI đã dùng 1, Barcode đã dùng 2, Map đã dùng 1
+        var redis = services.GetRequiredService<IRedisService>();
+        await redis.SetAsync($"guest_quota:ai:{guestUuid}", 1L);
+        await redis.SetAsync($"guest_quota:barcode:{guestUuid}:{DateTime.UtcNow:yyyyMMdd}", 2L);
+        await redis.SetAsync($"guest_quota:map:{guestUuid}", 1L);
+
+        var req = new HttpRequestMessage(HttpMethod.Get, "/api/v1/guest/quota");
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", guestToken);
+
+        // Act
+        var resp = await client.SendAsync(req);
+
+        // Assert
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await resp.Content.ReadFromJsonAsync<ApiResponse<GetGuestQuotaResponse>>();
+        body.Should().NotBeNull();
+        body!.Data.Should().NotBeNull();
+
+        body.Data.Ai.Used.Should().Be(1);
+        body.Data.Ai.Limit.Should().Be(3);
+        body.Data.Ai.Remaining.Should().Be(2);
+
+        body.Data.BarcodeDaily.Used.Should().Be(2);
+        body.Data.BarcodeDaily.Limit.Should().Be(3);
+        body.Data.BarcodeDaily.Remaining.Should().Be(1);
+
+        body.Data.MapSearch.Used.Should().Be(1);
+        body.Data.MapSearch.Limit.Should().Be(3);
+        body.Data.MapSearch.Remaining.Should().Be(2);
+
+        body.Data.ResetAt.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task GetGuestQuota_WithoutAnyTokenOrGuestIdentity_ShouldReturn401_ErrAuthInvalidToken()
+    {
+        // Arrange
+        var client = CreateTestClient();
+        var req = new HttpRequestMessage(HttpMethod.Get, "/api/v1/guest/quota");
+
+        // Act
+        var resp = await client.SendAsync(req);
+
+        // Assert
+        resp.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var error = await resp.Content.ReadFromJsonAsync<ApiErrorResponse>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        error.Should().NotBeNull();
+        error!.ErrorCode.Should().Be(ErrorCodes.ErrAuthInvalidToken);
+    }
+
+    [Fact]
+    public async Task GetGuestQuota_WithInvalidToken_ShouldReturn401_ErrAuthInvalidToken()
+    {
+        // Arrange
+        var client = CreateTestClient();
+        var req = new HttpRequestMessage(HttpMethod.Get, "/api/v1/guest/quota");
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "invalid_expired_or_fake_token");
+
+        // Act
+        var resp = await client.SendAsync(req);
+
+        // Assert
+        resp.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var error = await resp.Content.ReadFromJsonAsync<ApiErrorResponse>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        error.Should().NotBeNull();
+        error!.ErrorCode.Should().Be(ErrorCodes.ErrAuthInvalidToken);
+    }
+
+    [Fact]
+    public async Task GetGuestQuota_WithMemberToken_ShouldReturnForbidden403()
+    {
+        // Arrange
+        var client = CreateTestClient();
+        var memberToken = GenerateJwt(UserRoles.Member, userId: 101);
+        var req = new HttpRequestMessage(HttpMethod.Get, "/api/v1/guest/quota");
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", memberToken);
+
+        // Act
+        var resp = await client.SendAsync(req);
+
+        // Assert
+        resp.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var error = await resp.Content.ReadFromJsonAsync<ApiErrorResponse>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        error.Should().NotBeNull();
+        error!.ErrorCode.Should().Be(ErrorCodes.ErrAdmForbidden);
     }
 }

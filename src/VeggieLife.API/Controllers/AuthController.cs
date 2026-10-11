@@ -49,17 +49,19 @@ public class AuthController : BaseApiController
             cookieGuestUuid = headerGuestUuid.ToString().Trim();
         }
 
-        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
-        var clientCountry = Request.Headers.TryGetValue("X-Country-Code", out var cVal) ? cVal.ToString() : null;
+        var clientIp = ResolveClientIp();
+        var clientCountry = Request.Headers.TryGetValue("X-Country-Code", out var cVal) 
+            ? cVal.ToString() 
+            : (Request.Headers.TryGetValue("CF-IPCountry", out var cfVal) ? cfVal.ToString() : null);
 
         var result = await _guestService.CreateAnonymousSessionAsync(cookieGuestUuid, clientIp, clientCountry, ct);
 
-        // Thiết lập Cookie guest_uuid cho Client
+        // Thiết lập Cookie guest_uuid cho Client (HttpOnly, Secure, SameSite=Strict - FN-AUTH-01)
         Response.Cookies.Append("guest_uuid", result.GuestId, new CookieOptions
         {
-            HttpOnly = false,
-            Secure = Request.IsHttps,
-            SameSite = SameSiteMode.Lax,
+            HttpOnly = true,
+            Secure = Request.IsHttps || !_environment.IsDevelopment(),
+            SameSite = SameSiteMode.Strict,
             Expires = DateTimeOffset.UtcNow.AddDays(365)
         });
 

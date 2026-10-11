@@ -85,5 +85,27 @@ public abstract class BaseApiController : ControllerBase
     /// <summary>
     /// Lấy mã định danh vô danh (Guest UUID) từ Claims nếu người dùng là khách vãng lai.
     /// </summary>
-    protected string? CurrentGuestUuid => User.FindFirstValue("Guest_UUID");
+    protected string? CurrentGuestUuid => User.FindFirstValue("Guest_UUID") ?? User.FindFirstValue("guestId") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+    /// <summary>
+    /// Trích xuất địa chỉ IP của Client từ X-Forwarded-For, X-Real-IP hoặc RemoteIpAddress.
+    /// </summary>
+    protected string ResolveClientIp()
+    {
+        if (Request.Headers.TryGetValue("X-Forwarded-For", out var forwardedFor) && !string.IsNullOrWhiteSpace(forwardedFor))
+        {
+            var firstIp = forwardedFor.ToString().Split(',', System.StringSplitOptions.RemoveEmptyEntries | System.StringSplitOptions.TrimEntries)[0];
+            if (!string.IsNullOrEmpty(firstIp))
+            {
+                return firstIp;
+            }
+        }
+
+        if (Request.Headers.TryGetValue("X-Real-IP", out var realIp) && !string.IsNullOrWhiteSpace(realIp))
+        {
+            return realIp.ToString().Trim();
+        }
+
+        return HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+    }
 }

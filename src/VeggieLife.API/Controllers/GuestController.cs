@@ -1,3 +1,6 @@
+using System;
+using System.Linq;
+using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
@@ -30,10 +33,38 @@ public class GuestController : BaseApiController
     [HttpGet("quota")]
     public async Task<IActionResult> GetQuota(CancellationToken ct)
     {
-        var guestUuid = ResolveGuestId();
-        if (string.IsNullOrEmpty(guestUuid))
+        // 1. Xác thực Anonymous JWT; role khác GUEST thì từ chối (FN-AUTH-02)
+        if (User.Identity?.IsAuthenticated == true)
         {
-            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Không xác định được định danh phiên khách (thiếu Guest_UUID).");
+            var isGuest = User.IsInRole(UserRoles.Guest) ||
+                          User.Claims.Any(c => 
+                              (c.Type == ClaimTypes.Role || c.Type == "role" || c.Type.EndsWith("/role")) &&
+                              string.Equals(c.Value, UserRoles.Guest, StringComparison.OrdinalIgnoreCase));
+
+            if (!isGuest)
+            {
+                throw AppException.Forbidden(ErrorCodes.ErrAdmForbidden, "Chỉ tài khoản Khách vãng lai mới có quyền tra cứu hạn mức dùng thử (FN-AUTH-02).");
+            }
+        }
+        else
+        {
+            // Nếu có Authorization header nhưng không xác thực được (sai chữ ký hoặc hết hạn) -> 401
+            if (Request.Headers.ContainsKey("Authorization"))
+            {
+                throw AppException.Unauthorized(ErrorCodes.ErrAuthInvalidToken, "Thiếu, sai chữ ký hoặc hết hạn JWT (FN-AUTH-02).");
+            }
+
+            // Nếu không có Bearer token, kiểm tra định danh phiên khách (Cookie guest_uuid hoặc header X-Guest-UUID)
+            if (!Request.Headers.ContainsKey("X-Guest-UUID") && !Request.Cookies.ContainsKey("guest_uuid"))
+            {
+                throw AppException.Unauthorized(ErrorCodes.ErrAuthInvalidToken, "Yêu cầu cần Anonymous JWT hoặc định danh phiên khách hợp lệ (FN-AUTH-02).");
+            }
+        }
+
+        var guestUuid = ResolveGuestId();
+        if (string.IsNullOrEmpty(guestUuid) || !Guid.TryParse(guestUuid, out _))
+        {
+            throw AppException.Unauthorized(ErrorCodes.ErrAuthInvalidToken, "Định danh phiên khách (Guest_UUID) không hợp lệ (FN-AUTH-02).");
         }
 
         var result = await _guestService.GetGuestQuotaAsync(guestUuid, ct);
@@ -50,9 +81,9 @@ public class GuestController : BaseApiController
     public async Task<IActionResult> ConsumeTrial([FromRoute] GuestTrialType trialType, CancellationToken ct)
     {
         var guestUuid = ResolveGuestId();
-        if (string.IsNullOrEmpty(guestUuid))
+        if (string.IsNullOrEmpty(guestUuid) || !Guid.TryParse(guestUuid, out _))
         {
-            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Không xác định được định danh phiên khách (thiếu Guest_UUID).");
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Không xác định được định danh phiên khách hợp lệ (thiếu hoặc sai Guest_UUID).");
         }
 
         var result = await _guestService.ConsumeTrialQuotaAsync(guestUuid, trialType, ct);

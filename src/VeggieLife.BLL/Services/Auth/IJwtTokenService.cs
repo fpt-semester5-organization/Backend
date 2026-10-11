@@ -30,6 +30,11 @@ public interface IJwtTokenService
     TokenResult GenerateGuestToken(string guestUuid);
 
     /// <summary>
+    /// Sinh Anonymous JWT cho khách vãng lai mang claim Role=GUEST, Guest_UUID và Country (BR-TECH-GUEST-03).
+    /// </summary>
+    TokenResult GenerateGuestToken(string guestUuid, string country);
+
+    /// <summary>
     /// Trích xuất danh sách Claims từ JWT Token mà không cần kiểm tra hạn dùng (phục vụ refresh).
     /// </summary>
     ClaimsPrincipal? GetPrincipalFromExpiredToken(string token);

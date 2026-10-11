@@ -148,13 +148,16 @@ public class GuestServiceTests
         // Arrange
         var service = CreateService();
         var guestUuid = Guid.NewGuid().ToString();
+        var tokenResult = new TokenResult
+        {
+            AccessToken = "mock_jwt_token",
+            RefreshToken = "mock_refresh",
+            ExpiresInSeconds = 86400
+        };
         _mockJwtTokenService.Setup(j => j.GenerateGuestToken(It.IsAny<string>()))
-            .Returns(new TokenResult
-            {
-                AccessToken = "mock_jwt_token",
-                RefreshToken = "mock_refresh",
-                ExpiresInSeconds = 86400
-            });
+            .Returns(tokenResult);
+        _mockJwtTokenService.Setup(j => j.GenerateGuestToken(It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(tokenResult);
 
         // Act
         var result = await service.CreateAnonymousSessionAsync(guestUuid, "127.0.0.1", "VN");
@@ -262,5 +265,60 @@ public class GuestServiceTests
         var quota = await service.GetGuestQuotaAsync(guestUuid);
         quota.Ai.Used.Should().Be(3);
         quota.Ai.Remaining.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CreateAnonymousSessionAsync_ShouldStoreGuestSessionInRedis()
+    {
+        // Arrange
+        var service = CreateService();
+        var guestUuid = Guid.NewGuid().ToString();
+        var tokenResult = new TokenResult
+        {
+            AccessToken = "mock_jwt_token",
+            RefreshToken = "mock_refresh",
+            ExpiresInSeconds = 86400
+        };
+        _mockJwtTokenService.Setup(j => j.GenerateGuestToken(It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(tokenResult);
+
+        // Act
+        var result = await service.CreateAnonymousSessionAsync(guestUuid, "192.168.1.50", "VN");
+
+        // Assert: Phiên khách được lưu trong Redis
+        var sessionExists = await _redisService.ExistsAsync($"guest_session:{guestUuid}");
+        sessionExists.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetGuestQuotaAsync_WhenRedisHasSpecificCounters_ShouldCalculateRemainingCorrectly()
+    {
+        // Arrange
+        var service = CreateService();
+        var guestUuid = Guid.NewGuid().ToString();
+
+        // Giả lập Redis: AI đã dùng 1, Barcode hôm nay đã dùng 3, Map đã dùng 2
+        await _redisService.SetAsync($"guest_quota:ai:{guestUuid}", 1L);
+        await _redisService.SetAsync($"guest_quota:barcode:{guestUuid}:{DateTime.UtcNow:yyyyMMdd}", 3L);
+        await _redisService.SetAsync($"guest_quota:map:{guestUuid}", 2L);
+
+        // Act
+        var quota = await service.GetGuestQuotaAsync(guestUuid);
+
+        // Assert
+        quota.Should().NotBeNull();
+        quota.Ai.Used.Should().Be(1);
+        quota.Ai.Limit.Should().Be(3);
+        quota.Ai.Remaining.Should().Be(2);
+
+        quota.BarcodeDaily.Used.Should().Be(3);
+        quota.BarcodeDaily.Limit.Should().Be(3);
+        quota.BarcodeDaily.Remaining.Should().Be(0);
+
+        quota.MapSearch.Used.Should().Be(2);
+        quota.MapSearch.Limit.Should().Be(3);
+        quota.MapSearch.Remaining.Should().Be(1);
+
+        quota.ResetAt.Should().NotBeNullOrEmpty();
     }
 }
