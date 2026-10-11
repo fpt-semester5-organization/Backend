@@ -19,9 +19,9 @@ public class VectorDbServiceStub : IVectorDbService
     }
 
     public Task<IReadOnlyList<VectorSearchResult>> SearchSimilarAsync(
-        IReadOnlyList<float> vector, 
-        int topK = 5, 
-        float minScore = 0.55f, 
+        IReadOnlyList<float> vector,
+        int topK = 5,
+        float minScore = 0.55f,
         CancellationToken ct = default)
     {
         _logger.LogInformation("[VectorDbServiceStub] Tìm kiếm tương đồng vector top {TopK}, minScore {MinScore}", topK, minScore);
@@ -42,9 +42,9 @@ public class VectorDbServiceStub : IVectorDbService
     }
 
     public Task UpsertPointAsync(
-        string id, 
-        IReadOnlyList<float> vector, 
-        IDictionary<string, object> payload, 
+        string id,
+        IReadOnlyList<float> vector,
+        IDictionary<string, object> payload,
         CancellationToken ct = default)
     {
         _logger.LogInformation("[VectorDbServiceStub] Lưu point id: {Id} vào Qdrant", id);

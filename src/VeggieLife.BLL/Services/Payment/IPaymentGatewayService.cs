@@ -23,19 +23,19 @@ public interface IPaymentGatewayService
     /// Khởi tạo yêu cầu thanh toán qua cổng MoMo.
     /// </summary>
     Task<PaymentCheckoutResult> CreateMoMoPaymentAsync(
-        long transactionId, 
-        decimal amountVnd, 
-        string orderInfo, 
-        string returnUrl, 
+        long transactionId,
+        decimal amountVnd,
+        string orderInfo,
+        string returnUrl,
         CancellationToken ct = default);
 
     /// <summary>
     /// Khởi tạo yêu cầu thanh toán VietQR động kèm mã giao dịch đối soát.
     /// </summary>
     Task<PaymentCheckoutResult> CreateVietQrPaymentAsync(
-        long transactionId, 
-        decimal amountVnd, 
-        string orderInfo, 
+        long transactionId,
+        decimal amountVnd,
+        string orderInfo,
         CancellationToken ct = default);
 
     /// <summary>

@@ -370,7 +370,7 @@ public class AuthService : IAuthService
         if (!isEligible)
         {
             _logger.LogInformation(
-                "Yêu cầu gửi lại OTP cho {Email} với mục đích {Purpose} bị bỏ qua do người dùng không tồn tại hoặc trạng thái tài khoản không thỏa điều kiện.", 
+                "Yêu cầu gửi lại OTP cho {Email} với mục đích {Purpose} bị bỏ qua do người dùng không tồn tại hoặc trạng thái tài khoản không thỏa điều kiện.",
                 normalizedEmail, purpose);
             return;
         }
@@ -633,7 +633,7 @@ public class AuthService : IAuthService
         var isProfileCompleted = await _dbContext.HealthProfiles
             .AnyAsync(hp => hp.UserId == user.UserId, ct);
 
-        _logger.LogInformation("Người dùng {Email} (UserId: {UserId}, Role: {Role}) đăng nhập thành công.", 
+        _logger.LogInformation("Người dùng {Email} (UserId: {UserId}, Role: {Role}) đăng nhập thành công.",
             normalizedEmail, user.UserId, user.Role);
 
         return new LoginResponse

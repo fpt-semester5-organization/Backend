@@ -32,8 +32,8 @@ public class ProfileService : IProfileService
     private static readonly Regex PhoneRegex = new(@"^0(3|5|7|8|9)[0-9]{8}$", RegexOptions.Compiled);
 
     public ProfileService(
-        AppDbContext db, 
-        IRedisService redis, 
+        AppDbContext db,
+        IRedisService redis,
         IMediaService mediaService,
         ILogger<ProfileService> logger)
     {

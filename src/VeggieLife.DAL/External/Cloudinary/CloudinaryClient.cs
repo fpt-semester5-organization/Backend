@@ -63,9 +63,9 @@ public class CloudinaryClient : ICloudinaryClient
     }
 
     public async Task<CloudinaryMediaResult> UploadImageAsync(
-        Stream stream, 
-        string fileName, 
-        string folder = "veggielife/images", 
+        Stream stream,
+        string fileName,
+        string folder = "veggielife/images",
         CancellationToken ct = default)
     {
         ValidateConfiguration();
@@ -85,7 +85,7 @@ public class CloudinaryClient : ICloudinaryClient
 
             if (uploadResult.Error != null)
             {
-                _logger.LogError("Lỗi phản hồi từ Cloudinary API khi tải ảnh '{FileName}': {Message}", 
+                _logger.LogError("Lỗi phản hồi từ Cloudinary API khi tải ảnh '{FileName}': {Message}",
                     fileName, uploadResult.Error.Message);
                 throw new CloudinaryException($"Máy chủ Cloudinary từ chối yêu cầu: {uploadResult.Error.Message}");
             }
@@ -125,9 +125,9 @@ public class CloudinaryClient : ICloudinaryClient
     }
 
     public async Task<CloudinaryMediaResult> UploadVideoAsync(
-        Stream stream, 
-        string fileName, 
-        string folder = "veggielife/videos", 
+        Stream stream,
+        string fileName,
+        string folder = "veggielife/videos",
         CancellationToken ct = default)
     {
         ValidateConfiguration();
@@ -146,7 +146,7 @@ public class CloudinaryClient : ICloudinaryClient
 
             if (uploadResult.Error != null)
             {
-                _logger.LogError("Lỗi phản hồi từ Cloudinary API khi tải video '{FileName}': {Message}", 
+                _logger.LogError("Lỗi phản hồi từ Cloudinary API khi tải video '{FileName}': {Message}",
                     fileName, uploadResult.Error.Message);
                 throw new CloudinaryException($"Máy chủ Cloudinary từ chối yêu cầu: {uploadResult.Error.Message}");
             }
@@ -200,8 +200,8 @@ public class CloudinaryClient : ICloudinaryClient
     }
 
     public async Task<CloudinaryDeleteResult> DeleteResourceAsync(
-        string publicId, 
-        string resourceType = "image", 
+        string publicId,
+        string resourceType = "image",
         CancellationToken ct = default)
     {
         ValidateConfiguration();
@@ -223,7 +223,7 @@ public class CloudinaryClient : ICloudinaryClient
 
             if (destroyResult.Error != null)
             {
-                _logger.LogError("Lỗi phản hồi từ Cloudinary API khi xóa publicId '{PublicId}': {Message}", 
+                _logger.LogError("Lỗi phản hồi từ Cloudinary API khi xóa publicId '{PublicId}': {Message}",
                     publicId, destroyResult.Error.Message);
                 throw new CloudinaryException($"Máy chủ Cloudinary từ chối yêu cầu xóa: {destroyResult.Error.Message}");
             }
@@ -243,29 +243,29 @@ public class CloudinaryClient : ICloudinaryClient
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogError(ex, "Lỗi kết nối mạng HttpRequestException khi xóa tài nguyên Cloudinary '{PublicId}': {Message}", 
+            _logger.LogError(ex, "Lỗi kết nối mạng HttpRequestException khi xóa tài nguyên Cloudinary '{PublicId}': {Message}",
                 publicId, ex.Message);
             throw new CloudinaryException("Không thể kết nối đến máy chủ lưu trữ Cloudinary do sự cố mạng.", ex);
         }
         catch (TimeoutException ex)
         {
-            _logger.LogError(ex, "Kết nối Cloudinary bị quá thời gian chờ khi xóa tài nguyên '{PublicId}': {Message}", 
+            _logger.LogError(ex, "Kết nối Cloudinary bị quá thời gian chờ khi xóa tài nguyên '{PublicId}': {Message}",
                 publicId, ex.Message);
             throw new CloudinaryException("Kết nối đến Cloudinary bị quá thời gian chờ (Timeout).", ex);
         }
         catch (Exception ex) when (ex is SocketException || ex is IOException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
         {
-            _logger.LogError(ex, "Lỗi truyền tải mạng khi xóa tài nguyên Cloudinary '{PublicId}': {Message}", 
+            _logger.LogError(ex, "Lỗi truyền tải mạng khi xóa tài nguyên Cloudinary '{PublicId}': {Message}",
                 publicId, ex.Message);
             throw new CloudinaryException("Không thể kết nối đến máy chủ lưu trữ Cloudinary do lỗi truyền tải mạng.", ex);
         }
     }
 
     public string GetImageUrl(
-        string publicId, 
-        int? width = null, 
-        int? height = null, 
-        string crop = "fill", 
+        string publicId,
+        int? width = null,
+        int? height = null,
+        string crop = "fill",
         string format = "webp")
     {
         if (string.IsNullOrWhiteSpace(publicId))
@@ -274,7 +274,7 @@ public class CloudinaryClient : ICloudinaryClient
         }
 
         // Nếu publicId đã là đường dẫn URL hoàn chỉnh
-        if (publicId.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || 
+        if (publicId.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
             publicId.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
             return publicId;
@@ -296,7 +296,7 @@ public class CloudinaryClient : ICloudinaryClient
             return string.Empty;
         }
 
-        if (publicId.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || 
+        if (publicId.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
             publicId.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
             return publicId;

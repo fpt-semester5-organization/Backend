@@ -41,7 +41,7 @@ public class ExceptionHandlingMiddleware
         }
         catch (AppException appEx)
         {
-            _logger.LogWarning(appEx, "Ngoại lệ nghiệp vụ AppException [Code: {ErrorCode}, Status: {StatusCode}]: {Message}", 
+            _logger.LogWarning(appEx, "Ngoại lệ nghiệp vụ AppException [Code: {ErrorCode}, Status: {StatusCode}]: {Message}",
                 appEx.ErrorCode, appEx.StatusCode, appEx.Message);
 
             await HandleExceptionAsync(context, appEx.StatusCode, appEx.ErrorCode, appEx.Message, appEx.Details);
@@ -50,14 +50,14 @@ public class ExceptionHandlingMiddleware
         {
             _logger.LogWarning(badReqEx, "Dữ liệu HTTP request không hợp lệ: {Message}", badReqEx.Message);
 
-            await HandleExceptionAsync(context, StatusCodes.Status400BadRequest, ErrorCodes.ErrValidation, 
+            await HandleExceptionAsync(context, StatusCodes.Status400BadRequest, ErrorCodes.ErrValidation,
                 "Cấu trúc yêu cầu HTTP không hợp lệ hoặc dữ liệu gửi lên sai định dạng.");
         }
         catch (System.Data.Common.DbException dbEx)
         {
             _logger.LogError(dbEx, "Lỗi kết nối CSDL SQL Server: {Message}", dbEx.Message);
 
-            await HandleExceptionAsync(context, StatusCodes.Status500InternalServerError, ErrorCodes.ErrSysDatabaseUnavailable, 
+            await HandleExceptionAsync(context, StatusCodes.Status500InternalServerError, ErrorCodes.ErrSysDatabaseUnavailable,
                 "Không kết nối được SQL Server.");
         }
         catch (Exception ex)
@@ -69,7 +69,7 @@ public class ExceptionHandlingMiddleware
             {
                 _logger.LogError(ex, "Lỗi kết nối CSDL SQL Server: {Message}", ex.Message);
 
-                await HandleExceptionAsync(context, StatusCodes.Status500InternalServerError, ErrorCodes.ErrSysDatabaseUnavailable, 
+                await HandleExceptionAsync(context, StatusCodes.Status500InternalServerError, ErrorCodes.ErrSysDatabaseUnavailable,
                     "Không kết nối được SQL Server.");
                 return;
             }
@@ -80,7 +80,7 @@ public class ExceptionHandlingMiddleware
                 ex.InnerException is System.Data.Common.DbException ||
                 ex.GetType().Name.Contains("SqlException") ||
                 (ex.InnerException != null && ex.InnerException.GetType().Name.Contains("SqlException")) ||
-                (ex.Message.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) && 
+                (ex.Message.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) &&
                  ex.Message.Contains("connection", StringComparison.OrdinalIgnoreCase)))
             {
                 await HandleExceptionAsync(context, StatusCodes.Status500InternalServerError, ErrorCodes.ErrSysDatabaseUnavailable,
@@ -88,16 +88,16 @@ public class ExceptionHandlingMiddleware
                 return;
             }
 
-            await HandleExceptionAsync(context, StatusCodes.Status500InternalServerError, ErrorCodes.ErrInternal, 
+            await HandleExceptionAsync(context, StatusCodes.Status500InternalServerError, ErrorCodes.ErrInternal,
                 "Đã xảy ra lỗi nội bộ máy chủ. Vui lòng thử lại sau hoặc liên hệ quản trị viên.");
         }
     }
 
     private static async Task HandleExceptionAsync(
-        HttpContext context, 
-        int statusCode, 
-        string errorCode, 
-        string message, 
+        HttpContext context,
+        int statusCode,
+        string errorCode,
+        string message,
         object? details = null)
     {
         if (context.Response.HasStarted)

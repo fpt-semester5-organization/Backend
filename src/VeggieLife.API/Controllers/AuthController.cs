@@ -50,8 +50,8 @@ public class AuthController : BaseApiController
         }
 
         var clientIp = ResolveClientIp();
-        var clientCountry = Request.Headers.TryGetValue("X-Country-Code", out var cVal) 
-            ? cVal.ToString() 
+        var clientCountry = Request.Headers.TryGetValue("X-Country-Code", out var cVal)
+            ? cVal.ToString()
             : (Request.Headers.TryGetValue("CF-IPCountry", out var cfVal) ? cfVal.ToString() : null);
 
         var result = await _guestService.CreateAnonymousSessionAsync(cookieGuestUuid, clientIp, clientCountry, ct);

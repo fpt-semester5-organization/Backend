@@ -644,10 +644,10 @@ public class ProfileServiceTests : IDisposable
         await _db.SaveChangesAsync();
 
         var (items, meta) = await _service.ListWeightHistoryAsync(
-            101, 
-            from: new DateOnly(2026, 10, 1), 
-            to: new DateOnly(2026, 10, 10), 
-            page: 1, 
+            101,
+            from: new DateOnly(2026, 10, 1),
+            to: new DateOnly(2026, 10, 10),
+            page: 1,
             size: 10);
 
         items.Should().HaveCount(1);
@@ -659,10 +659,10 @@ public class ProfileServiceTests : IDisposable
     public async Task ListWeightHistoryAsync_WhenFromGreaterThanTo_ShouldThrowBadRequest()
     {
         var act = async () => await _service.ListWeightHistoryAsync(
-            101, 
-            from: new DateOnly(2026, 10, 15), 
-            to: new DateOnly(2026, 10, 1), 
-            page: 1, 
+            101,
+            from: new DateOnly(2026, 10, 15),
+            to: new DateOnly(2026, 10, 1),
+            page: 1,
             size: 10);
 
         var ex = await act.Should().ThrowAsync<AppException>();

@@ -183,8 +183,8 @@ public class VideosEndpointIntegrationTests : IClassFixture<WebApplicationFactor
     {
         using var scope = _factory.Services.CreateScope();
         var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-        var secretKey = config["Jwt:SecretKey"] 
-            ?? config["JwtSettings:SecretKey"] 
+        var secretKey = config["Jwt:SecretKey"]
+            ?? config["JwtSettings:SecretKey"]
             ?? throw new InvalidOperationException("Cấu hình 'Jwt:SecretKey' chưa được thiết lập.");
         var issuer = config["Jwt:Issuer"] ?? config["JwtSettings:Issuer"] ?? "VeggieLife.API";
         var audience = config["Jwt:Audience"] ?? config["JwtSettings:Audience"] ?? "VeggieLife.Client";

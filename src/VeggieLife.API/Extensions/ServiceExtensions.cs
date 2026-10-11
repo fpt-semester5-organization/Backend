@@ -108,17 +108,17 @@ public static class ServiceExtensions
 
                     var principal = context.Principal ?? context.HttpContext?.User;
                     var isGuest = principal?.IsInRole(UserRoles.Guest) == true ||
-                                  principal?.Claims.Any(c => 
-                                      (c.Type == ClaimTypes.Role || c.Type == "role" || c.Type.EndsWith("/role")) && 
+                                  principal?.Claims.Any(c =>
+                                      (c.Type == ClaimTypes.Role || c.Type == "role" || c.Type.EndsWith("/role")) &&
                                       string.Equals(c.Value, UserRoles.Guest, StringComparison.OrdinalIgnoreCase)) == true;
 
                     var path = context.HttpContext?.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
-                    var isCommunity = path.Contains("/community") || 
-                                      path.Contains("/videos") || 
-                                      path.Contains("/posts") || 
-                                      path.Contains("/comments") || 
-                                      path.Contains("/likes") || 
-                                      path.Contains("/votes") || 
+                    var isCommunity = path.Contains("/community") ||
+                                      path.Contains("/videos") ||
+                                      path.Contains("/posts") ||
+                                      path.Contains("/comments") ||
+                                      path.Contains("/likes") ||
+                                      path.Contains("/votes") ||
                                       path.Contains("/violations") ||
                                       (path.Contains("/recipes") && context.HttpContext?.Request.Method != "GET");
 
