@@ -38,6 +38,8 @@ public static class ErrorCodes
 
     // === 4. Lỗi Định mức sử dụng (Quota) ===
     public const string ErrQuotaAiExceeded = "ERR_QUOTA_AI_EXCEEDED";
+    public const string ErrQuotaFridgeExceeded = "ERR_QUOTA_FRIDGE_EXCEEDED";
+    public const string ErrQuotaSttExceeded = "ERR_QUOTA_STT_EXCEEDED";
     public const string ErrQuotaBarcodeExceeded = "ERR_QUOTA_BARCODE_EXCEEDED";
     public const string ErrQuotaMapExceeded = "ERR_QUOTA_MAP_EXCEEDED";
     public const string ErrQuotaMealPlanExceeded = "ERR_QUOTA_MEAL_PLAN_EXCEEDED";

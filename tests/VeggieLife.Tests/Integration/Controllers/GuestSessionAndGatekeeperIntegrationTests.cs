@@ -580,4 +580,33 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
         error.Should().NotBeNull();
         error!.ErrorCode.Should().Be(ErrorCodes.ErrAdmForbidden);
     }
+
+    [Fact]
+    public async Task TrialEndpoints_FridgeVisionAndVideoStt_ShouldHaveSeparateQuotasOf3()
+    {
+        // Arrange
+        var client = CreateTestClient();
+        var guestUuid = Guid.NewGuid().ToString();
+
+        // 1. Tiêu thụ 3 lượt FridgeVision
+        for (int i = 0; i < 3; i++)
+        {
+            var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/guest/trial/FridgeVision");
+            req.Headers.Add("X-Guest-UUID", guestUuid);
+            var res = await client.SendAsync(req);
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        // Lượt thứ 4 FridgeVision bị chặn
+        var reqFridge4 = new HttpRequestMessage(HttpMethod.Post, "/api/v1/guest/trial/FridgeVision");
+        reqFridge4.Headers.Add("X-Guest-UUID", guestUuid);
+        var resFridge4 = await client.SendAsync(reqFridge4);
+        resFridge4.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+
+        // 2. VideoStt VẪN HOẠT ĐỘNG vì có hạn ngạch độc lập
+        var reqStt = new HttpRequestMessage(HttpMethod.Post, "/api/v1/guest/trial/VideoStt");
+        reqStt.Headers.Add("X-Guest-UUID", guestUuid);
+        var resStt = await client.SendAsync(reqStt);
+        resStt.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 }

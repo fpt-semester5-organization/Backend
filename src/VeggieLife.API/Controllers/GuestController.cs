@@ -74,7 +74,7 @@ public class GuestController : BaseApiController
     /// <summary>
     /// Tiêu hao 01 lượt dùng thử tính năng nguyên tử (Atomic Quota Consumption).
     /// </summary>
-    /// <param name="trialType">Loại tính năng dùng thử: Ai (1), BarcodeDaily (2), MapSearch (3).</param>
+    /// <param name="trialType">Loại tính năng dùng thử: Chatbot/Ai (1), BarcodeDaily (2), MapSearch (3), FridgeVision (4), VideoStt (5).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Kết quả tiêu hao và số lượt còn lại.</returns>
     [HttpPost("trial/{trialType}")]

@@ -297,8 +297,10 @@ public class GuestServiceTests
         var service = CreateService();
         var guestUuid = Guid.NewGuid().ToString();
 
-        // Giả lập Redis: AI đã dùng 1, Barcode hôm nay đã dùng 3, Map đã dùng 2
+        // Giả lập Redis: AI đã dùng 1, Barcode hôm nay đã dùng 3, Map đã dùng 2, Fridge đã dùng 2, STT đã dùng 1
         await _redisService.SetAsync($"guest_quota:ai:{guestUuid}", 1L);
+        await _redisService.SetAsync($"guest_quota:fridge:{guestUuid}", 2L);
+        await _redisService.SetAsync($"guest_quota:stt:{guestUuid}", 1L);
         await _redisService.SetAsync($"guest_quota:barcode:{guestUuid}:{DateTime.UtcNow:yyyyMMdd}", 3L);
         await _redisService.SetAsync($"guest_quota:map:{guestUuid}", 2L);
 
@@ -307,9 +309,21 @@ public class GuestServiceTests
 
         // Assert
         quota.Should().NotBeNull();
+        quota.Chatbot.Used.Should().Be(1);
+        quota.Chatbot.Limit.Should().Be(3);
+        quota.Chatbot.Remaining.Should().Be(2);
+
         quota.Ai.Used.Should().Be(1);
         quota.Ai.Limit.Should().Be(3);
         quota.Ai.Remaining.Should().Be(2);
+
+        quota.FridgeVision.Used.Should().Be(2);
+        quota.FridgeVision.Limit.Should().Be(3);
+        quota.FridgeVision.Remaining.Should().Be(1);
+
+        quota.VideoStt.Used.Should().Be(1);
+        quota.VideoStt.Limit.Should().Be(3);
+        quota.VideoStt.Remaining.Should().Be(2);
 
         quota.BarcodeDaily.Used.Should().Be(3);
         quota.BarcodeDaily.Limit.Should().Be(3);
@@ -320,5 +334,34 @@ public class GuestServiceTests
         quota.MapSearch.Remaining.Should().Be(1);
 
         quota.ResetAt.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task ConsumeTrialQuotaAsync_EachFeatureShouldHaveIndependentQuotaOf3()
+    {
+        // Arrange
+        var service = CreateService();
+        var guestUuid = Guid.NewGuid().ToString();
+
+        // 1. Dùng hết 3 lượt Chatbot
+        for (int i = 0; i < 3; i++)
+        {
+            await service.ConsumeTrialQuotaAsync(guestUuid, GuestTrialType.Chatbot);
+        }
+
+        // Lượt thứ 4 Chatbot bị chặn
+        var actChatbot = () => service.ConsumeTrialQuotaAsync(guestUuid, GuestTrialType.Chatbot);
+        var exChatbot = await actChatbot.Should().ThrowAsync<AppException>();
+        exChatbot.Which.ErrorCode.Should().Be(ErrorCodes.ErrQuotaAiExceeded);
+
+        // 2. Quét tủ lạnh VẪN CÒN ĐỦ 3 lượt (không bị ảnh hưởng bởi Chatbot)
+        var fridge1 = await service.ConsumeTrialQuotaAsync(guestUuid, GuestTrialType.FridgeVision);
+        fridge1.Used.Should().Be(1);
+        fridge1.Remaining.Should().Be(2);
+
+        // 3. Xem bản phiên âm STT video VẪN CÒN ĐỦ 3 lượt
+        var stt1 = await service.ConsumeTrialQuotaAsync(guestUuid, GuestTrialType.VideoStt);
+        stt1.Used.Should().Be(1);
+        stt1.Remaining.Should().Be(2);
     }
 }
