@@ -65,7 +65,7 @@ public class GuestSecurityMiddleware
                               (user.IsInRole(UserRoles.Member) ||
                                user.IsInRole(UserRoles.Vip) ||
                                user.IsInRole(UserRoles.Admin) ||
-                               user.Claims.Any(c => 
+                               user.Claims.Any(c =>
                                    (c.Type == ClaimTypes.Role || c.Type == "role" || c.Type.EndsWith("/role")) &&
                                    (string.Equals(c.Value, UserRoles.Member, StringComparison.OrdinalIgnoreCase) ||
                                     string.Equals(c.Value, UserRoles.Vip, StringComparison.OrdinalIgnoreCase) ||

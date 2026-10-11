@@ -36,9 +36,9 @@ function Write-TestResult($testName, $isSuccess, $detail) {
 
 # 1. Hàm sinh JWT Token chuẩn HS256 cho môi trường Development
 function New-DevJwtToken($userId, $role) {
-    $secret = "YOUR_DEV_JWT_SECRET_KEY_MIN_32_CHARACTERS_LONG"
-    $issuer = "VeggieLife"
-    $audience = "VeggieLifeUsers"
+    $secret = "VeggieLifeSecretKeyForDevelopmentMustBe32CharsLong!"
+    $issuer = "VeggieLife.API"
+    $audience = "VeggieLife.Client"
 
     $header = @{
         alg = "HS256"

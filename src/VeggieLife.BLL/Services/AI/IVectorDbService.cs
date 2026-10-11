@@ -25,18 +25,18 @@ public interface IVectorDbService
     /// Tìm kiếm top-K đoạn tri thức tương đồng theo vector embedding (ngưỡng tương đồng minScore >= 0.55).
     /// </summary>
     Task<IReadOnlyList<VectorSearchResult>> SearchSimilarAsync(
-        IReadOnlyList<float> vector, 
-        int topK = 5, 
-        float minScore = 0.55f, 
+        IReadOnlyList<float> vector,
+        int topK = 5,
+        float minScore = 0.55f,
         CancellationToken ct = default);
 
     /// <summary>
     /// Lưu trữ hoặc cập nhật vector embedding của tri thức vào collection veggielife_knowledge.
     /// </summary>
     Task UpsertPointAsync(
-        string id, 
-        IReadOnlyList<float> vector, 
-        IDictionary<string, object> payload, 
+        string id,
+        IReadOnlyList<float> vector,
+        IDictionary<string, object> payload,
         CancellationToken ct = default);
 
     /// <summary>

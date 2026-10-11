@@ -19,10 +19,10 @@ public class PaymentGatewayServiceStub : IPaymentGatewayService
     }
 
     public Task<PaymentCheckoutResult> CreateMoMoPaymentAsync(
-        long transactionId, 
-        decimal amountVnd, 
-        string orderInfo, 
-        string returnUrl, 
+        long transactionId,
+        decimal amountVnd,
+        string orderInfo,
+        string returnUrl,
         CancellationToken ct = default)
     {
         _logger.LogInformation("[PaymentGatewayServiceStub] Tạo yêu cầu thanh toán MoMo cho giao dịch #{TransactionId}, số tiền: {Amount:N0} VND", transactionId, amountVnd);
@@ -38,9 +38,9 @@ public class PaymentGatewayServiceStub : IPaymentGatewayService
     }
 
     public Task<PaymentCheckoutResult> CreateVietQrPaymentAsync(
-        long transactionId, 
-        decimal amountVnd, 
-        string orderInfo, 
+        long transactionId,
+        decimal amountVnd,
+        string orderInfo,
         CancellationToken ct = default)
     {
         _logger.LogInformation("[PaymentGatewayServiceStub] Tạo yêu cầu VietQR động cho giao dịch #{TransactionId}, số tiền: {Amount:N0} VND", transactionId, amountVnd);

@@ -59,7 +59,7 @@ public class VideoService : IVideoService
         // BR-POST-08: Đúng 1 trong postId/recipeId
         if ((!hasPostId && !hasRecipeId) || (hasPostId && hasRecipeId))
         {
-            throw AppException.BadRequest(ErrorCodes.ErrValidation, 
+            throw AppException.BadRequest(ErrorCodes.ErrValidation,
                 "Yêu cầu phải cung cấp đúng một trong hai tham số postId hoặc recipeId.");
         }
 
@@ -127,7 +127,7 @@ public class VideoService : IVideoService
 
         if (!isVideo && !isImage)
         {
-            throw AppException.BadRequest(ErrorCodes.ErrMediaInvalidFile, 
+            throw AppException.BadRequest(ErrorCodes.ErrMediaInvalidFile,
                 $"Định dạng tệp '{extension}' không được hỗ trợ. Chỉ chấp nhận video MP4/MOV hoặc ảnh JPEG/PNG/WEBP.");
         }
 
@@ -173,8 +173,8 @@ public class VideoService : IVideoService
         var videoUploadResult = await _mediaService.UploadVideoAsync(dto.FileStream, fileName, "veggielife/videos", ct);
 
         // Sinh tiêu đề video hợp lệ không rỗng và tối đa 150 ký tự
-        var rawTitle = !string.IsNullOrWhiteSpace(dto.Title) 
-            ? dto.Title.Trim() 
+        var rawTitle = !string.IsNullOrWhiteSpace(dto.Title)
+            ? dto.Title.Trim()
             : (targetPost?.Title ?? targetRecipe?.Title ?? "Video hướng dẫn nấu ăn");
         var finalTitle = rawTitle.Length > 150 ? rawTitle[..150] : rawTitle;
 

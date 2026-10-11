@@ -236,7 +236,7 @@ public class GuestService : IGuestService
 
         if (!allowed)
         {
-            _logger.LogInformation("Khách {GuestUuid} đã vượt hạn ngạch dùng thử {TrialType} (Current: {Current}/{Limit})", 
+            _logger.LogInformation("Khách {GuestUuid} đã vượt hạn ngạch dùng thử {TrialType} (Current: {Current}/{Limit})",
                 guestUuid, trialType, current, limit);
             throw AppException.TooManyRequests(errorCode, exceededMessage);
         }
