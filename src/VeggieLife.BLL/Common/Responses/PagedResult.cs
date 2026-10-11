@@ -10,8 +10,8 @@ namespace VeggieLife.BLL.Common.Responses;
 public class PagedResult<T>
 {
     public IReadOnlyList<T> Items { get; set; } = Array.Empty<T>();
-    public int PageNumber { get; set; }
-    public int PageSize { get; set; }
+    public int PageNumber { get; set; } = 1;
+    public int PageSize { get; set; } = 10;
     public int TotalItems { get; set; }
     public int TotalPages { get; set; }
     public bool HasPreviousPage => PageNumber > 1;
@@ -23,7 +23,7 @@ public class PagedResult<T>
 
     public PagedResult(IReadOnlyList<T> items, int totalItems, int pageNumber, int pageSize)
     {
-        Items = items;
+        Items = items ?? Array.Empty<T>();
         TotalItems = totalItems;
         PageNumber = pageNumber < 1 ? 1 : pageNumber;
         PageSize = pageSize < 1 ? 10 : pageSize;
