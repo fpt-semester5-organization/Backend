@@ -151,11 +151,24 @@ public class CloudinaryClient : ICloudinaryClient
                 throw new CloudinaryException($"Máy chủ Cloudinary từ chối yêu cầu: {uploadResult.Error.Message}");
             }
 
+            var rawUrl = uploadResult.Url?.ToString() ?? string.Empty;
+            var rawSecureUrl = uploadResult.SecureUrl?.ToString() ?? string.Empty;
+
+            // Tự động chèn cờ vc_auto,q_auto để Cloudinary tự động chuyển mã (transcode) về codec tương thích
+            // đảm bảo 100% hiển thị hình ảnh và âm thanh trên mọi trình duyệt (kể cả video quay bằng iPhone HEVC/H.265)
+            var optimizedUrl = !string.IsNullOrEmpty(rawUrl) && rawUrl.Contains("/video/upload/") && !rawUrl.Contains("/vc_")
+                ? rawUrl.Replace("/video/upload/", "/video/upload/vc_auto,q_auto/")
+                : rawUrl;
+
+            var optimizedSecureUrl = !string.IsNullOrEmpty(rawSecureUrl) && rawSecureUrl.Contains("/video/upload/") && !rawSecureUrl.Contains("/vc_")
+                ? rawSecureUrl.Replace("/video/upload/", "/video/upload/vc_auto,q_auto/")
+                : rawSecureUrl;
+
             return new CloudinaryMediaResult
             {
                 PublicId = uploadResult.PublicId,
-                Url = uploadResult.Url?.ToString() ?? string.Empty,
-                SecureUrl = uploadResult.SecureUrl?.ToString() ?? string.Empty,
+                Url = optimizedUrl,
+                SecureUrl = optimizedSecureUrl,
                 ResourceType = "video",
                 Format = uploadResult.Format ?? Path.GetExtension(fileName).TrimStart('.'),
                 Bytes = uploadResult.Bytes,
