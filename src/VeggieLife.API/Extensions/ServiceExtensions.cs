@@ -308,6 +308,7 @@ public static class ServiceExtensions
         // Cấu hình & Dịch vụ Khách vãng lai (FN-AUTH-01, FN-AUTH-02, BR-GUEST-SEC-01)
         services.Configure<VeggieLife.BLL.Common.Settings.GuestSecuritySettings>(
             configuration.GetSection(VeggieLife.BLL.Common.Settings.GuestSecuritySettings.SectionName));
+        services.AddScoped<VeggieLife.BLL.Services.Guest.IIpGeolocationService, VeggieLife.BLL.Services.Guest.IpGeolocationService>();
         services.AddScoped<VeggieLife.BLL.Services.Guest.IGuestService, VeggieLife.BLL.Services.Guest.GuestService>();
 
         // Cấu hình & Dịch vụ Cloudinary CDN dùng chung

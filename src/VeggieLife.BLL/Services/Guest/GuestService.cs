@@ -19,6 +19,7 @@ public class GuestService : IGuestService
 {
     private readonly IRedisService _redisService;
     private readonly IJwtTokenService _jwtTokenService;
+    private readonly IIpGeolocationService _geoService;
     private readonly GuestSecuritySettings _securitySettings;
     private readonly ILogger<GuestService> _logger;
 
@@ -30,12 +31,14 @@ public class GuestService : IGuestService
         IRedisService redisService,
         IJwtTokenService jwtTokenService,
         IOptions<GuestSecuritySettings> securitySettings,
-        ILogger<GuestService> logger)
+        ILogger<GuestService> logger,
+        IIpGeolocationService? geoService = null)
     {
         _redisService = redisService;
         _jwtTokenService = jwtTokenService;
         _securitySettings = securitySettings.Value;
         _logger = logger;
+        _geoService = geoService ?? new IpGeolocationService(redisService, Microsoft.Extensions.Logging.Abstractions.NullLogger<IpGeolocationService>.Instance);
     }
 
     public async Task<CreateAnonymousSessionResponse> CreateAnonymousSessionAsync(
@@ -44,11 +47,13 @@ public class GuestService : IGuestService
         string? clientCountry,
         CancellationToken ct = default)
     {
-        // 1. Kiểm tra giới hạn vùng địa lý nếu công tắc EnforceVietnamOnly đang bật
-        var country = string.IsNullOrWhiteSpace(clientCountry) ? "VN" : clientCountry.Trim().ToUpperInvariant();
+        // 1. Phân giải quốc gia từ IP và Header (có lưu cache Redis 24 giờ - BR-GUEST-06, FN-AUTH-01)
+        var country = await _geoService.ResolveCountryAsync(clientIp, clientCountry, ct);
+
+        // Kiểm tra giới hạn vùng địa lý nếu công tắc EnforceVietnamOnly đang bật
         if (_securitySettings.EnforceVietnamOnly)
         {
-            if (!_securitySettings.AllowedCountryCodes.Contains(country))
+            if (!_securitySettings.AllowedCountryCodes.Contains(country, StringComparer.OrdinalIgnoreCase))
             {
                 _logger.LogWarning("Chặn truy cập khách từ quốc gia không hỗ trợ: {Country} (IP: {Ip})", country, clientIp ?? "Unknown");
                 throw AppException.Forbidden(
@@ -64,10 +69,27 @@ public class GuestService : IGuestService
             guestUuid = Guid.NewGuid().ToString();
         }
 
-        // 3. Cấp Anonymous JWT Token hiệu lực 24h mang vai trò GUEST
-        var tokenResult = _jwtTokenService.GenerateGuestToken(guestUuid);
+        // 3. Khởi tạo phiên khách trên Redis nếu chưa tồn tại (TTL 24 giờ, KHÔNG ghi bảng SQL - BR-TECH-GUEST-02, FN-AUTH-01)
+        var sessionKey = $"guest_session:{guestUuid}";
+        var sessionExists = await _redisService.ExistsAsync(sessionKey, ct);
+        if (!sessionExists)
+        {
+            var sessionData = new DTOs.Guest.GuestSessionData
+            {
+                GuestId = guestUuid,
+                CountryCode = country,
+                ClientIp = clientIp,
+                CreatedAt = DateTime.UtcNow
+            };
+            await _redisService.SetAsync(sessionKey, sessionData, TimeSpan.FromHours(24), ct);
+        }
 
-        return await Task.FromResult(new CreateAnonymousSessionResponse
+        // 4. Cấp Anonymous JWT Token hiệu lực 24h mang vai trò GUEST, guestId, country (BR-TECH-GUEST-03)
+        var tokenResult = _jwtTokenService.GenerateGuestToken(guestUuid, country)
+                          ?? _jwtTokenService.GenerateGuestToken(guestUuid)
+                          ?? throw new InvalidOperationException("Không thể cấp Anonymous JWT cho khách vãng lai.");
+
+        return new CreateAnonymousSessionResponse
         {
             TokenType = "Bearer",
             AccessToken = tokenResult.AccessToken,
@@ -75,7 +97,7 @@ public class GuestService : IGuestService
             Role = UserRoles.Guest,
             GuestId = guestUuid,
             CountryCode = country
-        });
+        };
     }
 
     public async Task<GetGuestQuotaResponse> GetGuestQuotaAsync(string guestUuid, CancellationToken ct = default)
@@ -93,7 +115,7 @@ public class GuestService : IGuestService
         var barcodeUsed = await _redisService.GetAsync<long?>(barcodeKey, ct) ?? 0;
         var mapUsed = await _redisService.GetAsync<long?>(mapKey, ct) ?? 0;
 
-        var resetAt = DateTime.UtcNow.Date.AddDays(1).ToString("o");
+        var resetAt = DateTime.UtcNow.Date.AddDays(1).ToString("yyyy-MM-ddTHH:mm:ssZ");
 
         return new GetGuestQuotaResponse
         {

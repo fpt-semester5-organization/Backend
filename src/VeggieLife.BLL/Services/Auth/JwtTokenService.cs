@@ -44,6 +44,11 @@ public class JwtTokenService : IJwtTokenService
 
     public TokenResult GenerateGuestToken(string guestUuid)
     {
+        return GenerateGuestToken(guestUuid, "VN");
+    }
+
+    public TokenResult GenerateGuestToken(string guestUuid, string country)
+    {
         var jti = Guid.NewGuid().ToString("N");
         var claims = new List<Claim>
         {
@@ -52,6 +57,8 @@ public class JwtTokenService : IJwtTokenService
             new(ClaimTypes.Role, UserRoles.Guest),
             new("role", UserRoles.Guest),
             new("Guest_UUID", guestUuid),
+            new("guestId", guestUuid),
+            new("country", string.IsNullOrWhiteSpace(country) ? "VN" : country.Trim().ToUpperInvariant()),
             new(JwtRegisteredClaimNames.Jti, jti)
         };
 
