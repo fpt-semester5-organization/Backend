@@ -28,6 +28,8 @@ public static class ErrorCodes
     public const string ErrAuthRefreshTokenInvalid = "ERR_AUTH_REFRESH_TOKEN_INVALID";
     public const string ErrAuthRefreshTokenReused = "ERR_AUTH_REFRESH_TOKEN_REUSED";
     public const string ErrAuthWeakPassword = "ERR_AUTH_WEAK_PASSWORD";
+    public const string ErrUnauthorized = "ERR_UNAUTHORIZED";
+    public const string ErrForbidden = "ERR_FORBIDDEN";
 
     // === 3. Lỗi Khách vãng lai & VIP (Guest & VIP) ===
     public const string ErrGuestCommunityActionDenied = "ERR_GUEST_COMMUNITY_ACTION_DENIED";
