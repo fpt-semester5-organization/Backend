@@ -23,9 +23,13 @@ public class GuestService : IGuestService
     private readonly GuestSecuritySettings _securitySettings;
     private readonly ILogger<GuestService> _logger;
 
-    public const int DefaultAiTrialLimit = 3;
+    public const int DefaultChatbotTrialLimit = 3;
+    public const int DefaultFridgeVisionTrialLimit = 3;
+    public const int DefaultVideoSttTrialLimit = 3;
     public const int DefaultBarcodeDailyLimit = 3;
     public const int DefaultMapSearchLimit = 3;
+
+    public const int DefaultAiTrialLimit = 3;
 
     public GuestService(
         IRedisService redisService,
@@ -107,11 +111,17 @@ public class GuestService : IGuestService
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã định danh khách vãng lai (guestUuid) không được để trống.");
         }
 
-        var aiKey = $"guest_quota:ai:{guestUuid}";
+        var chatbotKey = $"guest_quota:ai:{guestUuid}";
+        var fridgeKey = $"guest_quota:fridge:{guestUuid}";
+        var sttKey = $"guest_quota:stt:{guestUuid}";
         var barcodeKey = $"guest_quota:barcode:{guestUuid}:{DateTime.UtcNow:yyyyMMdd}";
         var mapKey = $"guest_quota:map:{guestUuid}";
 
-        var aiUsed = await _redisService.GetAsync<long?>(aiKey, ct) ?? 0;
+        var chatbotUsed = (await _redisService.GetAsync<long?>($"guest_quota:chatbot:{guestUuid}", ct))
+                          ?? (await _redisService.GetAsync<long?>(chatbotKey, ct))
+                          ?? 0;
+        var fridgeUsed = await _redisService.GetAsync<long?>(fridgeKey, ct) ?? 0;
+        var sttUsed = await _redisService.GetAsync<long?>(sttKey, ct) ?? 0;
         var barcodeUsed = await _redisService.GetAsync<long?>(barcodeKey, ct) ?? 0;
         var mapUsed = await _redisService.GetAsync<long?>(mapKey, ct) ?? 0;
 
@@ -119,11 +129,23 @@ public class GuestService : IGuestService
 
         return new GetGuestQuotaResponse
         {
-            Ai = new GuestQuotaItemDto
+            Chatbot = new GuestQuotaItemDto
             {
-                Used = (int)aiUsed,
-                Limit = DefaultAiTrialLimit,
-                Remaining = Math.Max(0, DefaultAiTrialLimit - (int)aiUsed)
+                Used = (int)chatbotUsed,
+                Limit = DefaultChatbotTrialLimit,
+                Remaining = Math.Max(0, DefaultChatbotTrialLimit - (int)chatbotUsed)
+            },
+            FridgeVision = new GuestQuotaItemDto
+            {
+                Used = (int)fridgeUsed,
+                Limit = DefaultFridgeVisionTrialLimit,
+                Remaining = Math.Max(0, DefaultFridgeVisionTrialLimit - (int)fridgeUsed)
+            },
+            VideoStt = new GuestQuotaItemDto
+            {
+                Used = (int)sttUsed,
+                Limit = DefaultVideoSttTrialLimit,
+                Remaining = Math.Max(0, DefaultVideoSttTrialLimit - (int)sttUsed)
             },
             BarcodeDaily = new GuestQuotaItemDto
             {
@@ -160,13 +182,31 @@ public class GuestService : IGuestService
 
         switch (trialType)
         {
-            case GuestTrialType.Ai:
+            case GuestTrialType.Ai: // Cũng là GuestTrialType.Chatbot
                 key = $"guest_quota:ai:{guestUuid}";
-                limit = DefaultAiTrialLimit;
+                limit = DefaultChatbotTrialLimit;
                 expiry = TimeSpan.FromHours(24);
                 errorCode = ErrorCodes.ErrQuotaAiExceeded;
-                exceededMessage = $"Khách đã dùng hết {DefaultAiTrialLimit:D2} lượt AI dùng thử (FN-AUTH-02, BR-GUEST-AI-01). Vui lòng đăng ký tài khoản để tiếp tục nhận trợ giúp từ AI.";
-                successMessage = "Sử dụng thành công 01 lượt AI dùng thử.";
+                exceededMessage = $"Khách đã dùng hết {DefaultChatbotTrialLimit:D2} lượt Chatbot AI dùng thử (FN-AUTH-02, BR-GUEST-AI-01). Vui lòng đăng ký tài khoản để tiếp tục nhận trợ giúp từ trợ lý AI.";
+                successMessage = "Sử dụng thành công 01 lượt Chatbot AI dùng thử.";
+                break;
+
+            case GuestTrialType.FridgeVision:
+                key = $"guest_quota:fridge:{guestUuid}";
+                limit = DefaultFridgeVisionTrialLimit;
+                expiry = TimeSpan.FromHours(24);
+                errorCode = ErrorCodes.ErrQuotaFridgeExceeded;
+                exceededMessage = $"Khách đã dùng hết {DefaultFridgeVisionTrialLimit:D2} lượt nhận diện nguyên liệu tủ lạnh dùng thử (FN-AUTH-02). Vui lòng đăng ký tài khoản để nhận diện nguyên liệu tủ lạnh không giới hạn.";
+                successMessage = "Sử dụng thành công 01 lượt nhận diện nguyên liệu tủ lạnh dùng thử.";
+                break;
+
+            case GuestTrialType.VideoStt:
+                key = $"guest_quota:stt:{guestUuid}";
+                limit = DefaultVideoSttTrialLimit;
+                expiry = TimeSpan.FromHours(24);
+                errorCode = ErrorCodes.ErrQuotaSttExceeded;
+                exceededMessage = $"Khách đã dùng hết {DefaultVideoSttTrialLimit:D2} lượt xem bản phiên âm video dùng thử (FN-AUTH-02, BR-AI-STT-03). Vui lòng đăng ký tài khoản để xem toàn bộ bản phiên âm và công thức.";
+                successMessage = "Sử dụng thành công 01 lượt xem phiên âm video dùng thử.";
                 break;
 
             case GuestTrialType.BarcodeDaily:
