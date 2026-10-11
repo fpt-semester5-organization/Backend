@@ -19,6 +19,7 @@ using VeggieLife.BLL.Services.Media;
 using VeggieLife.BLL.Services.Payment;
 using VeggieLife.BLL.Services.Profile;
 using VeggieLife.DAL.External.Cloudinary;
+using VeggieLife.DAL.External.Email;
 
 namespace VeggieLife.API.Extensions;
 
@@ -316,6 +317,11 @@ public static class ServiceExtensions
         services.AddSingleton<ICloudinaryClient, CloudinaryClient>();
         services.AddScoped<IMediaService, MediaService>();
 
+        // Cấu hình & Dịch vụ Email SMTP dùng chung (gửi mã xác thực OTP, thông báo hệ thống)
+        services.Configure<SmtpSettings>(configuration.GetSection(SmtpSettings.SectionName));
+        services.AddSingleton<ISmtpEmailClient, SmtpEmailClient>();
+        services.AddScoped<IEmailService, SmtpEmailService>();
+
         // Dịch vụ Hồ sơ cá nhân & Danh mục dùng chung
         services.AddScoped<IProfileService, ProfileService>();
         services.AddScoped<IMasterDataService, MasterDataService>();
@@ -331,7 +337,6 @@ public static class ServiceExtensions
         // Các interface dịch vụ dùng chung khác (Bản mẫu rỗng để các thành viên khác hoàn thiện)
         services.AddScoped<IAiService, AiServiceStub>();
         services.AddScoped<IVectorDbService, VectorDbServiceStub>();
-        services.AddScoped<IEmailService, EmailServiceStub>();
         services.AddScoped<IPaymentGatewayService, PaymentGatewayServiceStub>();
         services.AddScoped<VeggieLife.BLL.Services.Moderation.IContentModerationService, VeggieLife.BLL.Services.Moderation.SimulatedContentModerationService>();
         services.AddScoped<VeggieLife.BLL.Services.Knowledge.IKnowledgeSyncQueue, VeggieLife.BLL.Services.Knowledge.KnowledgeSyncQueueStub>();

@@ -112,6 +112,7 @@ public static class ErrorCodes
 
     // === 11. Lỗi Dịch vụ ngoài (External Services) ===
     public const string ErrExtCloudinaryFailed = "ERR_EXT_CLOUDINARY_FAILED";
+    public const string ErrExtEmailFailed = "ERR_EXT_EMAIL_FAILED";
     public const string ErrExtGatewayFailed = "ERR_EXT_GATEWAY_FAILED";
     public const string ErrExtOpenfoodfactsFailed = "ERR_EXT_OPENFOODFACTS_FAILED";
     public const string ErrExtQdrantUnavailable = "ERR_EXT_QDRANT_UNAVAILABLE";

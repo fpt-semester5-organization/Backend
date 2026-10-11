@@ -43,3 +43,6 @@ appsettings.Local.json
 .DS_Store
 Thumbs.db
 ~$*
+
+## Scratch and temporary local test scripts
+scratch/
