@@ -1,20 +1,21 @@
 using System.Threading;
 using System.Threading.Tasks;
+using VeggieLife.BLL.DTOs.Ai;
 
 namespace VeggieLife.BLL.Services.Moderation;
 
 /// <summary>
-/// Kết quả kiểm duyệt nội dung tự động qua AI (BR-USR-03, BR-ADM-CNT-002).
+/// Kết quả kiểm duyệt nội dung tự động qua AI (BR-USR-03, BR-ADM-CNT-002, VL-SPEC-AI-MOD-01).
 /// </summary>
 public class ContentModerationResult
 {
     /// <summary>
-    /// Cho biết nội dung có được tự động phê duyệt công khai hay không (ViolationScore < 85%).
+    /// Cho biết nội dung có được tự động phê duyệt công khai hay không (ViolationScore < 0.85 và ViolationType == NONE).
     /// </summary>
     public bool IsApproved { get; set; }
 
     /// <summary>
-    /// Điểm số vi phạm từ mô hình AI (0.0 đến 100.0). Điểm >= 85% bị cách ly QUARANTINED_HIDDEN.
+    /// Điểm số vi phạm từ mô hình AI (0.0 đến 1.0 hoặc 0.0 đến 100.0). Điểm >= 85% bị cách ly QUARANTINED_HIDDEN.
     /// </summary>
     public double ViolationScore { get; set; }
 
@@ -47,15 +48,36 @@ public class ContentModerationResult
     /// Thời gian thực thi kiểm duyệt tính theo mili-giây.
     /// </summary>
     public int ExecutionTimeMs { get; set; } = 50;
+
+    /// <summary>
+    /// Thông tin tiêu thụ tài nguyên chi tiết từ AI Service.
+    /// </summary>
+    public ModerationUsage? Usage { get; set; }
+
+    /// <summary>
+    /// Dữ liệu kiểm toán prompt & raw response từ AI Service.
+    /// </summary>
+    public ModerationAudit? Audit { get; set; }
 }
 
 /// <summary>
-/// Interface dịch vụ kiểm duyệt nội dung bài viết, công thức, bình luận tự động qua AI (BR-USR-03, BR-ADM-CNT-002).
+/// Interface dịch vụ kiểm duyệt nội dung bài viết, công thức, bình luận tự động qua AI.
+/// Tuân thủ quy chuẩn VL-SPEC-AI-MOD-01, BR-ADM-CNT-001..003, BR-REC-MOD-01.
 /// </summary>
 public interface IContentModerationService
 {
     /// <summary>
-    /// Quét kiểm duyệt nội dung bài viết bao gồm tiêu đề, văn bản và hình ảnh.
+    /// Gọi kiểm duyệt nội dung qua API endpoint /moderation/check của AI Service (VL-SPEC-AI-MOD-01).
+    /// </summary>
+    /// <param name="request">Payload chứa tiêu đề, mô tả, danh sách nguyên liệu, các bước, trường phái, ảnh.</param>
+    /// <param name="cancellationToken">CancellationToken.</param>
+    /// <returns>Dữ liệu phản hồi điểm số vi phạm, loại vi phạm, lý do và thông tin kiểm toán.</returns>
+    Task<ModerationCheckResponse> CheckContentAsync(
+        ModerationCheckRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Quét kiểm duyệt nội dung bài viết nhanh bao gồm tiêu đề, văn bản và hình ảnh.
     /// </summary>
     /// <param name="title">Tiêu đề bài viết.</param>
     /// <param name="content">Nội dung chi tiết của bài viết.</param>
