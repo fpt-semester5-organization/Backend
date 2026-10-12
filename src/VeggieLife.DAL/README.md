@@ -61,7 +61,11 @@ VeggieLife.DAL/
 │   │   ├── CloudinaryDeleteResult.cs # DTO kết quả xóa tài nguyên
 │   │   └── CloudinaryException.cs    # Ngoại lệ chuẩn hóa khi lỗi CDN
 │   ├── AiService/                    # [.gitkeep] Sẽ tích hợp client gọi microservice ai-service và stt-service
-│   ├── Email/                        # [.gitkeep] Sẽ tích hợp client SMTP / SendGrid thật
+│   ├── Email/                        # Dịch vụ gửi thư điện tử SMTP (xác thực OTP, thông báo hệ thống)
+│   │   ├── ISmtpEmailClient.cs       # Hợp đồng gửi thư điện tử qua mạng SMTP
+│   │   ├── SmtpEmailClient.cs        # Triển khai SmtpClient BCL với SSL/TLS, multipart MIME và timeout
+│   │   ├── SmtpSettings.cs           # Cấu hình Host, Port, User, Password, From, EnableSsl
+│   │   └── SmtpEmailException.cs     # Ngoại lệ chuẩn hóa khi lỗi kết nối mạng SMTP
 │   ├── Geo/                          # [.gitkeep] Sẽ tích hợp client tra cứu GeoIP (MaxMind)
 │   ├── Google/                       # [.gitkeep] Sẽ tích hợp Google OAuth & Google Places API
 │   ├── HappyCow/                     # [.gitkeep] Sẽ tích hợp dịch vụ tra cứu quán chay HappyCow
@@ -125,7 +129,7 @@ VeggieLife.DAL/
    - *Ghi chú:* Tầng BLL trong Sprint 1 đang gọi trực tiếp qua `AppDbContext`. Cần quyết định kiến trúc ở Sprint 2 xem có tiếp tục mô hình Direct DbContext hay chuyển sang Unit of Work.
 2. **Các Dịch vụ Tích hợp Ngoại vi Chưa Triển Khai (`External/`):**
    - **`AiService/`:** Chưa có `AiServiceClient` gọi HTTP REST / gRPC sang microservice `ai-service` (FastAPI) và `stt-service` (Cloud Run) kèm chính sách ngắt mạch dự phòng Polly (Circuit Breaker).
-   - **`Email/`:** Chưa có `SmtpEmailClient` gửi email thật qua giao thức SMTP hoặc các nhà cung cấp như SendGrid / Amazon SES.
+   - **`Email/`:** **Đã hoàn thành `SmtpEmailClient`** tích hợp giao thức SMTP (hỗ trợ TLS/SSL, mẫu email HTML thương hiệu VeggieLife và dự phòng kiểm thử).
    - **`Geo/`:** Chưa có `IpGeolocationClient` tra cứu tọa độ và mã quốc gia IP thực tế từ cơ sở dữ liệu MaxMind GeoLite2 hoặc ip-api.com.
    - **`Google/`:** Chưa có client xác thực Google OAuth Token và client gọi Google Places API để tìm kiếm địa điểm quán ăn chay.
    - **`HappyCow/`:** Chưa có client cào dữ liệu hoặc tích hợp với HappyCow API để làm phong phú dữ liệu nhà hàng chay.

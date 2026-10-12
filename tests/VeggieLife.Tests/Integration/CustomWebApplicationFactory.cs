@@ -14,8 +14,8 @@ namespace VeggieLife.Tests.Integration
 
         public CustomWebApplicationFactory()
         {
-            _msSqlContainer = new MsSqlBuilder().Build();
-            _redisContainer = new RedisBuilder().Build();
+            _msSqlContainer = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
+            _redisContainer = new RedisBuilder("redis:7.0").Build();
         }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)

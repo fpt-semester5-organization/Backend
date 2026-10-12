@@ -1,18 +1,43 @@
+using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Moq;
+using VeggieLife.BLL.Services.Cache;
+using VeggieLife.DAL.Context;
 using Xunit;
 
 namespace VeggieLife.Tests.Integration
 {
-    // Cần phải add <InternalsVisibleTo("VeggieLife.Tests")> hoặc làm Program public để nhận diện
-    public class ExampleIntegrationTest : IClassFixture<CustomWebApplicationFactory<Program>>
+    public class ExampleIntegrationTest : IClassFixture<WebApplicationFactory<Program>>
     {
-        private readonly CustomWebApplicationFactory<Program> _factory;
+        private readonly WebApplicationFactory<Program> _factory;
 
-        public ExampleIntegrationTest(CustomWebApplicationFactory<Program> factory)
+        public ExampleIntegrationTest(WebApplicationFactory<Program> factory)
         {
-            _factory = factory;
+            _factory = factory.WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Development");
+                builder.ConfigureServices(services =>
+                {
+                    var dbDescriptor = services.SingleOrDefault(d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
+                    if (dbDescriptor != null) services.Remove(dbDescriptor);
+
+                    services.AddDbContext<AppDbContext>(options =>
+                    {
+                        options.UseInMemoryDatabase("ExampleDb_" + System.Guid.NewGuid());
+                        options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning));
+                    });
+
+                    var redisDescriptor = services.SingleOrDefault(d => d.ServiceType == typeof(IRedisService));
+                    if (redisDescriptor != null) services.Remove(redisDescriptor);
+
+                    services.AddSingleton<IRedisService>(new Mock<IRedisService>().Object);
+                });
+            });
         }
 
         [Fact]

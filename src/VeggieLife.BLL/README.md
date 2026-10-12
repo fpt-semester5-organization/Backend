@@ -76,7 +76,7 @@ VeggieLife.BLL/
 │   ├── Media/                        # IMediaService, MediaService, MediaServiceStub, Mp4MetadataHelper
 │   ├── Cache/                        # IRedisService, RedisService (kèm cơ chế tự phục hồi In-Memory Fallback)
 │   ├── Moderation/                   # IContentModerationService, SimulatedContentModerationService
-│   ├── Email/                        # IEmailService, EmailServiceStub
+│   ├── Email/                        # IEmailService, SmtpEmailService, EmailServiceStub
 │   ├── Knowledge/                    # IKnowledgeSyncQueue, KnowledgeSyncQueueStub
 │   ├── AI/                           # IAiService, AiServiceStub, IVectorDbService, VectorDbServiceStub
 │   └── Payment/                      # IPaymentGatewayService, PaymentGatewayServiceStub

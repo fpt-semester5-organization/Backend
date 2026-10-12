@@ -28,7 +28,13 @@ builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddRoleAuthorization();
 
-// 5. Cấu hình Controllers với JSON Serialization quy chuẩn camelCase & chuẩn hóa lỗi Validation
+// 5. Cấu hình Routing chữ thường chuẩn RESTful (ví dụ: /api/v1/auth/login thay vì /api/v1/Auth/login)
+builder.Services.Configure<RouteOptions>(options =>
+{
+    options.LowercaseUrls = true;
+});
+
+// 6. Cấu hình Controllers với JSON Serialization quy chuẩn camelCase & chuẩn hóa lỗi Validation
 builder.Services.AddControllers()
     .ConfigureApiBehaviorOptions(options =>
     {
