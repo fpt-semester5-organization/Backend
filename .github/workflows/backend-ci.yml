@@ -11,19 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 8.0.x
         
     - name: Restore dependencies
-      run: dotnet restore src/VeggieLife.API/VeggieLife.API.csproj
+      run: dotnet restore VeggieLife.sln
       
     - name: Build
-      run: dotnet build src/VeggieLife.API/VeggieLife.API.csproj --no-restore
+      run: dotnet build VeggieLife.sln --no-restore
       
-    - name: Run Integration Tests
-      # Testcontainers yêu cầu Docker, mặc định runners ubuntu-latest đã cài sẵn Docker
+    - name: Run Tests
       run: dotnet test tests/VeggieLife.Tests/VeggieLife.Tests.csproj --no-build --verbosity normal
