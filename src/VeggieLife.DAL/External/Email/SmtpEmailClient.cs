@@ -126,7 +126,13 @@ public class SmtpEmailClient : ISmtpEmailClient
             Timeout = 15000 // 15 giây timeout cho mỗi nhà cung cấp
         };
 
-        var fromAddress = string.IsNullOrWhiteSpace(provider.From) ? provider.User : provider.From;
+        var fromAddress = !string.IsNullOrWhiteSpace(provider.From)
+            ? provider.From
+            : (string.Equals(provider.Name, "Resend", StringComparison.OrdinalIgnoreCase)
+                ? "onboarding@resend.dev"
+                : (string.Equals(provider.Name, "SendGrid", StringComparison.OrdinalIgnoreCase)
+                    ? "noreply@veggielife.vn"
+                    : provider.User));
         var fromDisplayName = string.IsNullOrWhiteSpace(provider.DisplayName) ? "VeggieLife" : provider.DisplayName;
 
         using var message = new MailMessage

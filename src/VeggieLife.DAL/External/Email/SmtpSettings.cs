@@ -68,12 +68,26 @@ public class SmtpSettings
 
     /// <summary>
     /// Chế độ hoạt động: 
-    /// - "Auto": Tự động thử lần lượt các nhà cung cấp có sẵn (SendGrid ➔ Gmail ➔ Mailtrap).
+    /// - "Auto": Tự động thử lần lượt các nhà cung cấp có sẵn (Resend ➔ SendGrid ➔ Gmail ➔ Mailtrap).
+    /// - "Resend": Chỉ sử dụng Resend.
     /// - "SendGrid": Chỉ sử dụng SendGrid.
     /// - "Gmail": Chỉ sử dụng Gmail.
     /// - "Mailtrap": Chỉ sử dụng Mailtrap.
     /// </summary>
     public string ActiveProvider { get; set; } = "Auto";
+
+    /// <summary>
+    /// Cấu hình Resend SMTP (dịch vụ email transactional hiện đại chuẩn production, 3.000 email/tháng miễn phí).
+    /// </summary>
+    public EmailProviderConfig Resend { get; set; } = new()
+    {
+        Name = "Resend",
+        Host = "smtp.resend.com",
+        Port = 587,
+        User = "resend",
+        From = "onboarding@resend.dev",
+        EnableSsl = true
+    };
 
     /// <summary>
     /// Cấu hình SendGrid SMTP (100 email/ngày miễn phí).
@@ -125,9 +139,16 @@ public class SmtpSettings
     {
         var list = new List<EmailProviderConfig>();
 
+        if (string.IsNullOrWhiteSpace(Resend.Name)) Resend.Name = "Resend";
         if (string.IsNullOrWhiteSpace(SendGrid.Name)) SendGrid.Name = "SendGrid";
         if (string.IsNullOrWhiteSpace(Gmail.Name)) Gmail.Name = "Gmail";
         if (string.IsNullOrWhiteSpace(Mailtrap.Name)) Mailtrap.Name = "Mailtrap";
+
+        if (string.Equals(ActiveProvider, "Resend", StringComparison.OrdinalIgnoreCase))
+        {
+            if (Resend.IsConfigured) list.Add(Resend);
+            return list;
+        }
 
         if (string.Equals(ActiveProvider, "SendGrid", StringComparison.OrdinalIgnoreCase))
         {
@@ -147,7 +168,8 @@ public class SmtpSettings
             return list;
         }
 
-        // Chế độ Auto / Failover: Ưu tiên SendGrid ➔ Gmail ➔ Mailtrap
+        // Chế độ Auto / Failover: Ưu tiên Resend ➔ SendGrid ➔ Gmail ➔ Mailtrap
+        if (Resend.IsConfigured) list.Add(Resend);
         if (SendGrid.IsConfigured) list.Add(SendGrid);
         if (Gmail.IsConfigured) list.Add(Gmail);
         if (Mailtrap.IsConfigured) list.Add(Mailtrap);

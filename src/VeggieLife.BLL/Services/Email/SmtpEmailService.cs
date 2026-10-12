@@ -241,7 +241,7 @@ public class SmtpEmailService : IEmailService
 <body>
     <div class=""container"">
         <div class=""header"">
-            <h1 class=""brand"">🌿 VeggieLife</h1>
+            <h1 class=""brand"">VeggieLife</h1>
             <div class=""brand-subtitle"">Nền tảng Thực dưỡng &amp; Món chay Thông minh</div>
         </div>
         <div class=""content"">
@@ -252,8 +252,8 @@ public class SmtpEmailService : IEmailService
                 <div class=""otp-code"">{otpCode}</div>
             </div>
             <div class=""notice"">
-                ⏱️ <strong>Hiệu lực:</strong> Mã xác thực có hiệu lực trong vòng <strong>5 phút (300 giây)</strong> kể từ thời điểm gửi.<br>
-                🔒 <strong>Bảo mật:</strong> Tuyệt đối không cung cấp mã OTP này cho bất kỳ ai. Nhân viên VeggieLife sẽ không bao giờ yêu cầu bạn cung cấp mã xác thực.
+                <strong>Hiệu lực:</strong> Mã xác thực có hiệu lực trong vòng <strong>5 phút (300 giây)</strong> kể từ thời điểm gửi.<br>
+                <strong>Bảo mật:</strong> Tuyệt đối không cung cấp mã OTP này cho bất kỳ ai. Nhân viên VeggieLife sẽ không bao giờ yêu cầu bạn cung cấp mã xác thực.
             </div>
             <p class=""description"" style=""font-size: 13px; color: #777777; margin-bottom: 0;"">
                 Nếu bạn không gửi yêu cầu này, vui lòng bỏ qua email hoặc thông báo cho bộ phận hỗ trợ của chúng tôi để được trợ giúp.
