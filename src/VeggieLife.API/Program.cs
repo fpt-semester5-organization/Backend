@@ -1,10 +1,12 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using VeggieLife.API.Extensions;
 using VeggieLife.API.Middlewares;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Responses;
+using VeggieLife.BLL.Services.Products;
 using VeggieLife.DAL.Context;
+using VeggieLife.DAL.External.OpenFoodFacts;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,6 +19,10 @@ builder.Services.AddRedisCaching(builder.Configuration);
 
 // 3. Đăng ký các dịch vụ nghiệp vụ BLL, DAL, Cloudinary CDN & Auth
 builder.Services.AddApplicationServices(builder.Configuration);
+
+// Đăng ký dịch vụ Open Food Facts Client & Product Service
+builder.Services.AddHttpClient<IOpenFoodFactsClient, OpenFoodFactsClient>();
+builder.Services.AddScoped<IProductService, ProductService>();
 
 // 4. Cấu hình Xác thực JWT Bearer & Phân quyền Roles (GUEST, MEMBER, VIP, ADMIN)
 builder.Services.AddJwtAuthentication(builder.Configuration);
@@ -63,6 +69,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerWithAuth();
 
 var app = builder.Build();
+
+app.UseCors();
 
 // 8. Pipeline: Xử lý ngoại lệ tập trung toàn cục (Global Exception Handling)
 app.UseMiddleware<ExceptionHandlingMiddleware>();

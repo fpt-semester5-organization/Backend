@@ -109,17 +109,17 @@ public static class ServiceExtensions
 
                     var principal = context.Principal ?? context.HttpContext?.User;
                     var isGuest = principal?.IsInRole(UserRoles.Guest) == true ||
-                                  principal?.Claims.Any(c => 
-                                      (c.Type == ClaimTypes.Role || c.Type == "role" || c.Type.EndsWith("/role")) && 
+                                  principal?.Claims.Any(c =>
+                                      (c.Type == ClaimTypes.Role || c.Type == "role" || c.Type.EndsWith("/role")) &&
                                       string.Equals(c.Value, UserRoles.Guest, StringComparison.OrdinalIgnoreCase)) == true;
 
                     var path = context.HttpContext?.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
-                    var isCommunity = path.Contains("/community") || 
-                                      path.Contains("/videos") || 
-                                      path.Contains("/posts") || 
-                                      path.Contains("/comments") || 
-                                      path.Contains("/likes") || 
-                                      path.Contains("/votes") || 
+                    var isCommunity = path.Contains("/community") ||
+                                      path.Contains("/videos") ||
+                                      path.Contains("/posts") ||
+                                      path.Contains("/comments") ||
+                                      path.Contains("/likes") ||
+                                      path.Contains("/votes") ||
                                       path.Contains("/violations") ||
                                       (path.Contains("/recipes") && context.HttpContext?.Request.Method != "GET");
 
@@ -338,7 +338,17 @@ public static class ServiceExtensions
         services.AddScoped<IAiService, AiServiceStub>();
         services.AddScoped<IVectorDbService, VectorDbServiceStub>();
         services.AddScoped<IPaymentGatewayService, PaymentGatewayServiceStub>();
-        services.AddScoped<VeggieLife.BLL.Services.Moderation.IContentModerationService, VeggieLife.BLL.Services.Moderation.SimulatedContentModerationService>();
+        services.AddTransient<VeggieLife.BLL.Services.Moderation.SimulatedContentModerationService>();
+        services.AddHttpClient<VeggieLife.BLL.Services.Moderation.IContentModerationService, VeggieLife.BLL.Services.Moderation.ContentModerationService>((sp, client) =>
+        {
+            var config = sp.GetRequiredService<IConfiguration>();
+            var baseUrl = config["AiService:BaseUrl"] ?? "http://localhost:8080";
+            var apiKey = config["AiService:InternalApiKey"] ?? "dev-internal-key";
+
+            client.BaseAddress = new System.Uri(baseUrl);
+            client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
+            client.Timeout = System.TimeSpan.FromSeconds(10); // Ràng buộc thời gian phản hồi NFR SI-3
+        });
         services.AddScoped<VeggieLife.BLL.Services.Knowledge.IKnowledgeSyncQueue, VeggieLife.BLL.Services.Knowledge.KnowledgeSyncQueueStub>();
 
         return services;

@@ -41,7 +41,7 @@ public class MemberOnlyAttribute : Attribute, IAsyncAuthorizationFilter
 
         // 2. Token role MEMBER/VIP/ADMIN: chuyển tiếp tới Controller đích
         var isGuest = user.IsInRole(UserRoles.Guest) ||
-                      user.Claims.Any(c => 
+                      user.Claims.Any(c =>
                           (c.Type == ClaimTypes.Role || c.Type == "role" || c.Type.EndsWith("/role")) &&
                           string.Equals(c.Value, UserRoles.Guest, StringComparison.OrdinalIgnoreCase));
 

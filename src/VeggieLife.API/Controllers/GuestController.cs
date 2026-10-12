@@ -37,7 +37,7 @@ public class GuestController : BaseApiController
         if (User.Identity?.IsAuthenticated == true)
         {
             var isGuest = User.IsInRole(UserRoles.Guest) ||
-                          User.Claims.Any(c => 
+                          User.Claims.Any(c =>
                               (c.Type == ClaimTypes.Role || c.Type == "role" || c.Type.EndsWith("/role")) &&
                               string.Equals(c.Value, UserRoles.Guest, StringComparison.OrdinalIgnoreCase));
 

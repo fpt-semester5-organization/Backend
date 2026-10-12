@@ -4,8 +4,11 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
+using VeggieLife.BLL.Common.Responses;
+using VeggieLife.BLL.DTOs.Products.Responses;
 using VeggieLife.BLL.DTOs.Profile.Requests;
 using VeggieLife.BLL.DTOs.Profile.Responses;
+using VeggieLife.BLL.Services.Products;
 using VeggieLife.BLL.Services.Profile;
 
 namespace VeggieLife.API.Controllers;
@@ -17,10 +20,12 @@ namespace VeggieLife.API.Controllers;
 public class UsersController : BaseApiController
 {
     private readonly IProfileService _profileService;
+    private readonly IProductService _productService;
 
-    public UsersController(IProfileService profileService)
+    public UsersController(IProfileService profileService, IProductService? productService = null)
     {
         _profileService = profileService;
+        _productService = productService!;
     }
 
     /// <summary>
@@ -124,6 +129,22 @@ public class UsersController : BaseApiController
         EnsureAuthorizedMember();
         var (items, meta) = await _profileService.ListWeightHistoryAsync((int)CurrentUserId!.Value, from, to, page, size, ct);
         return PagedResponse(items, meta, "OK");
+    }
+
+    /// <summary>
+    /// BR-USR-09: Lịch sử quét mã vạch
+    /// </summary>
+    [HttpGet("me/scans")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    public async Task<IActionResult> GetMyScans(
+        [FromQuery] string? verdict, 
+        [FromQuery] bool? allergenOnly, 
+        [FromQuery] int page = 1, 
+        [FromQuery] int size = 20)
+    {
+        EnsureAuthorizedMember();
+        var result = await _productService.GetUserScanHistoryAsync((int)CurrentUserId!.Value, verdict, allergenOnly, page, size);
+        return OkResponse(result, "Lấy lịch sử quét mã vạch thành công.");
     }
 
     /// <summary>

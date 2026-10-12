@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace VeggieLife.BLL.Common.Responses;
@@ -9,12 +10,15 @@ namespace VeggieLife.BLL.Common.Responses;
 /// <typeparam name="T">Kiểu dữ liệu của payload trả về.</typeparam>
 public class ApiResponse<T>
 {
-    public int StatusCode { get; set; }
+    public int StatusCode { get; set; } = 200;
     public string Message { get; set; } = string.Empty;
     public T? Data { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PagedMeta? Meta { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Errors { get; set; }
 
     public ApiResponse()
     {
@@ -28,6 +32,13 @@ public class ApiResponse<T>
         Meta = meta;
     }
 
+    public ApiResponse(T? data, string message = "OK", int statusCode = 200)
+    {
+        StatusCode = statusCode;
+        Message = message;
+        Data = data;
+    }
+
     public static ApiResponse<T> Success(T? data, string message = "Thao tác thành công.", int statusCode = 200, PagedMeta? meta = null)
     {
         return new ApiResponse<T>(statusCode, message, data, meta);
@@ -39,7 +50,7 @@ public class ApiResponse<T>
 /// </summary>
 public class ApiResponse
 {
-    public int StatusCode { get; set; }
+    public int StatusCode { get; set; } = 200;
     public string Message { get; set; } = string.Empty;
 
     public ApiResponse()

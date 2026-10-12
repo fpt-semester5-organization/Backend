@@ -8,18 +8,13 @@ using VeggieLife.BLL.DTOs.Recipes.Responses;
 namespace VeggieLife.BLL.Services.Recipes;
 
 /// <summary>
-/// Interface dịch vụ quản lý và tra cứu công thức nấu ăn món chay (FN-POST-01, FN-POST-02).
+/// Interface dịch vụ quản lý và tra cứu công thức nấu ăn món chay (FN-POST-01, FN-POST-02, FN-POST-03, FN-POST-04).
 /// </summary>
 public interface IRecipeService
 {
     /// <summary>
     /// Tìm kiếm và lọc danh sách công thức, video nấu ăn đã được duyệt công khai (FN-POST-01).
     /// </summary>
-    /// <param name="filter">Bộ lọc tìm kiếm (từ khóa, danh mục, trường phái, nguyên liệu, thời gian, loại nội dung, sắp xếp, phân trang).</param>
-    /// <param name="isGuest">Cờ xác định người gọi là Khách vãng lai hay Thành viên.</param>
-    /// <param name="guestId">Mã định danh của khách (Guest_UUID) dùng để lưu lịch sử tìm kiếm vào Redis.</param>
-    /// <param name="ct">Mã hủy tác vụ bất đồng bộ.</param>
-    /// <returns>Danh sách tóm tắt công thức và thông tin phân trang (kèm signUpPromptAtItem = 5 cho Khách).</returns>
     Task<(IReadOnlyList<RecipeSummaryDto> Items, PagedMeta Meta)> ListRecipesAsync(
         RecipeFilterRequest filter,
         bool isGuest,
@@ -29,14 +24,37 @@ public interface IRecipeService
     /// <summary>
     /// Xem chi tiết đầy đủ một công thức nấu ăn đã được duyệt (FN-POST-02).
     /// </summary>
-    /// <param name="id">Mã định danh duy nhất của công thức (Recipe_ID > 0).</param>
-    /// <param name="isGuest">Cờ xác định người gọi là Khách vãng lai hay Thành viên.</param>
-    /// <param name="currentUserId">Mã người dùng hiện tại (nếu đã đăng nhập, cho phép tác giả xem bài của mình).</param>
-    /// <param name="ct">Mã hủy tác vụ bất đồng bộ.</param>
-    /// <returns>Chi tiết công thức gồm nguyên liệu định lượng, các bước nấu, cờ transcript và quyền tương tác.</returns>
     Task<RecipeDetailDto> GetRecipeByIdAsync(
         int id,
         bool isGuest,
         int? currentUserId = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Đăng công thức nấu ăn món chay mới: lưu nháp hoặc gửi duyệt kèm kiểm duyệt AI và Red Alert (FN-POST-03).
+    /// </summary>
+    Task<CreateRecipeResponseDto> CreateRecipeAsync(
+        int userId,
+        CreateRecipeRequest request,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Cập nhật công thức nấu ăn của mình: kiểm duyệt AI đồng bộ trước khi ghi nếu đổi nội dung (FN-POST-04).
+    /// </summary>
+    Task<UpdateRecipeResponseDto> UpdateRecipeAsync(
+        int id,
+        int userId,
+        string userRole,
+        UpdateRecipeRequest request,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Gỡ khỏi trang cá nhân (mode=archive) hoặc xóa mềm toàn hệ thống (mode=all) (FN-POST-04).
+    /// </summary>
+    Task<DeleteRecipeResponseDto> DeleteRecipeAsync(
+        int id,
+        int userId,
+        string userRole,
+        string mode,
         CancellationToken ct = default);
 }

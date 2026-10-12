@@ -13,6 +13,9 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.12" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="Moq" Version="4.21.0" />
+    <PackageReference Include="Qdrant.Client" Version="1.19.0" />
+    <PackageReference Include="Testcontainers.MsSql" Version="4.16.0" />
+    <PackageReference Include="Testcontainers.Redis" Version="4.16.0" />
     <PackageReference Include="xunit" Version="2.5.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
   </ItemGroup>

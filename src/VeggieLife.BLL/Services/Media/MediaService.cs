@@ -40,9 +40,9 @@ public class MediaService : IMediaService
     /// Tải ảnh lên Cloudinary CDN với kiểm tra magic bytes và giới hạn 5 MB (BR-USR-MEDIA-01).
     /// </summary>
     public async Task<MediaUploadResponse> UploadImageAsync(
-        Stream fileStream, 
-        string fileName, 
-        string folder = "veggielife/images", 
+        Stream fileStream,
+        string fileName,
+        string folder = "veggielife/images",
         CancellationToken ct = default)
     {
         if (fileStream == null || string.IsNullOrWhiteSpace(fileName))
@@ -55,7 +55,7 @@ public class MediaService : IMediaService
         if (!AllowedImageExtensions.Contains(extension))
         {
             // BR-USR-MEDIA-01
-            throw AppException.BadRequest(ErrorCodes.ErrMediaInvalidFile, 
+            throw AppException.BadRequest(ErrorCodes.ErrMediaInvalidFile,
                 $"Định dạng ảnh '{extension}' không được hỗ trợ. Hệ thống chỉ chấp nhận định dạng JPEG, PNG hoặc WEBP.");
         }
 
@@ -66,7 +66,7 @@ public class MediaService : IMediaService
         // BR-USR-MEDIA-01: Kiểm tra dung lượng tối đa 5 MB
         if (memoryStream.Length > MaxImageSizeBytes)
         {
-            throw new AppException(413, ErrorCodes.ErrMediaFileTooLarge, 
+            throw new AppException(413, ErrorCodes.ErrMediaFileTooLarge,
                 $"Dung lượng ảnh vượt quá giới hạn cho phép (Tối đa 5 MB; kích thước nhận được: {memoryStream.Length / (1024.0 * 1024.0):F2} MB).");
         }
 
@@ -84,7 +84,7 @@ public class MediaService : IMediaService
         if (!IsValidImageSignature(headerBytes, extension))
         {
             _logger.LogWarning("Phát hiện tệp ảnh giả mạo chữ ký (Magic bytes không khớp với đuôi {Extension}): {FileName}", extension, fileName);
-            throw AppException.BadRequest(ErrorCodes.ErrMediaInvalidFile, 
+            throw AppException.BadRequest(ErrorCodes.ErrMediaInvalidFile,
                 "Chữ ký tệp (magic bytes) không khớp với định dạng ảnh yêu cầu. Tệp có thể đã bị sửa đuôi hoặc bị hỏng.");
         }
 
@@ -110,19 +110,19 @@ public class MediaService : IMediaService
         {
             _logger.LogError(ex, "Lỗi từ dịch vụ Cloudinary khi tải ảnh '{FileName}': {Message}", fileName, ex.Message);
             // Báo đúng mã lỗi HTTP 502 ERR_EXT_CLOUDINARY_FAILED
-            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed, 
+            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed,
                 "Không thể kết nối đến máy chủ lưu trữ Cloudinary.", ex.Message);
         }
         catch (HttpRequestException ex)
         {
             _logger.LogError(ex, "Lỗi mạng HttpRequestException khi tải ảnh lên Cloudinary: {Message}", ex.Message);
-            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed, 
+            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed,
                 "Không thể kết nối đến máy chủ lưu trữ Cloudinary do sự cố mạng.", ex.Message);
         }
         catch (TimeoutException ex)
         {
             _logger.LogError(ex, "Quá thời gian chờ Timeout khi kết nối Cloudinary: {Message}", ex.Message);
-            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed, 
+            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed,
                 "Kết nối đến máy chủ Cloudinary bị quá thời gian chờ (Timeout).", ex.Message);
         }
     }
@@ -131,9 +131,9 @@ public class MediaService : IMediaService
     /// Tải video nấu ăn lên Cloudinary CDN với kiểm tra giới hạn 100 MB (BR-AI-STT-01).
     /// </summary>
     public async Task<MediaUploadResponse> UploadVideoAsync(
-        Stream fileStream, 
-        string fileName, 
-        string folder = "veggielife/videos", 
+        Stream fileStream,
+        string fileName,
+        string folder = "veggielife/videos",
         CancellationToken ct = default)
     {
         if (fileStream == null || string.IsNullOrWhiteSpace(fileName))
@@ -146,7 +146,7 @@ public class MediaService : IMediaService
         if (!AllowedVideoExtensions.Contains(extension))
         {
             // BR-AI-STT-01
-            throw AppException.BadRequest(ErrorCodes.ErrMediaInvalidFile, 
+            throw AppException.BadRequest(ErrorCodes.ErrMediaInvalidFile,
                 $"Định dạng video '{extension}' không được hỗ trợ. Hệ thống chỉ chấp nhận video MP4 hoặc MOV.");
         }
 
@@ -157,7 +157,7 @@ public class MediaService : IMediaService
         // BR-AI-STT-01: Kiểm tra dung lượng tối đa 100 MB
         if (memoryStream.Length > MaxVideoSizeBytes)
         {
-            throw new AppException(413, ErrorCodes.ErrMediaFileTooLarge, 
+            throw new AppException(413, ErrorCodes.ErrMediaFileTooLarge,
                 $"Dung lượng video vượt quá giới hạn cho phép (Tối đa 100 MB; kích thước nhận được: {memoryStream.Length / (1024.0 * 1024.0):F2} MB).");
         }
 
@@ -175,7 +175,7 @@ public class MediaService : IMediaService
         if (!IsValidVideoSignature(headerBytes, extension))
         {
             _logger.LogWarning("Phát hiện tệp video giả mạo chữ ký: {FileName}", fileName);
-            throw AppException.BadRequest(ErrorCodes.ErrMediaInvalidFile, 
+            throw AppException.BadRequest(ErrorCodes.ErrMediaInvalidFile,
                 "Chữ ký tệp (magic bytes) không khớp với định dạng video MP4/MOV hợp lệ.");
         }
 
@@ -187,7 +187,7 @@ public class MediaService : IMediaService
         if (preCheckDuration.HasValue && (preCheckDuration.Value < 10.0 || preCheckDuration.Value > 300.0))
         {
             _logger.LogWarning("Video '{FileName}' có thời lượng {Duration:F1}s không nằm trong khoảng cho phép 10s–300s.", fileName, preCheckDuration.Value);
-            throw AppException.UnprocessableEntity(ErrorCodes.ErrSttDurationInvalid, 
+            throw AppException.UnprocessableEntity(ErrorCodes.ErrSttDurationInvalid,
                 $"Thời lượng video không hợp lệ. Video nấu ăn phải có thời lượng từ 10 giây đến tối đa 5 phút (300 giây). Thời lượng nhận được: {preCheckDuration.Value:F1} giây.");
         }
 
@@ -200,7 +200,7 @@ public class MediaService : IMediaService
             if (result.Duration.HasValue && (result.Duration.Value < 10.0 || result.Duration.Value > 300.0))
             {
                 _logger.LogWarning("Video '{FileName}' sau khi tải lên Cloudinary có thời lượng {Duration:F1}s không nằm trong khoảng cho phép 10s–300s.", fileName, result.Duration.Value);
-                
+
                 // Thu hồi tài nguyên trên Cloudinary để tránh chiếm dụng lưu trữ
                 try
                 {
@@ -211,7 +211,7 @@ public class MediaService : IMediaService
                     _logger.LogWarning(cleanupEx, "Không thể xóa video không hợp lệ '{PublicId}' trên Cloudinary.", result.PublicId);
                 }
 
-                throw AppException.UnprocessableEntity(ErrorCodes.ErrSttDurationInvalid, 
+                throw AppException.UnprocessableEntity(ErrorCodes.ErrSttDurationInvalid,
                     $"Thời lượng video không hợp lệ. Video nấu ăn phải có thời lượng từ 10 giây đến tối đa 5 phút (300 giây). Thời lượng nhận được: {result.Duration.Value:F1} giây.");
             }
 
@@ -232,19 +232,19 @@ public class MediaService : IMediaService
         {
             _logger.LogError(ex, "Lỗi từ dịch vụ Cloudinary khi tải video '{FileName}': {Message}", fileName, ex.Message);
             // Báo đúng mã lỗi HTTP 502 ERR_EXT_CLOUDINARY_FAILED
-            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed, 
+            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed,
                 "Không thể kết nối đến máy chủ lưu trữ Cloudinary.", ex.Message);
         }
         catch (HttpRequestException ex)
         {
             _logger.LogError(ex, "Lỗi mạng HttpRequestException khi tải video lên Cloudinary: {Message}", ex.Message);
-            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed, 
+            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed,
                 "Không thể kết nối đến máy chủ lưu trữ Cloudinary do sự cố mạng.", ex.Message);
         }
         catch (TimeoutException ex)
         {
             _logger.LogError(ex, "Quá thời gian chờ Timeout khi kết nối Cloudinary: {Message}", ex.Message);
-            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed, 
+            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed,
                 "Kết nối đến máy chủ Cloudinary bị quá thời gian chờ (Timeout).", ex.Message);
         }
     }
@@ -253,8 +253,8 @@ public class MediaService : IMediaService
     /// Xóa tài nguyên đa phương tiện khỏi Cloudinary theo publicId và loại tài nguyên.
     /// </summary>
     public async Task<MediaDeleteResponse> DeleteResourceAsync(
-        string publicId, 
-        string resourceType = "image", 
+        string publicId,
+        string resourceType = "image",
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(publicId))
@@ -276,19 +276,19 @@ public class MediaService : IMediaService
         catch (CloudinaryException ex)
         {
             _logger.LogError(ex, "Lỗi từ Cloudinary khi xóa tài nguyên '{PublicId}': {Message}", publicId, ex.Message);
-            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed, 
+            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed,
                 "Không thể kết nối đến máy chủ lưu trữ Cloudinary khi xóa tài nguyên.", ex.Message);
         }
         catch (HttpRequestException ex)
         {
             _logger.LogError(ex, "Lỗi mạng khi xóa tài nguyên Cloudinary '{PublicId}': {Message}", publicId, ex.Message);
-            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed, 
+            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed,
                 "Không thể kết nối đến máy chủ lưu trữ Cloudinary do sự cố mạng.", ex.Message);
         }
         catch (TimeoutException ex)
         {
             _logger.LogError(ex, "Quá thời gian chờ Timeout khi xóa tài nguyên '{PublicId}': {Message}", publicId, ex.Message);
-            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed, 
+            throw AppException.BadGateway(ErrorCodes.ErrExtCloudinaryFailed,
                 "Kết nối đến máy chủ Cloudinary bị quá thời gian chờ (Timeout).", ex.Message);
         }
     }
@@ -305,10 +305,10 @@ public class MediaService : IMediaService
     /// Lấy URL ảnh tối ưu hóa theo kích thước và định dạng WebP.
     /// </summary>
     public string GetImageUrl(
-        string publicId, 
-        int? width = null, 
-        int? height = null, 
-        string crop = "fill", 
+        string publicId,
+        int? width = null,
+        int? height = null,
+        string crop = "fill",
         string format = "webp")
     {
         return _cloudinaryClient.GetImageUrl(publicId, width, height, crop, format);
