@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
+using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.MealPlans.Requests;
 using VeggieLife.BLL.DTOs.MealPlans.Responses;
 using VeggieLife.BLL.Services.Cache;
@@ -741,6 +742,365 @@ public class MealPlanService : IMealPlanService
                 PostDeployUsed = 0,
                 PostDeployLimit = 21
             }
+        };
+    }
+
+    public async Task<(IReadOnlyList<MealPlanSummaryDto> Items, PagedMeta Meta)> ListMealPlansAsync(
+        int userId,
+        int page,
+        int size,
+        CancellationToken ct = default)
+    {
+        if (page < 1) page = 1;
+        if (size < 1) size = 10;
+        if (size > 100) size = 100;
+
+        var query = _db.MealPlans.Where(p => p.UserId == userId && p.PlanStatus != "TEMPLATE");
+        var total = await query.CountAsync(ct);
+
+        var items = await query
+            .OrderByDescending(p => p.PlanId)
+            .Skip((page - 1) * size)
+            .Take(size)
+            .Select(p => new MealPlanSummaryDto
+            {
+                PlanId = p.PlanId,
+                PlanName = p.PlanName,
+                StartDate = p.StartDate.ToString("yyyy-MM-dd"),
+                PlanStatus = p.PlanStatus
+            })
+            .ToListAsync(ct);
+
+        var meta = new PagedMeta(page, size, total);
+        return (items, meta);
+    }
+
+    public async Task<CreateMealPlanResponseData> GetMealPlanByIdAsync(
+        int id,
+        int userId,
+        CancellationToken ct = default)
+    {
+        var plan = await _db.MealPlans
+            .Include(p => p.MealSlots)
+                .ThenInclude(ms => ms.Recipe)
+            .FirstOrDefaultAsync(p => p.PlanId == id && p.UserId == userId, ct);
+
+        if (plan == null)
+        {
+            throw AppException.NotFound(
+                ErrorCodes.ErrMealPlanNotFound,
+                "Thực đơn không tồn tại hoặc không thuộc về bạn.");
+        }
+
+        var preDeployUsed = await _db.AuditLogs.CountAsync(a =>
+            a.TargetTable == "MealPlans" &&
+            a.TargetId == id.ToString() &&
+            a.Action == "MEAL_SLOT_SWAPPED" &&
+            a.Note == "DRAFT", ct);
+
+        var postDeployUsed = await _db.AuditLogs.CountAsync(a =>
+            a.TargetTable == "MealPlans" &&
+            a.TargetId == id.ToString() &&
+            a.Action == "MEAL_SLOT_SWAPPED" &&
+            a.Note == "ACTIVE", ct);
+
+        var dayOrder = DaysOfWeek.Select((d, idx) => (d, idx)).ToDictionary(x => x.d, x => x.idx, StringComparer.OrdinalIgnoreCase);
+        var mealOrder = MealTypes.Select((m, idx) => (m, idx)).ToDictionary(x => x.m, x => x.idx, StringComparer.OrdinalIgnoreCase);
+
+        var slots = plan.MealSlots
+            .OrderBy(s => dayOrder.GetValueOrDefault(s.DayOfWeek, 99))
+            .ThenBy(s => mealOrder.GetValueOrDefault(s.MealType, 99))
+            .Select(s => new MealSlotDto
+            {
+                SlotId = s.SlotId,
+                DayOfWeek = s.DayOfWeek,
+                MealType = s.MealType,
+                IsCompleted = s.IsCompleted,
+                Recipe = s.Recipe != null ? new MealSlotRecipeDto
+                {
+                    RecipeId = s.Recipe.RecipeId,
+                    Title = s.Recipe.Title,
+                    CaloriesKcal = s.Recipe.CaloriesKcal,
+                    ImageUrl = s.Recipe.ImageUrl
+                } : null
+            })
+            .ToList();
+
+        return new CreateMealPlanResponseData
+        {
+            PlanId = plan.PlanId,
+            PlanName = plan.PlanName,
+            StartDate = plan.StartDate.ToString("yyyy-MM-dd"),
+            EndDate = plan.EndDate.ToString("yyyy-MM-dd"),
+            BudgetTier = plan.BudgetTier,
+            CustomInstructions = plan.CustomInstructions,
+            TargetDailyKcal = plan.TargetDailyKcal,
+            PlanStatus = plan.PlanStatus,
+            GeneratedByAi = plan.GeneratedByAi,
+            Slots = slots,
+            Edits = new MealPlanEditsDto
+            {
+                PreDeployUsed = preDeployUsed,
+                PreDeployLimit = 21,
+                PostDeployUsed = postDeployUsed,
+                PostDeployLimit = 21
+            }
+        };
+    }
+
+    public async Task<ActivateMealPlanResponseData> ActivateMealPlanAsync(
+        int id,
+        int userId,
+        string userRole,
+        CancellationToken ct = default)
+    {
+        var plan = await _db.MealPlans.FirstOrDefaultAsync(p => p.PlanId == id && p.UserId == userId, ct);
+
+        if (plan == null)
+        {
+            throw AppException.NotFound(
+                ErrorCodes.ErrMealPlanNotFound,
+                "Thực đơn không tồn tại hoặc không thuộc về bạn.");
+        }
+
+        if (plan.PlanStatus != "DRAFT")
+        {
+            throw AppException.Conflict(
+                ErrorCodes.ErrMealPlanNotDraft,
+                "Chỉ kích hoạt được thực đơn DRAFT.");
+        }
+
+        // Chuyển các thực đơn ACTIVE khác của người dùng cùng tuần sang ARCHIVED (FN-MEAL-02)
+        var otherActivePlans = await _db.MealPlans
+            .Where(p => p.UserId == userId && p.PlanId != id && p.PlanStatus == "ACTIVE" && p.StartDate == plan.StartDate)
+            .ToListAsync(ct);
+
+        foreach (var other in otherActivePlans)
+        {
+            other.PlanStatus = "ARCHIVED";
+        }
+
+        plan.PlanStatus = "ACTIVE";
+
+        var auditLog = new AuditLog
+        {
+            ActorUserId = userId,
+            ActorRole = userRole,
+            Action = "MEAL_PLAN_ACTIVATED",
+            TargetTable = "MealPlans",
+            TargetId = id.ToString(),
+            OldValue = "DRAFT",
+            NewValue = "ACTIVE",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.AuditLogs.Add(auditLog);
+
+        await _db.SaveChangesAsync(ct);
+
+        return new ActivateMealPlanResponseData
+        {
+            PlanId = plan.PlanId,
+            PlanStatus = plan.PlanStatus
+        };
+    }
+
+    public async Task<UpdateMealPlanSlotResponseData> UpdateMealPlanSlotAsync(
+        int id,
+        int slotId,
+        int userId,
+        string userRole,
+        UpdateMealPlanSlotRequest request,
+        CancellationToken ct = default)
+    {
+        var plan = await _db.MealPlans
+            .Include(p => p.DietarySchool)
+            .FirstOrDefaultAsync(p => p.PlanId == id && p.UserId == userId, ct);
+
+        if (plan == null)
+        {
+            throw AppException.NotFound(
+                ErrorCodes.ErrMealPlanNotFound,
+                "Thực đơn không tồn tại hoặc không thuộc về bạn.");
+        }
+
+        if (plan.PlanStatus != "DRAFT" && plan.PlanStatus != "ACTIVE")
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Chỉ có thể đổi món cho thực đơn DRAFT hoặc ACTIVE.");
+        }
+
+        var slot = await _db.MealSlots
+            .Include(s => s.Recipe)
+            .FirstOrDefaultAsync(s => s.SlotId == slotId && s.PlanId == id, ct);
+
+        if (slot == null)
+        {
+            throw AppException.NotFound(
+                ErrorCodes.ErrMealPlanNotFound,
+                "Bữa ăn không tồn tại trong thực đơn này.");
+        }
+
+        // Kiểm tra hạn mức đổi món theo giai đoạn: 21 lần DRAFT, 21 lần ACTIVE (BR-PAY-SUB-01)
+        var currentPhase = plan.PlanStatus;
+        var swapsUsedInPhase = await _db.AuditLogs.CountAsync(a =>
+            a.TargetTable == "MealPlans" &&
+            a.TargetId == id.ToString() &&
+            a.Action == "MEAL_SLOT_SWAPPED" &&
+            a.Note == currentPhase, ct);
+
+        if (swapsUsedInPhase >= 21)
+        {
+            throw AppException.Forbidden(
+                ErrorCodes.ErrQuotaMealSwapExceeded,
+                $"Hết 21 lần đổi/chỉnh sửa của giai đoạn hiện tại ({currentPhase}).");
+        }
+
+        // Tìm món thay thế: APPROVED_ACTIVE, hợp trường phái, calo lệch <= 15%, không dị ứng
+        var oldRecipe = slot.Recipe ?? await _db.Recipes.FirstOrDefaultAsync(r => r.RecipeId == slot.RecipeId, ct);
+        if (oldRecipe == null)
+        {
+            throw AppException.NotFound(
+                ErrorCodes.ErrRecipeStructureInvalid,
+                "Không tìm thấy công thức món cũ để tính toán thay thế.");
+        }
+
+        var oldCalories = oldRecipe.CaloriesKcal;
+        var minKcal = oldCalories * 0.85m;
+        var maxKcal = oldCalories * 1.15m;
+
+        var userAllergenIds = await _db.UserAllergies
+            .Where(ua => ua.UserId == userId)
+            .Select(ua => ua.AllergenId)
+            .ToListAsync(ct);
+
+        var allergicIngredientIds = await _db.IngredientAllergens
+            .Where(ia => userAllergenIds.Contains(ia.AllergenId))
+            .Select(ia => ia.IngredientId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var forbiddenIngredientSet = new HashSet<int>(allergicIngredientIds);
+
+        var hp = await _db.HealthProfiles.FirstOrDefaultAsync(h => h.UserId == userId, ct);
+        var requiresAllium = (hp?.RequiresAlliumFree == true);
+        ParseForbiddenRules(plan.DietarySchool.ForbiddenFoodRules, requiresAllium,
+            out var forbiddenFoodGroups, out var requiresAlliumFree);
+
+        var excludedIds = new HashSet<int>(request?.ExcludedRecipeIds ?? Enumerable.Empty<int>())
+        {
+            oldRecipe.RecipeId
+        };
+
+        var allCandidates = await _db.Recipes
+            .Include(r => r.RecipeIngredients)
+                .ThenInclude(ri => ri.Ingredient)
+            .Where(r => r.Status == "APPROVED_ACTIVE" && !excludedIds.Contains(r.RecipeId))
+            .ToListAsync(ct);
+
+        var filteredCandidates = FilterCandidateRecipes(
+            allCandidates,
+            forbiddenIngredientSet,
+            forbiddenFoodGroups,
+            requiresAlliumFree);
+
+        var substituteCandidates = filteredCandidates
+            .Where(r => r.CaloriesKcal >= minKcal && r.CaloriesKcal <= maxKcal)
+            .OrderBy(r => Math.Abs(r.CaloriesKcal - oldCalories))
+            .ToList();
+
+        if (substituteCandidates.Count == 0)
+        {
+            throw AppException.UnprocessableEntity(
+                ErrorCodes.ErrMealNoSubstitute,
+                "Không có món thay thế phù hợp.");
+        }
+
+        var newRecipe = substituteCandidates[0];
+        slot.RecipeId = newRecipe.RecipeId;
+
+        var auditLog = new AuditLog
+        {
+            ActorUserId = userId,
+            ActorRole = userRole,
+            Action = "MEAL_SLOT_SWAPPED",
+            TargetTable = "MealPlans",
+            TargetId = id.ToString(),
+            OldValue = oldRecipe.RecipeId.ToString(),
+            NewValue = newRecipe.RecipeId.ToString(),
+            Note = currentPhase,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.AuditLogs.Add(auditLog);
+
+        await _db.SaveChangesAsync(ct);
+
+        var swapsRemaining = 21 - (swapsUsedInPhase + 1);
+
+        return new UpdateMealPlanSlotResponseData
+        {
+            Slot = new MealSlotDto
+            {
+                SlotId = slot.SlotId,
+                DayOfWeek = slot.DayOfWeek,
+                MealType = slot.MealType,
+                IsCompleted = slot.IsCompleted,
+                Recipe = new MealSlotRecipeDto
+                {
+                    RecipeId = newRecipe.RecipeId,
+                    Title = newRecipe.Title,
+                    CaloriesKcal = newRecipe.CaloriesKcal,
+                    ImageUrl = newRecipe.ImageUrl
+                }
+            },
+            SwapsRemaining = swapsRemaining
+        };
+    }
+
+    public async Task<PatchMealPlanSlotResponseData> PatchMealPlanSlotAsync(
+        int id,
+        int slotId,
+        int userId,
+        PatchMealPlanSlotRequest request,
+        CancellationToken ct = default)
+    {
+        var plan = await _db.MealPlans.FirstOrDefaultAsync(p => p.PlanId == id && p.UserId == userId, ct);
+
+        if (plan == null)
+        {
+            throw AppException.NotFound(
+                ErrorCodes.ErrMealPlanNotFound,
+                "Thực đơn không tồn tại hoặc không thuộc về bạn.");
+        }
+
+        if (plan.PlanStatus != "ACTIVE")
+        {
+            throw AppException.Conflict(
+                ErrorCodes.ErrMealPlanNotActive,
+                "Thực đơn chưa kích hoạt.");
+        }
+
+        var slot = await _db.MealSlots.FirstOrDefaultAsync(s => s.SlotId == slotId && s.PlanId == id, ct);
+
+        if (slot == null)
+        {
+            throw AppException.NotFound(
+                ErrorCodes.ErrMealPlanNotFound,
+                "Bữa ăn không tồn tại trong thực đơn này.");
+        }
+
+        slot.IsCompleted = request.IsCompleted;
+        await _db.SaveChangesAsync(ct);
+
+        var completedCount = await _db.MealSlots.CountAsync(s => s.PlanId == id && s.IsCompleted, ct);
+        var totalCount = await _db.MealSlots.CountAsync(s => s.PlanId == id, ct);
+
+        return new PatchMealPlanSlotResponseData
+        {
+            SlotId = slot.SlotId,
+            IsCompleted = slot.IsCompleted,
+            Completed = completedCount,
+            Total = totalCount
         };
     }
 }

@@ -137,9 +137,9 @@ public class UsersController : BaseApiController
     [HttpGet("me/scans")]
     [Authorize(Policy = PolicyNames.RequireMember)]
     public async Task<IActionResult> GetMyScans(
-        [FromQuery] string? verdict, 
-        [FromQuery] bool? allergenOnly, 
-        [FromQuery] int page = 1, 
+        [FromQuery] string? verdict,
+        [FromQuery] bool? allergenOnly,
+        [FromQuery] int page = 1,
         [FromQuery] int size = 20)
     {
         EnsureAuthorizedMember();

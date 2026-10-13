@@ -10,6 +10,7 @@ using Moq;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.DTOs.MealPlans.Requests;
+using VeggieLife.BLL.DTOs.MealPlans.Responses;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.MealPlans;
 using VeggieLife.DAL.Context;
@@ -461,6 +462,372 @@ public class MealPlanServiceTests : IDisposable
 
         // AI không được gọi vì circuit open
         _mockAiClient.Verify(c => c.GenerateMealPlanAsync(It.IsAny<AiMealPlanRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // =========================================================================
+    // FN-MEAL-02: Xem danh sách và chi tiết thực đơn; kích hoạt một thực đơn
+    // =========================================================================
+
+    [Fact]
+    public async Task ListMealPlansAsync_ShouldReturnPaginatedList_AndExcludeTemplates()
+    {
+        // ARRANGE
+        var userId = 501;
+        _db.Users.Add(new User { UserId = userId, Email = "user501@test.com", FullName = "User 501", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        _db.MealPlans.AddRange(
+            new MealPlan { PlanId = 5011, UserId = userId, PlanName = "Plan 1", StartDate = new DateOnly(2026, 10, 19), EndDate = new DateOnly(2026, 10, 25), PlanStatus = "DRAFT", BudgetTier = "STANDARD", CreatedAt = DateTime.UtcNow.AddDays(-2) },
+            new MealPlan { PlanId = 5012, UserId = userId, PlanName = "Plan 2", StartDate = new DateOnly(2026, 10, 26), EndDate = new DateOnly(2026, 11, 1), PlanStatus = "ACTIVE", BudgetTier = "STANDARD", CreatedAt = DateTime.UtcNow.AddDays(-1) },
+            new MealPlan { PlanId = 5013, UserId = userId, PlanName = "Template Plan", StartDate = new DateOnly(2026, 10, 12), EndDate = new DateOnly(2026, 10, 18), PlanStatus = "TEMPLATE", BudgetTier = "STANDARD", CreatedAt = DateTime.UtcNow }
+        );
+        await _db.SaveChangesAsync();
+
+        // ACT
+        var (items, meta) = await _service.ListMealPlansAsync(userId, page: 1, size: 10);
+
+        // ASSERT
+        items.Should().HaveCount(2);
+        items.Select(p => p.PlanStatus).Should().NotContain("TEMPLATE");
+        items[0].PlanId.Should().Be(5012); // Newest StartDate first
+        items[1].PlanId.Should().Be(5011);
+        meta.Total.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetMealPlanByIdAsync_ValidOwner_ShouldReturnDetailsWithSlotsAndEdits()
+    {
+        // ARRANGE
+        var userId = 502;
+        _db.Users.Add(new User { UserId = userId, Email = "user502@test.com", FullName = "User 502", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        var plan = CreateTestMealPlan(502, userId, "DRAFT");
+        _db.AuditLogs.AddRange(
+            new AuditLog { ActorUserId = userId, ActorRole = UserRoles.Member, Action = "MEAL_SLOT_SWAPPED", TargetTable = "MealPlans", TargetId = "502", Note = "DRAFT", CreatedAt = DateTime.UtcNow },
+            new AuditLog { ActorUserId = userId, ActorRole = UserRoles.Member, Action = "MEAL_SLOT_SWAPPED", TargetTable = "MealPlans", TargetId = "502", Note = "DRAFT", CreatedAt = DateTime.UtcNow }
+        );
+        await _db.SaveChangesAsync();
+
+        // ACT
+        var result = await _service.GetMealPlanByIdAsync(502, userId);
+
+        // ASSERT
+        result.Should().NotBeNull();
+        result.PlanId.Should().Be(502);
+        result.Slots.Should().HaveCount(21);
+        result.Edits.PreDeployUsed.Should().Be(2);
+        result.Edits.PreDeployLimit.Should().Be(21);
+        result.Edits.PostDeployUsed.Should().Be(0);
+        result.Edits.PostDeployLimit.Should().Be(21);
+    }
+
+    [Fact]
+    public async Task GetMealPlanByIdAsync_NonExistentOrNotOwner_ShouldThrowNotFound()
+    {
+        // ARRANGE
+        var userId = 503;
+        _db.Users.Add(new User { UserId = userId, Email = "user503@test.com", FullName = "User 503", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(503, userId, "DRAFT");
+
+        // ACT & ASSERT: ID không tồn tại
+        var act1 = () => _service.GetMealPlanByIdAsync(9999, userId);
+        var ex1 = await act1.Should().ThrowAsync<AppException>();
+        ex1.Which.StatusCode.Should().Be(404);
+
+        // ACT & ASSERT: Không phải chủ sở hữu
+        var act2 = () => _service.GetMealPlanByIdAsync(503, userId: 999);
+        var ex2 = await act2.Should().ThrowAsync<AppException>();
+        ex2.Which.StatusCode.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task ActivateMealPlanAsync_DraftPlan_ShouldTransitionToActiveAndArchiveExistingActivePlan()
+    {
+        // ARRANGE
+        var userId = 504;
+        _db.Users.Add(new User { UserId = userId, Email = "user504@test.com", FullName = "User 504", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        var oldActivePlan = CreateTestMealPlan(5041, userId, "ACTIVE", "2026-10-19");
+        var draftPlan = CreateTestMealPlan(5042, userId, "DRAFT", "2026-10-19");
+
+        // ACT
+        var result = await _service.ActivateMealPlanAsync(5042, userId, UserRoles.Member);
+
+        // ASSERT
+        result.PlanId.Should().Be(5042);
+        result.PlanStatus.Should().Be("ACTIVE");
+
+        var refreshedDraft = await _db.MealPlans.FindAsync(5042);
+        refreshedDraft!.PlanStatus.Should().Be("ACTIVE");
+
+        var refreshedOldActive = await _db.MealPlans.FindAsync(5041);
+        refreshedOldActive!.PlanStatus.Should().Be("ARCHIVED");
+
+        var auditLog = await _db.AuditLogs.FirstOrDefaultAsync(l => l.TargetId == "5042" && l.Action == "MEAL_PLAN_ACTIVATED");
+        auditLog.Should().NotBeNull();
+        auditLog!.ActorUserId.Should().Be(userId);
+    }
+
+    [Fact]
+    public async Task ActivateMealPlanAsync_NotDraft_ShouldThrowConflict()
+    {
+        // ARRANGE
+        var userId = 505;
+        _db.Users.Add(new User { UserId = userId, Email = "user505@test.com", FullName = "User 505", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(505, userId, "ACTIVE");
+
+        // ACT & ASSERT
+        var act = () => _service.ActivateMealPlanAsync(505, userId, UserRoles.Member);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(409);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrMealPlanNotDraft);
+    }
+
+    // =========================================================================
+    // FN-MEAL-03: Đổi món (Swap meal slot)
+    // =========================================================================
+
+    [Fact]
+    public async Task UpdateMealPlanSlotAsync_DraftPhase_ShouldSwapSuccessfully()
+    {
+        // ARRANGE
+        var userId = 506;
+        _db.Users.Add(new User { UserId = userId, Email = "user506@test.com", FullName = "User 506", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        _db.HealthProfiles.Add(new HealthProfile { UserId = userId, DietarySchoolId = 1, Gender = "FEMALE", DateOfBirth = new DateOnly(1995, 1, 1), HeightCm = 160m, CurrentWeightKg = 50m, BmiValue = 19.5m, BmrKcal = 1200m, TdeeKcal = 1800m, TargetDailyCalories = 1800m, RegionPreference = "MIEN_BAC", HealthGoal = "MAINTAIN" });
+        var plan = CreateTestMealPlan(506, userId, "DRAFT");
+        var slot = await _db.MealSlots.FirstAsync(s => s.PlanId == 506);
+        slot.RecipeId = 101; // 550 kcal
+        await _db.SaveChangesAsync();
+
+        var request = new UpdateMealPlanSlotRequest { SwapReason = "Muốn đổi món khác" };
+
+        // ACT
+        var result = await _service.UpdateMealPlanSlotAsync(506, slot.SlotId, userId, UserRoles.Member, request);
+
+        // ASSERT
+        result.Slot.Recipe!.RecipeId.Should().NotBe(101);
+        result.SwapsRemaining.Should().Be(20);
+
+        var refreshedSlot = await _db.MealSlots.FindAsync(slot.SlotId);
+        refreshedSlot!.RecipeId.Should().Be(result.Slot.Recipe!.RecipeId);
+
+        var log = await _db.AuditLogs.FirstOrDefaultAsync(l => l.TargetId == "506" && l.Action == "MEAL_SLOT_SWAPPED");
+        log.Should().NotBeNull();
+        log!.Note.Should().Be("DRAFT");
+    }
+
+    [Fact]
+    public async Task UpdateMealPlanSlotAsync_22ndSwapAttempt_MustBeRejectedWith403AndExactErrorCode()
+    {
+        // ARRANGE: Tạo plan và gán 21 lần swap đã dùng trong AuditLogs cho phase DRAFT
+        var userId = 507;
+        _db.Users.Add(new User { UserId = userId, Email = "user507@test.com", FullName = "User 507", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        _db.HealthProfiles.Add(new HealthProfile { UserId = userId, DietarySchoolId = 1, Gender = "MALE", DateOfBirth = new DateOnly(1992, 5, 5), HeightCm = 170m, CurrentWeightKg = 65m, BmiValue = 22.5m, BmrKcal = 1500m, TdeeKcal = 2000m, TargetDailyCalories = 2000m, RegionPreference = "MIEN_NAM", HealthGoal = "MAINTAIN" });
+        var plan = CreateTestMealPlan(507, userId, "DRAFT");
+        var slot = await _db.MealSlots.FirstAsync(s => s.PlanId == 507);
+
+        // Seed 21 lần swap audit logs
+        for (int i = 1; i <= 21; i++)
+        {
+            _db.AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = userId,
+                ActorRole = UserRoles.Member,
+                Action = "MEAL_SLOT_SWAPPED",
+                TargetTable = "MealPlans",
+                TargetId = "507",
+                Note = "DRAFT",
+                CreatedAt = DateTime.UtcNow.AddMinutes(-i)
+            });
+        }
+        await _db.SaveChangesAsync();
+
+        var request = new UpdateMealPlanSlotRequest { SwapReason = "Thử đổi lần 22" };
+
+        // ACT & ASSERT: Lần thứ 22 phải bị từ chối
+        var act = () => _service.UpdateMealPlanSlotAsync(507, slot.SlotId, userId, UserRoles.Member, request);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrQuotaMealSwapExceeded);
+        ex.Which.Message.Should().Contain("Hết 21 lần đổi/chỉnh sửa của giai đoạn hiện tại (DRAFT).");
+    }
+
+    [Fact]
+    public async Task UpdateMealPlanSlotAsync_SeparateQuotaForDraftAndActivePhase()
+    {
+        // ARRANGE: Đã dùng 21 lần ở DRAFT, nhưng thực đơn đã được kích hoạt ACTIVE
+        var userId = 508;
+        _db.Users.Add(new User { UserId = userId, Email = "user508@test.com", FullName = "User 508", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        _db.HealthProfiles.Add(new HealthProfile { UserId = userId, DietarySchoolId = 1, Gender = "MALE", DateOfBirth = new DateOnly(1990, 1, 1), HeightCm = 175m, CurrentWeightKg = 70m, BmiValue = 22.9m, BmrKcal = 1600m, TdeeKcal = 2100m, TargetDailyCalories = 2100m, RegionPreference = "MIEN_BAC", HealthGoal = "MAINTAIN" });
+        var plan = CreateTestMealPlan(508, userId, "ACTIVE");
+        var slot = await _db.MealSlots.FirstAsync(s => s.PlanId == 508);
+        slot.RecipeId = 101;
+
+        // 21 lần đã dùng ở DRAFT
+        for (int i = 1; i <= 21; i++)
+        {
+            _db.AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = userId,
+                ActorRole = UserRoles.Member,
+                Action = "MEAL_SLOT_SWAPPED",
+                TargetTable = "MealPlans",
+                TargetId = "508",
+                Note = "DRAFT",
+                CreatedAt = DateTime.UtcNow.AddHours(-1)
+            });
+        }
+        await _db.SaveChangesAsync();
+
+        var request = new UpdateMealPlanSlotRequest { SwapReason = "Đổi món sau khi đã kích hoạt" };
+
+        // ACT: Trong phase ACTIVE, đây là lần đổi đầu tiên (1 / 21)
+        var result = await _service.UpdateMealPlanSlotAsync(508, slot.SlotId, userId, UserRoles.Member, request);
+
+        // ASSERT: Thành công, còn lại 20 lần của phase ACTIVE
+        result.Should().NotBeNull();
+        result.SwapsRemaining.Should().Be(20);
+
+        var activeLog = await _db.AuditLogs.FirstOrDefaultAsync(l => l.TargetId == "508" && l.Note == "ACTIVE");
+        activeLog.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task UpdateMealPlanSlotAsync_ExcludedRecipeIds_ShouldNotPickExcludedRecipe()
+    {
+        // ARRANGE
+        var userId = 509;
+        _db.Users.Add(new User { UserId = userId, Email = "user509@test.com", FullName = "User 509", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        _db.HealthProfiles.Add(new HealthProfile { UserId = userId, DietarySchoolId = 1, Gender = "FEMALE", DateOfBirth = new DateOnly(1993, 3, 3), HeightCm = 162m, CurrentWeightKg = 52m, BmiValue = 19.8m, BmrKcal = 1250m, TdeeKcal = 1800m, TargetDailyCalories = 1800m, RegionPreference = "MIEN_BAC", HealthGoal = "MAINTAIN" });
+        var plan = CreateTestMealPlan(509, userId, "DRAFT");
+        var slot = await _db.MealSlots.FirstAsync(s => s.PlanId == 509);
+        slot.RecipeId = 101; // 550 kcal
+        await _db.SaveChangesAsync();
+
+        // Loại trừ các món 103, 104, 105, 106, 107
+        var excluded = new List<int> { 103, 104, 105, 106, 107 };
+        var request = new UpdateMealPlanSlotRequest
+        {
+            ExcludedRecipeIds = excluded
+        };
+
+        // ACT
+        var result = await _service.UpdateMealPlanSlotAsync(509, slot.SlotId, userId, UserRoles.Member, request);
+
+        // ASSERT
+        excluded.Should().NotContain(result.Slot.Recipe!.RecipeId);
+    }
+
+    [Fact]
+    public async Task UpdateMealPlanSlotAsync_NoCompatibleSubstitute_ShouldThrow422()
+    {
+        // ARRANGE: Loại trừ tất cả các món tương thích
+        var userId = 510;
+        _db.Users.Add(new User { UserId = userId, Email = "user510@test.com", FullName = "User 510", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        _db.HealthProfiles.Add(new HealthProfile { UserId = userId, DietarySchoolId = 1, Gender = "FEMALE", DateOfBirth = new DateOnly(1993, 3, 3), HeightCm = 162m, CurrentWeightKg = 52m, BmiValue = 19.8m, BmrKcal = 1250m, TdeeKcal = 1800m, TargetDailyCalories = 1800m, RegionPreference = "MIEN_BAC", HealthGoal = "MAINTAIN" });
+        var plan = CreateTestMealPlan(510, userId, "DRAFT");
+        var slot = await _db.MealSlots.FirstAsync(s => s.PlanId == 510);
+        slot.RecipeId = 101; // 550 kcal
+        await _db.SaveChangesAsync();
+
+        // Loại trừ tất cả các món trong DB
+        var allRecipeIds = await _db.Recipes.Select(r => r.RecipeId).ToListAsync();
+        var request = new UpdateMealPlanSlotRequest
+        {
+            ExcludedRecipeIds = allRecipeIds
+        };
+
+        // ACT & ASSERT
+        var act = () => _service.UpdateMealPlanSlotAsync(510, slot.SlotId, userId, UserRoles.Member, request);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(422);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrMealNoSubstitute);
+    }
+
+    // =========================================================================
+    // FN-MEAL-04: Đánh dấu bữa đã ăn (Patch meal slot)
+    // =========================================================================
+
+    [Fact]
+    public async Task PatchMealPlanSlotAsync_ActivePlan_ShouldToggleCompletedAndReturnProgress()
+    {
+        // ARRANGE
+        var userId = 511;
+        _db.Users.Add(new User { UserId = userId, Email = "user511@test.com", FullName = "User 511", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        var plan = CreateTestMealPlan(511, userId, "ACTIVE");
+        var slot = await _db.MealSlots.FirstAsync(s => s.PlanId == 511);
+
+        // ACT 1: Đánh dấu đã ăn
+        var result1 = await _service.PatchMealPlanSlotAsync(511, slot.SlotId, userId, new PatchMealPlanSlotRequest { IsCompleted = true });
+
+        // ASSERT 1
+        result1.IsCompleted.Should().BeTrue();
+        result1.Completed.Should().Be(1);
+        result1.Total.Should().Be(21);
+
+        var refreshedSlot = await _db.MealSlots.FindAsync(slot.SlotId);
+        refreshedSlot!.IsCompleted.Should().BeTrue();
+
+        // ACT 2: Bỏ đánh dấu đã ăn
+        var result2 = await _service.PatchMealPlanSlotAsync(511, slot.SlotId, userId, new PatchMealPlanSlotRequest { IsCompleted = false });
+
+        // ASSERT 2
+        result2.IsCompleted.Should().BeFalse();
+        result2.Completed.Should().Be(0);
+        result2.Total.Should().Be(21);
+
+        var refreshedSlot2 = await _db.MealSlots.FindAsync(slot.SlotId);
+        refreshedSlot2!.IsCompleted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task PatchMealPlanSlotAsync_DraftPlan_ShouldThrowConflict()
+    {
+        // ARRANGE: Thực đơn đang ở trạng thái DRAFT
+        var userId = 512;
+        _db.Users.Add(new User { UserId = userId, Email = "user512@test.com", FullName = "User 512", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        var plan = CreateTestMealPlan(512, userId, "DRAFT");
+        var slot = await _db.MealSlots.FirstAsync(s => s.PlanId == 512);
+
+        // ACT & ASSERT: Không được đánh dấu khi chưa ACTIVE
+        var act = () => _service.PatchMealPlanSlotAsync(512, slot.SlotId, userId, new PatchMealPlanSlotRequest { IsCompleted = true });
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(409);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrMealPlanNotActive);
+    }
+
+    private MealPlan CreateTestMealPlan(int planId, int userId, string status = "DRAFT", string startDate = "2026-10-19")
+    {
+        var plan = new MealPlan
+        {
+            PlanId = planId,
+            UserId = userId,
+            PlanName = $"Thực đơn test {planId}",
+            StartDate = DateOnly.Parse(startDate),
+            EndDate = DateOnly.Parse(startDate).AddDays(6),
+            DietarySchoolId = 1,
+            TargetDailyKcal = 1800m,
+            PlanStatus = status,
+            BudgetTier = "STANDARD",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.MealPlans.Add(plan);
+
+        int slotIdCounter = planId * 100;
+        foreach (var day in new[] { "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN" })
+        {
+            foreach (var type in new[] { "BREAKFAST", "LUNCH", "DINNER" })
+            {
+                slotIdCounter++;
+                _db.MealSlots.Add(new MealSlot
+                {
+                    SlotId = slotIdCounter,
+                    PlanId = planId,
+                    DayOfWeek = day,
+                    MealType = type,
+                    RecipeId = 101,
+                    IsCompleted = false
+                });
+            }
+        }
+        _db.SaveChanges();
+        return plan;
     }
 
     // =========================================================================
