@@ -39,10 +39,10 @@ public class SmtpEmailClient : ISmtpEmailClient
     /// Gửi thư điện tử qua giao thức mạng SMTP với chuỗi nhà cung cấp tự động chuyển đổi khi gặp sự cố.
     /// </summary>
     public async Task SendEmailAsync(
-        string toEmail, 
-        string subject, 
-        string htmlBody, 
-        string? plainTextBody = null, 
+        string toEmail,
+        string subject,
+        string htmlBody,
+        string? plainTextBody = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(toEmail))

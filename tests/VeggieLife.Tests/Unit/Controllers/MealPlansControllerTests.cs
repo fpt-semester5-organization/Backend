@@ -136,4 +136,202 @@ public class MealPlansControllerTests
         ex.Which.StatusCode.Should().Be(403);
         ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrGuestPersonalizationRestricted);
     }
+
+    [Fact]
+    public async Task ListMealPlans_AuthenticatedMember_ShouldReturn200OkWithPagedEnvelope()
+    {
+        // Arrange
+        var userId = 45;
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(ClaimTypes.Role, UserRoles.Member)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        var items = new List<MealPlanSummaryDto>
+        {
+            new() { PlanId = 1, PlanName = "Thực đơn 1", StartDate = "2026-10-19", PlanStatus = "ACTIVE" }
+        };
+        var meta = new PagedMeta { Page = 1, Size = 10, Total = 1 };
+
+        _mockService.Setup(s => s.ListMealPlansAsync(userId, 1, 10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((items, meta));
+
+        // Act
+        var actionResult = await _controller.ListMealPlans(page: 1, size: 10, CancellationToken.None);
+
+        // Assert
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var apiResponse = objectResult.Value as ApiResponse<IReadOnlyList<MealPlanSummaryDto>>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data.Should().HaveCount(1);
+        apiResponse.Meta.Should().NotBeNull();
+        apiResponse.Meta!.Total.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetMealPlan_AuthenticatedMember_ShouldReturn200Ok()
+    {
+        // Arrange
+        var userId = 45;
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(ClaimTypes.Role, UserRoles.Member)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        var responseData = new CreateMealPlanResponseData
+        {
+            PlanId = 1,
+            PlanName = "Thực đơn tuần",
+            StartDate = "2026-10-19",
+            EndDate = "2026-10-25",
+            BudgetTier = "STANDARD",
+            TargetDailyKcal = 1800m,
+            PlanStatus = "DRAFT",
+            GeneratedByAi = true,
+            Slots = new List<MealSlotDto>(),
+            Edits = new MealPlanEditsDto { PreDeployUsed = 0, PreDeployLimit = 21 }
+        };
+
+        _mockService.Setup(s => s.GetMealPlanByIdAsync(1, userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var actionResult = await _controller.GetMealPlan(1, CancellationToken.None);
+
+        // Assert
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var apiResponse = objectResult.Value as ApiResponse<CreateMealPlanResponseData>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data!.PlanId.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ActivateMealPlan_AuthenticatedMember_ShouldReturn200Ok()
+    {
+        // Arrange
+        var userId = 45;
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(ClaimTypes.Role, UserRoles.Member)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        var responseData = new ActivateMealPlanResponseData
+        {
+            PlanId = 1,
+            PlanStatus = "ACTIVE"
+        };
+
+        _mockService.Setup(s => s.ActivateMealPlanAsync(1, userId, UserRoles.Member, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var actionResult = await _controller.ActivateMealPlan(1, CancellationToken.None);
+
+        // Assert
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var apiResponse = objectResult.Value as ApiResponse<ActivateMealPlanResponseData>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data!.PlanStatus.Should().Be("ACTIVE");
+    }
+
+    [Fact]
+    public async Task UpdateMealPlanSlot_AuthenticatedMember_ShouldReturn200Ok()
+    {
+        // Arrange
+        var userId = 45;
+        var userRole = UserRoles.Member;
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(ClaimTypes.Role, userRole)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        var request = new UpdateMealPlanSlotRequest { SwapReason = "Đổi món" };
+        var responseData = new UpdateMealPlanSlotResponseData
+        {
+            Slot = new MealSlotDto
+            {
+                SlotId = 10,
+                DayOfWeek = "MON",
+                MealType = "LUNCH",
+                IsCompleted = false,
+                Recipe = new MealSlotRecipeDto
+                {
+                    RecipeId = 102,
+                    Title = "Cháo yến mạch",
+                    CaloriesKcal = 450m
+                }
+            },
+            SwapsRemaining = 20
+        };
+
+        _mockService.Setup(s => s.UpdateMealPlanSlotAsync(1, 10, userId, userRole, request, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var actionResult = await _controller.UpdateMealPlanSlot(1, 10, request, CancellationToken.None);
+
+        // Assert
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var apiResponse = objectResult.Value as ApiResponse<UpdateMealPlanSlotResponseData>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data!.SwapsRemaining.Should().Be(20);
+    }
+
+    [Fact]
+    public async Task PatchMealPlanSlot_AuthenticatedMember_ShouldReturn200Ok()
+    {
+        // Arrange
+        var userId = 45;
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(ClaimTypes.Role, UserRoles.Member)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        var request = new PatchMealPlanSlotRequest { IsCompleted = true };
+        var responseData = new PatchMealPlanSlotResponseData
+        {
+            SlotId = 10,
+            IsCompleted = true,
+            Completed = 5,
+            Total = 21
+        };
+
+        _mockService.Setup(s => s.PatchMealPlanSlotAsync(1, 10, userId, request, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var actionResult = await _controller.PatchMealPlanSlot(1, 10, request, CancellationToken.None);
+
+        // Assert
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var apiResponse = objectResult.Value as ApiResponse<PatchMealPlanSlotResponseData>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data!.Completed.Should().Be(5);
+        apiResponse.Data.Total.Should().Be(21);
+    }
 }
