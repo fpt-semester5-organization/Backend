@@ -121,6 +121,8 @@ public static class ServiceExtensions
                                       path.Contains("/likes") ||
                                       path.Contains("/votes") ||
                                       path.Contains("/violations") ||
+                                      path.Contains("/surveys") ||
+                                      path.Contains("/chat/sessions") ||
                                       (path.Contains("/recipes") && context.HttpContext?.Request.Method != "GET");
 
                     var errorCode = isGuest
@@ -350,6 +352,22 @@ public static class ServiceExtensions
             client.Timeout = System.TimeSpan.FromSeconds(10); // Ràng buộc thời gian phản hồi NFR SI-3
         });
         services.AddScoped<VeggieLife.BLL.Services.Knowledge.IKnowledgeSyncQueue, VeggieLife.BLL.Services.Knowledge.KnowledgeSyncQueueStub>();
+
+        // Bộ ngắt mạch AI & Client giao tiếp AI Microservice (/chat/answer) (BR-ADM-AI-002, D118)
+        services.AddSingleton<VeggieLife.BLL.Services.AI.IAiCircuitBreaker, VeggieLife.BLL.Services.AI.AiCircuitBreaker>();
+        services.AddHttpClient<VeggieLife.BLL.Services.AI.IAiServiceClient, VeggieLife.BLL.Services.AI.AiServiceClient>((sp, client) =>
+        {
+            var config = sp.GetRequiredService<IConfiguration>();
+            var baseUrl = config["AiService:BaseUrl"] ?? "http://localhost:8080";
+            var apiKey = config["AiService:InternalApiKey"] ?? "dev-internal-key";
+
+            client.BaseAddress = new System.Uri(baseUrl);
+            client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
+            client.Timeout = System.TimeSpan.FromSeconds(15);
+        });
+
+        // Dịch vụ Chatbot tư vấn dinh dưỡng (FN-CHAT-01..06)
+        services.AddScoped<VeggieLife.BLL.Services.Chat.IChatService, VeggieLife.BLL.Services.Chat.ChatService>();
 
         return services;
     }
