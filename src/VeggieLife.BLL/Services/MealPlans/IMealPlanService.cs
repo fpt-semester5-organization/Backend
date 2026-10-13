@@ -70,4 +70,15 @@ public interface IMealPlanService
         int userId,
         PatchMealPlanSlotRequest request,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// FN-MEAL-07: Xem calo thực đơn (Free: tổng calo mỗi ngày; VIP: calo từng món, từng bữa, tổng tuần và chênh lệch so với mục tiêu).
+    /// Quy đổi trực tiếp từ Recipes.CaloriesKcal, không gọi AI và không lưu thêm (BR-PAY-SUB-03, BR-USR-NUT-03).
+    /// </summary>
+    Task<GetMealPlanNutritionResponseData> GetMealPlanNutritionAsync(
+        int id,
+        int userId,
+        string userRole,
+        string level = "BASIC",
+        CancellationToken ct = default);
 }
