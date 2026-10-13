@@ -1103,4 +1103,117 @@ public class MealPlanService : IMealPlanService
             Total = totalCount
         };
     }
+
+    public async Task<GetMealPlanNutritionResponseData> GetMealPlanNutritionAsync(
+        int id,
+        int userId,
+        string userRole,
+        string level = "BASIC",
+        CancellationToken ct = default)
+    {
+        if (id <= 0)
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Mã thực đơn phải lớn hơn 0.");
+        }
+
+        var normalizedLevel = string.IsNullOrWhiteSpace(level) ? "BASIC" : level.Trim().ToUpperInvariant();
+        if (normalizedLevel != "BASIC" && normalizedLevel != "DETAILED")
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Dữ liệu đầu vào không hợp lệ. Mức độ chi tiết phải là BASIC hoặc DETAILED.");
+        }
+
+        var plan = await _db.MealPlans
+            .Include(p => p.MealSlots)
+                .ThenInclude(s => s.Recipe)
+            .FirstOrDefaultAsync(p => p.PlanId == id && p.UserId == userId, ct);
+
+        if (plan == null)
+        {
+            throw AppException.NotFound(
+                ErrorCodes.ErrMealPlanNotFound,
+                "Thực đơn không tồn tại hoặc không thuộc về bạn.");
+        }
+
+        if (normalizedLevel == "DETAILED")
+        {
+            var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(userRole, UserRoles.Admin, StringComparison.OrdinalIgnoreCase);
+
+            if (!isVip)
+            {
+                var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == userId, ct);
+                if (user != null && (string.Equals(user.Role, UserRoles.Vip, StringComparison.OrdinalIgnoreCase)
+                                 || string.Equals(user.Role, UserRoles.Admin, StringComparison.OrdinalIgnoreCase)))
+                {
+                    isVip = true;
+                }
+            }
+
+            if (!isVip)
+            {
+                throw AppException.Forbidden(
+                    ErrorCodes.ErrVipRequired,
+                    "Tính năng chỉ dành cho thành viên VIP (BR-PAY-SUB-03).");
+            }
+        }
+
+        var mealOrder = MealTypes.Select((m, idx) => (m, idx)).ToDictionary(x => x.m, x => x.idx, StringComparer.OrdinalIgnoreCase);
+
+        var daysList = new List<MealPlanDayNutritionDto>();
+        decimal totalKcalWeek = 0m;
+
+        foreach (var day in DaysOfWeek)
+        {
+            var daySlots = plan.MealSlots
+                .Where(s => string.Equals(s.DayOfWeek, day, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(s => mealOrder.GetValueOrDefault(s.MealType, 99))
+                .ToList();
+
+            var dayKcal = daySlots.Sum(s => s.Recipe?.CaloriesKcal ?? 0m);
+            totalKcalWeek += dayKcal;
+
+            if (normalizedLevel == "DETAILED")
+            {
+                var deltaKcal = dayKcal - plan.TargetDailyKcal;
+                var meals = daySlots.Select(s => new MealSlotNutritionDto
+                {
+                    MealType = s.MealType,
+                    RecipeId = s.Recipe?.RecipeId ?? s.RecipeId,
+                    Title = s.Recipe?.Title ?? "Món ăn",
+                    Kcal = s.Recipe?.CaloriesKcal ?? 0m
+                }).ToList();
+
+                daysList.Add(new MealPlanDayNutritionDto
+                {
+                    DayOfWeek = day,
+                    Kcal = dayKcal,
+                    DeltaKcal = deltaKcal,
+                    Meals = meals
+                });
+            }
+            else
+            {
+                daysList.Add(new MealPlanDayNutritionDto
+                {
+                    DayOfWeek = day,
+                    Kcal = dayKcal,
+                    DeltaKcal = null,
+                    Meals = null
+                });
+            }
+        }
+
+        return new GetMealPlanNutritionResponseData
+        {
+            PlanId = plan.PlanId,
+            Level = normalizedLevel,
+            TargetKcalPerDay = plan.TargetDailyKcal,
+            TotalKcalWeek = totalKcalWeek,
+            Days = daysList
+        };
+    }
 }

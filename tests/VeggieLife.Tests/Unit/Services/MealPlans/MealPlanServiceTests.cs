@@ -792,6 +792,115 @@ public class MealPlanServiceTests : IDisposable
         ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrMealPlanNotActive);
     }
 
+    // =========================================================================
+    // FN-MEAL-07: Xem calo thực đơn (Free: tổng calo mỗi ngày; VIP: chi tiết)
+    // =========================================================================
+
+    [Fact]
+    public async Task GetMealPlanNutritionAsync_MemberRole_BasicLevel_ShouldReturnDailyTotalsWithoutDetailedMealsAndDelta()
+    {
+        // ARRANGE: Thành viên thường (MEMBER) xem calo mức BASIC
+        var userId = 513;
+        _db.Users.Add(new User { UserId = userId, Email = "user513@test.com", FullName = "User 513", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(513, userId, "ACTIVE"); // 21 slots với recipe 101 (550 kcal mỗi slot)
+
+        // ACT
+        var result = await _service.GetMealPlanNutritionAsync(513, userId, UserRoles.Member, level: "BASIC");
+
+        // ASSERT: 7 ngày, mỗi ngày 3 bữa x 550 kcal = 1650 kcal; tổng tuần = 11550 kcal
+        result.Should().NotBeNull();
+        result.PlanId.Should().Be(513);
+        result.Level.Should().Be("BASIC");
+        result.TargetKcalPerDay.Should().Be(1800m);
+        result.TotalKcalWeek.Should().Be(11550m);
+        result.Days.Should().HaveCount(7);
+
+        foreach (var day in result.Days)
+        {
+            day.Kcal.Should().Be(1650m);
+            day.DeltaKcal.Should().BeNull();
+            day.Meals.Should().BeNull();
+        }
+    }
+
+    [Fact]
+    public async Task GetMealPlanNutritionAsync_MemberRole_RequestDetailedLevel_MustBeRejectedWith403VipRequired()
+    {
+        // ARRANGE: Thành viên thường yêu cầu DETAILED -> Bị từ chối theo BR-PAY-SUB-03
+        var userId = 514;
+        _db.Users.Add(new User { UserId = userId, Email = "user514@test.com", FullName = "User 514", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(514, userId, "ACTIVE");
+
+        // ACT & ASSERT: Lỗi 403 ERR_VIP_REQUIRED
+        var act = () => _service.GetMealPlanNutritionAsync(514, userId, UserRoles.Member, level: "DETAILED");
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrVipRequired);
+        ex.Which.Message.Should().Contain("VIP");
+    }
+
+    [Fact]
+    public async Task GetMealPlanNutritionAsync_VipRole_DetailedLevel_ShouldReturnFullDetailsWithDeltaAndMealDishes()
+    {
+        // ARRANGE: Thành viên VIP yêu cầu DETAILED
+        var userId = 515;
+        _db.Users.Add(new User { UserId = userId, Email = "user515@test.com", FullName = "User 515", Role = UserRoles.Vip, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(515, userId, "ACTIVE");
+        // TargetDailyKcal = 1800m. 3 slots x 550 kcal = 1650 kcal. Delta = 1650 - 1800 = -150 kcal.
+
+        // ACT
+        var result = await _service.GetMealPlanNutritionAsync(515, userId, UserRoles.Vip, level: "DETAILED");
+
+        // ASSERT: Toàn bộ thông tin chi tiết từng món, từng bữa và độ lệch calo
+        result.Should().NotBeNull();
+        result.PlanId.Should().Be(515);
+        result.Level.Should().Be("DETAILED");
+        result.TargetKcalPerDay.Should().Be(1800m);
+        result.TotalKcalWeek.Should().Be(11550m);
+        result.Days.Should().HaveCount(7);
+
+        foreach (var day in result.Days)
+        {
+            day.Kcal.Should().Be(1650m);
+            day.DeltaKcal.Should().Be(-150m);
+            day.Meals.Should().NotBeNull();
+            day.Meals.Should().HaveCount(3);
+            day.Meals![0].MealType.Should().Be("BREAKFAST");
+            day.Meals[0].RecipeId.Should().Be(101);
+            day.Meals[0].Kcal.Should().Be(550m);
+        }
+    }
+
+    [Fact]
+    public async Task GetMealPlanNutritionAsync_NonExistentOrNotOwner_ShouldThrowNotFound()
+    {
+        // ARRANGE
+        var userId = 516;
+        _db.Users.Add(new User { UserId = userId, Email = "user516@test.com", FullName = "User 516", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(516, userId, "ACTIVE");
+
+        // ACT & ASSERT: Không đúng chủ sở hữu
+        var act = () => _service.GetMealPlanNutritionAsync(516, userId: 9999, UserRoles.Member, level: "BASIC");
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrMealPlanNotFound);
+    }
+
+    [Fact]
+    public async Task GetMealPlanNutritionAsync_InvalidLevel_ShouldThrowBadRequest()
+    {
+        // ARRANGE
+        var userId = 517;
+        _db.Users.Add(new User { UserId = userId, Email = "user517@test.com", FullName = "User 517", Role = UserRoles.Vip, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(517, userId, "ACTIVE");
+
+        // ACT & ASSERT: level sai
+        var act = () => _service.GetMealPlanNutritionAsync(517, userId, UserRoles.Vip, level: "INVALID_LEVEL");
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+    }
+
     private MealPlan CreateTestMealPlan(int planId, int userId, string status = "DRAFT", string startDate = "2026-10-19")
     {
         var plan = new MealPlan
