@@ -13,6 +13,7 @@ using VeggieLife.BLL.DTOs.Venues.Responses;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
+using VeggieLife.DAL.External.Goong;
 
 namespace VeggieLife.BLL.Services.Venues;
 
@@ -24,15 +25,18 @@ public class VenueService : IVenueService
     private readonly AppDbContext _db;
     private readonly IRedisService _redis;
     private readonly ILogger<VenueService> _logger;
+    private readonly IGoongPlacesClient? _goongClient;
 
     public VenueService(
         AppDbContext db,
         IRedisService redis,
-        ILogger<VenueService> logger)
+        ILogger<VenueService> logger,
+        IGoongPlacesClient? goongClient = null)
     {
         _db = db;
         _redis = redis;
         _logger = logger;
+        _goongClient = goongClient;
     }
 
     public async Task<ListNearbyVenuesResult> ListNearbyVenuesAsync(
@@ -143,6 +147,12 @@ public class VenueService : IVenueService
                         candidateVenues.Add(MapToDto(v, distance));
                     }
                 }
+
+                // Nếu có tích hợp Goong API Key và kết quả trong CSDL địa phương ít (hoặc chưa có quán ở khu vực này)
+                if (_goongClient?.IsConfigured == true && candidateVenues.Count < 5)
+                {
+                    await TryFetchAndSaveFromGoongAsync(userLat, userLng, effectiveRadius, venuesFromDb, candidateVenues, ct);
+                }
             }
             else if (!string.IsNullOrWhiteSpace(request.Province))
             {
@@ -158,6 +168,12 @@ public class VenueService : IVenueService
                     {
                         candidateVenues.Add(MapToDto(v, 0.0));
                     }
+                }
+
+                // Nếu tìm theo tỉnh/thành mà CSDL nội bộ chưa có quán nào và Goong API Key đã cấu hình
+                if (_goongClient?.IsConfigured == true && candidateVenues.Count == 0)
+                {
+                    await TryFetchByProvinceFromGoongAsync(prov, dist, venuesFromDb, candidateVenues, ct);
                 }
             }
 
@@ -323,5 +339,166 @@ public class VenueService : IVenueService
             Categories = v.VenueCategories.Select(vc => vc.Category.CategoryName).ToList(),
             DirectionsUrl = $"https://www.google.com/maps/dir/?api=1&destination={v.Latitude:G29},{v.Longitude:G29}"
         };
+    }
+
+    private async Task TryFetchAndSaveFromGoongAsync(
+        double userLat,
+        double userLng,
+        double effectiveRadius,
+        List<VeganVenue> venuesFromDb,
+        List<NearbyVenueItemDto> candidateVenues,
+        CancellationToken ct)
+    {
+        if (_goongClient == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var predictions = await _goongClient.SearchNearbyPlacesAsync(
+                "quán chay",
+                userLat,
+                userLng,
+                (int)(effectiveRadius * 1000),
+                10,
+                ct);
+
+            bool hasNewEntities = false;
+
+            foreach (var pred in predictions)
+            {
+                if (string.IsNullOrWhiteSpace(pred.PlaceId))
+                {
+                    continue;
+                }
+
+                // Kiểm tra xem quán đã tồn tại trong CSDL hoặc danh sách ứng viên chưa
+                bool exists = venuesFromDb.Any(v => v.ExternalPlaceId == pred.PlaceId)
+                    || candidateVenues.Any(cv => !string.IsNullOrEmpty(pred.StructuredFormatting?.MainText) &&
+                                                 cv.Name.Equals(pred.StructuredFormatting.MainText, StringComparison.OrdinalIgnoreCase));
+
+                if (exists)
+                {
+                    continue;
+                }
+
+                var detail = await _goongClient.GetPlaceDetailAsync(pred.PlaceId, ct);
+                if (detail?.Geometry?.Location != null && GeoHelper.IsInVietnam(detail.Geometry.Location.Lat, detail.Geometry.Location.Lng))
+                {
+                    var distance = GeoHelper.CalculateDistanceKm(userLat, userLng, detail.Geometry.Location.Lat, detail.Geometry.Location.Lng);
+                    if (distance <= effectiveRadius)
+                    {
+                        var newVenue = new VeganVenue
+                        {
+                            VenueName = !string.IsNullOrWhiteSpace(detail.Name)
+                                ? detail.Name
+                                : (!string.IsNullOrWhiteSpace(pred.StructuredFormatting?.MainText) ? pred.StructuredFormatting.MainText : "Quán chay"),
+                            Address = !string.IsNullOrWhiteSpace(detail.FormattedAddress) ? detail.FormattedAddress : pred.Description,
+                            Latitude = (decimal)detail.Geometry.Location.Lat,
+                            Longitude = (decimal)detail.Geometry.Location.Lng,
+                            Rating = detail.Rating.HasValue && detail.Rating.Value > 0 ? detail.Rating.Value : 4.2m,
+                            IsActive = true,
+                            IsFullyVegan = true,
+                            ExternalSource = "GOONG",
+                            ExternalPlaceId = detail.PlaceId,
+                            CreatedAt = DateTime.UtcNow,
+                            ThumbnailUrl = "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=600&auto=format&fit=crop"
+                        };
+
+                        _db.VeganVenues.Add(newVenue);
+                        venuesFromDb.Add(newVenue);
+                        candidateVenues.Add(MapToDto(newVenue, distance));
+                        hasNewEntities = true;
+                    }
+                }
+            }
+
+            if (hasNewEntities)
+            {
+                await _db.SaveChangesAsync(ct);
+                _logger.LogInformation("Đã đồng bộ tự động các quán chay mới từ Goong API vào CSDL.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi xảy ra khi tự động đồng bộ quán từ Goong API quanh ({Lat}, {Lng}).", userLat, userLng);
+        }
+    }
+
+    private async Task TryFetchByProvinceFromGoongAsync(
+        string province,
+        string? district,
+        List<VeganVenue> venuesFromDb,
+        List<NearbyVenueItemDto> candidateVenues,
+        CancellationToken ct)
+    {
+        if (_goongClient == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var searchText = string.IsNullOrWhiteSpace(district)
+                ? $"quán chay {province}"
+                : $"quán chay {district} {province}";
+
+            var predictions = await _goongClient.SearchPlacesByTextAsync(searchText, 10, ct);
+            bool hasNewEntities = false;
+
+            foreach (var pred in predictions)
+            {
+                if (string.IsNullOrWhiteSpace(pred.PlaceId))
+                {
+                    continue;
+                }
+
+                bool exists = venuesFromDb.Any(v => v.ExternalPlaceId == pred.PlaceId)
+                    || candidateVenues.Any(cv => !string.IsNullOrEmpty(pred.StructuredFormatting?.MainText) &&
+                                                 cv.Name.Equals(pred.StructuredFormatting.MainText, StringComparison.OrdinalIgnoreCase));
+
+                if (exists)
+                {
+                    continue;
+                }
+
+                var detail = await _goongClient.GetPlaceDetailAsync(pred.PlaceId, ct);
+                if (detail?.Geometry?.Location != null && GeoHelper.IsInVietnam(detail.Geometry.Location.Lat, detail.Geometry.Location.Lng))
+                {
+                    var newVenue = new VeganVenue
+                    {
+                        VenueName = !string.IsNullOrWhiteSpace(detail.Name)
+                            ? detail.Name
+                            : (!string.IsNullOrWhiteSpace(pred.StructuredFormatting?.MainText) ? pred.StructuredFormatting.MainText : "Quán chay"),
+                        Address = !string.IsNullOrWhiteSpace(detail.FormattedAddress) ? detail.FormattedAddress : pred.Description,
+                        Latitude = (decimal)detail.Geometry.Location.Lat,
+                        Longitude = (decimal)detail.Geometry.Location.Lng,
+                        Rating = detail.Rating.HasValue && detail.Rating.Value > 0 ? detail.Rating.Value : 4.2m,
+                        IsActive = true,
+                        IsFullyVegan = true,
+                        ExternalSource = "GOONG",
+                        ExternalPlaceId = detail.PlaceId,
+                        CreatedAt = DateTime.UtcNow,
+                        ThumbnailUrl = "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=600&auto=format&fit=crop"
+                    };
+
+                    _db.VeganVenues.Add(newVenue);
+                    venuesFromDb.Add(newVenue);
+                    candidateVenues.Add(MapToDto(newVenue, 0.0));
+                    hasNewEntities = true;
+                }
+            }
+
+            if (hasNewEntities)
+            {
+                await _db.SaveChangesAsync(ct);
+                _logger.LogInformation("Đã đồng bộ tự động các quán chay từ Goong API cho địa bàn {Province} vào CSDL.", province);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi xảy ra khi tự động đồng bộ quán từ Goong API cho {Province}.", province);
+        }
     }
 }

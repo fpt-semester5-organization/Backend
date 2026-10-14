@@ -491,4 +491,73 @@ public class VenueServiceTests : IDisposable
         result.Venues.Should().NotBeEmpty();
         result.Venues.Should().OnlyContain(v => v.Address.Contains("Hà Nội"));
     }
+
+    [Fact]
+    public async Task ListNearbyVenues_WhenGoongConfiguredAndSearchingInDaNang_ShouldFetchAndSaveFromGoong()
+    {
+        // ARRANGE: Người dùng ở Đà Nẵng (vị trí ban đầu chưa có trong seed data CSDL)
+        var userLat = 16.0678;
+        var userLng = 108.2208;
+
+        var mockGoong = new Mock<VeggieLife.DAL.External.Goong.IGoongPlacesClient>();
+        mockGoong.Setup(g => g.IsConfigured).Returns(true);
+        mockGoong.Setup(g => g.SearchNearbyPlacesAsync(
+                It.IsAny<string>(),
+                userLat,
+                userLng,
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<VeggieLife.DAL.External.Goong.GoongPlacePredictionDto>
+            {
+                new()
+                {
+                    PlaceId = "GOONG_DN_01",
+                    Description = "Quán Cơm Chay An Lạc, 123 Nguyễn Văn Linh, Đà Nẵng",
+                    StructuredFormatting = new VeggieLife.DAL.External.Goong.GoongStructuredFormatting
+                    {
+                        MainText = "Cơm Chay An Lạc"
+                    }
+                }
+            });
+
+        mockGoong.Setup(g => g.GetPlaceDetailAsync("GOONG_DN_01", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VeggieLife.DAL.External.Goong.GoongPlaceDetailDto
+            {
+                PlaceId = "GOONG_DN_01",
+                Name = "Cơm Chay An Lạc",
+                FormattedAddress = "123 Nguyễn Văn Linh, Hải Châu, Đà Nẵng",
+                Geometry = new VeggieLife.DAL.External.Goong.GoongGeometry
+                {
+                    Location = new VeggieLife.DAL.External.Goong.GoongLocation
+                    {
+                        Lat = 16.0680,
+                        Lng = 108.2210
+                    }
+                },
+                Rating = 4.7m
+            });
+
+        var serviceWithGoong = new VenueService(_db, _mockRedis.Object, _mockLogger.Object, mockGoong.Object);
+
+        var request = new ListNearbyVenuesRequest
+        {
+            Lat = userLat,
+            Lng = userLng,
+            RadiusKm = 5.0
+        };
+
+        // ACT
+        var result = await serviceWithGoong.ListNearbyVenuesAsync(request, userId: 1, userRole: UserRoles.Member, guestUuid: null);
+
+        // ASSERT: Quán từ Goong được trả về và lưu vào CSDL
+        result.Venues.Should().NotBeEmpty();
+        result.Venues.Should().Contain(v => v.Name == "Cơm Chay An Lạc");
+        result.Venues[0].DistanceKm.Should().BeLessThan(1.0);
+
+        var savedDbItem = await _db.VeganVenues.FirstOrDefaultAsync(v => v.ExternalPlaceId == "GOONG_DN_01");
+        savedDbItem.Should().NotBeNull();
+        savedDbItem!.Address.Should().Contain("Đà Nẵng");
+        savedDbItem.ExternalSource.Should().Be("GOONG");
+    }
 }

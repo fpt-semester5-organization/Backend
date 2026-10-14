@@ -366,6 +366,10 @@ public static class ServiceExtensions
         services.AddScoped<VeggieLife.BLL.Services.MealPlans.IMealPlanService, VeggieLife.BLL.Services.MealPlans.MealPlanService>();
         services.AddScoped<VeggieLife.BLL.Services.ShoppingLists.IShoppingListService, VeggieLife.BLL.Services.ShoppingLists.ShoppingListService>();
         services.AddScoped<VeggieLife.BLL.Services.Fridge.IFridgeService, VeggieLife.BLL.Services.Fridge.FridgeService>();
+        // Dịch vụ Quán ăn chay & Goong Places API (FN-MAP-01)
+        services.Configure<VeggieLife.DAL.External.Goong.GoongSettings>(
+            configuration.GetSection(VeggieLife.DAL.External.Goong.GoongSettings.SectionName));
+        services.AddHttpClient<VeggieLife.DAL.External.Goong.IGoongPlacesClient, VeggieLife.DAL.External.Goong.GoongPlacesClient>();
         services.AddScoped<VeggieLife.BLL.Services.Venues.IVenueService, VeggieLife.BLL.Services.Venues.VenueService>();
 
         // Các interface dịch vụ dùng chung khác (Bản mẫu rỗng để các thành viên khác hoàn thiện)
