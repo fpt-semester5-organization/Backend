@@ -165,4 +165,39 @@ public class VenuesControllerTests
         ex.Which.StatusCode.Should().Be(401);
         ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrAuthInvalidToken);
     }
+
+    [Fact]
+    public async Task GetVenue_ValidId_Returns200OkWithVenueDetail()
+    {
+        // Arrange
+        var venueId = 301;
+        var detailDto = new VenueDetailDto
+        {
+            VenueId = venueId,
+            Name = "Cơm Chay Tâm An",
+            Address = "12 Lê Lợi, Quận 1, TP.HCM",
+            Rating = 4.6m,
+            IsFullyVegan = true,
+            Categories = new List<string> { "Cơm chay" },
+            DirectionsUrl = "https://www.google.com/maps/dir/?api=1&destination=10.7729,106.6983",
+            Source = "HAPPYCOW"
+        };
+
+        _mockVenueService.Setup(s => s.GetVenueDetailAsync(venueId, null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(detailDto);
+
+        // Act
+        var actionResult = await _controller.GetVenue(venueId, null, null, CancellationToken.None);
+
+        // Assert
+        var okResult = actionResult as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+
+        var apiResponse = okResult.Value as ApiResponse<VenueDetailDto>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data.Should().NotBeNull();
+        apiResponse.Data!.VenueId.Should().Be(venueId);
+        apiResponse.Data.Name.Should().Be("Cơm Chay Tâm An");
+    }
 }

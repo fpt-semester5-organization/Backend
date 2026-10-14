@@ -24,7 +24,7 @@ namespace VeggieLife.Tests.Unit.Services.Venues;
 /// Kiểm tra:
 /// 1. Tìm thử ở Hà Nội và TP.HCM cho kết quả đúng thứ tự khoảng cách.
 /// 2. Khách: bán kính 5 km, tối đa 03 lần dùng thử (BR-GUEST-03).
-/// 3. Thành viên: bán kính 1..10 km, không giới hạn lượt, loại bỏ quán rating &lt; 2.5 sao (BR-USR-11).
+/// 3. Thành viên: bán kính 1..10 km, không giới hạn lượt (BR-USR-11).
 /// 4. Giới hạn lãnh thổ Việt Nam (BR-GUEST-06).
 /// 5. Tìm theo tỉnh/thành khi từ chối GPS, lọc theo danh mục, phân trang.
 /// 6. Cơ chế Cache Geohash trên Redis 24 giờ (BR-SYS-CACHE-01).
@@ -261,8 +261,8 @@ public class VenueServiceTests : IDisposable
         // 2. Không được chứa quán ở TP.HCM
         venues.Should().NotContain(v => v.Address.Contains("TP.HCM"));
 
-        // 3. Quán có Rating < 2.5 (Quán Dưỡng Sinh Cũ 2.1 sao) bị loại bỏ với Thành viên (BR-USR-11)
-        venues.Should().NotContain(v => v.Rating < 2.5m);
+        // 3. Không lọc theo rating (chỉ dùng Goong Places) nên Quán Dưỡng Sinh Cũ (2.1 sao) vẫn có mặt
+        venues.Should().Contain(v => v.VenueId == 305);
 
         // 4. Kiểm tra meta
         result.Meta.RadiusKm.Should().Be(5.0);
@@ -296,16 +296,17 @@ public class VenueServiceTests : IDisposable
         // Không chứa quán Hà Nội
         venues.Should().NotContain(v => v.Address.Contains("Hà Nội"));
 
-        // Tib Chay (~0.3 km) đứng trước Tâm An (~0.6 km), Tâm An đứng trước Hum (~1.4 km)
+        // Tib Chay (~0.3 km) đứng trước Tâm An (~0.6 km), Tâm An đứng trước Vỉa Hè Cũ (~1.3 km), Vỉa Hè Cũ đứng trước Hum (~1.5 km)
         venues[0].Name.Should().Be("Tib Chay Huỳnh Thúc Kháng");
         venues[1].Name.Should().Be("Cơm Chay Tâm An");
-        venues[2].Name.Should().Be("Hum Vegetarian Lounge & Restaurant");
+        venues[2].Name.Should().Be("Quán Chay Vỉa Hè Cũ");
+        venues[3].Name.Should().Be("Hum Vegetarian Lounge & Restaurant");
     }
 
     [Fact]
-    public async Task ListNearbyVenues_Member_ShouldExcludeVenuesWithRatingUnderTwoPointFive()
+    public async Task ListNearbyVenues_DoesNotFilterByRating_ReturnsVenuesRegardlessOfRating()
     {
-        // ARRANGE: Hà Nội
+        // ARRANGE: Hà Nội (chỉ tích hợp Goong Places, không lọc theo số sao Rating)
         var request = new ListNearbyVenuesRequest
         {
             Lat = 21.0285,
@@ -319,10 +320,8 @@ public class VenueServiceTests : IDisposable
         // ACT: Khách (GUEST)
         var guestResult = await _service.ListNearbyVenuesAsync(request, userId: null, userRole: UserRoles.Guest, guestUuid: "guest-test-1");
 
-        // ASSERT: Thành viên bị loại quán < 2.5 sao
-        memberResult.Venues.Should().NotContain(v => v.Rating < 2.5m);
-
-        // Khách vãng lai xem được cả quán < 2.5 sao
+        // ASSERT: Cả Thành viên và Khách đều nhận được quán bất kể số sao (kể cả rating < 2.5 sao)
+        memberResult.Venues.Should().Contain(v => v.Rating < 2.5m);
         guestResult.Venues.Should().Contain(v => v.Rating < 2.5m);
     }
 
@@ -652,5 +651,332 @@ public class VenueServiceTests : IDisposable
         result.Venues.Should().NotBeEmpty();
         result.Venues.Should().OnlyContain(v => v.Address.Contains("Hà Nội"));
     }
+
+    #region FN-MAP-02: Xem chi tiết quán (GetVenueDetailAsync)
+
+    [Fact]
+    public async Task GetVenueDetail_ValidId_ReturnsVenueDetailWithCategoriesAndOpeningHours()
+    {
+        // ACT
+        var result = await _service.GetVenueDetailAsync(301);
+
+        // ASSERT
+        result.Should().NotBeNull();
+        result.VenueId.Should().Be(301);
+        result.Name.Should().Be("Ưu Đàm Chay");
+        result.Address.Should().Be("34 Hàng Bài, Hoàn Kiếm, Hà Nội");
+        result.Rating.Should().Be(4.8m);
+        result.IsFullyVegan.Should().BeTrue();
+        result.Categories.Should().Contain("Món Cơm & Xôi Chay");
+        result.DirectionsUrl.Should().Contain("destination=21.0227,105.8524");
+        result.OpeningHours.Should().NotBeNull();
+        result.OpeningHours.Should().ContainKey("mon");
+        result.Source.Should().Be("GOONG");
+
+        // Xác nhận đã lưu cache với TTL 24h (BR-SYS-CACHE-01)
+        _mockRedis.Verify(r => r.SetAsync("venue_detail:301", It.IsAny<VenueDetailDto>(), TimeSpan.FromHours(24), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetVenueDetail_WithCoordinates_ComputesDistanceKm()
+    {
+        // ARRANGE: Hồ Gươm (21.0285, 105.8542)
+        double userLat = 21.0285;
+        double userLng = 105.8542;
+
+        // ACT
+        var result = await _service.GetVenueDetailAsync(301, userLat, userLng);
+
+        // ASSERT
+        result.DistanceKm.Should().NotBeNull();
+        result.DistanceKm.Value.Should().BeInRange(0.5, 1.0);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(-100)]
+    public async Task GetVenueDetail_InvalidId_ThrowsBadRequest(int invalidId)
+    {
+        // ACT & ASSERT
+        var act = () => _service.GetVenueDetailAsync(invalidId);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+    }
+
+    [Fact]
+    public async Task GetVenueDetail_NonExistentVenue_ThrowsNotFound()
+    {
+        // ACT & ASSERT
+        var act = () => _service.GetVenueDetailAsync(99999);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrVenueNotFound);
+    }
+
+    [Fact]
+    public async Task GetVenueDetail_HiddenVenue_ThrowsNotFoundErrVenueNotFound()
+    {
+        // ARRANGE: Quán bị ẩn (Is_Active = 0, BR-ADM-MAP-001)
+        var hiddenVenue = new VeganVenue
+        {
+            VenueId = 399,
+            ExternalSource = "GOONG",
+            VenueName = "Quán Bị Admin Ẩn",
+            Address = "123 Phố Ẩn, Hà Nội",
+            Latitude = 21.02m,
+            Longitude = 105.85m,
+            Rating = 4.0m,
+            IsFullyVegan = true,
+            IsActive = false,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.VeganVenues.Add(hiddenVenue);
+        await _db.SaveChangesAsync();
+
+        // ACT & ASSERT: Quán bị ẩn trả về 404 ERR_VENUE_NOT_FOUND
+        var act = () => _service.GetVenueDetailAsync(399);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrVenueNotFound);
+    }
+
+    [Fact]
+    public async Task GetVenueDetail_CachedInRedis_ReturnsCachedDtoWithoutQueryingDb()
+    {
+        // ARRANGE
+        var cachedDto = new VenueDetailDto
+        {
+            VenueId = 301,
+            Name = "Ưu Đàm Chay (From Cache)",
+            Address = "34 Hàng Bài, Hà Nội",
+            DirectionsUrl = "https://www.google.com/maps/dir/?api=1&destination=21.0227,105.8524",
+            Rating = 4.8m,
+            IsFullyVegan = true,
+            Source = "GOONG"
+        };
+        _mockRedis.Setup(r => r.GetAsync<VenueDetailDto>("venue_detail:301", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cachedDto);
+
+        // ACT
+        var result = await _service.GetVenueDetailAsync(301, 21.0285, 105.8542);
+
+        // ASSERT
+        result.Name.Should().Be("Ưu Đàm Chay (From Cache)");
+        result.DistanceKm.Should().NotBeNull();
+        _mockRedis.Verify(r => r.GetAsync<VenueDetailDto>("venue_detail:301", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    #endregion
+
+    #region FN-MAP-03: Gợi ý quán theo món (ListRecipeVenuesAsync)
+
+    [Fact]
+    public async Task ListRecipeVenues_ValidRecipe_ReturnsMatchingCategoryVenuesSortedByDistance()
+    {
+        // ARRANGE: Tạo công thức thuộc Category 9 (Món Lẩu Chay)
+        var recipe = new Recipe
+        {
+            RecipeId = 501,
+            CategoryId = 9,
+            DietarySchoolId = 1,
+            Title = "Lẩu Nấm Chay Thập Cẩm",
+            Instructions = "Nấu nước dùng nấm, nhúng rau củ",
+            DifficultyLevel = "EASY",
+            Status = "APPROVED_ACTIVE",
+            Source = "COMMUNITY",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Recipes.Add(recipe);
+        await _db.SaveChangesAsync();
+
+        // Tọa độ Hồ Gươm, Hà Nội (21.0285, 105.8542)
+        double userLat = 21.0285;
+        double userLng = 105.8542;
+
+        // ACT: Member tìm quán gợi ý
+        var results = await _service.ListRecipeVenuesAsync(
+            recipeId: 501,
+            lat: userLat,
+            lng: userLng,
+            limit: 5,
+            userId: 1,
+            userRole: UserRoles.Member,
+            guestUuid: null);
+
+        // ASSERT: Quán Vị Lai (Id 303) có Category 9 và cách ~0.8 km
+        results.Should().NotBeEmpty();
+        results.Should().Contain(v => v.VenueId == 303);
+        results.First().DistanceKm.Should().BeLessThan(2.0);
+    }
+
+    [Fact]
+    public async Task ListRecipeVenues_NonExistentRecipe_ThrowsNotFoundErrContentNotFound()
+    {
+        // ACT & ASSERT: Công thức không tồn tại -> 404 ERR_CONTENT_NOT_FOUND
+        var act = () => _service.ListRecipeVenuesAsync(
+            recipeId: 99999,
+            lat: 21.0285,
+            lng: 105.8542,
+            limit: 5,
+            userId: 1,
+            userRole: UserRoles.Member,
+            guestUuid: null);
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrContentNotFound);
+    }
+
+    [Fact]
+    public async Task ListRecipeVenues_UnapprovedRecipe_ThrowsNotFoundErrContentNotFound()
+    {
+        // ARRANGE: Công thức đang PENDING_REVIEW
+        var recipe = new Recipe
+        {
+            RecipeId = 502,
+            CategoryId = 9,
+            DietarySchoolId = 1,
+            Title = "Lẩu Chưa Duyệt",
+            Instructions = "Chưa duyệt",
+            DifficultyLevel = "EASY",
+            Status = "PENDING_REVIEW",
+            Source = "COMMUNITY",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Recipes.Add(recipe);
+        await _db.SaveChangesAsync();
+
+        // ACT & ASSERT
+        var act = () => _service.ListRecipeVenuesAsync(
+            recipeId: 502,
+            lat: 21.0285,
+            lng: 105.8542,
+            limit: 5,
+            userId: 1,
+            userRole: UserRoles.Member,
+            guestUuid: null);
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrContentNotFound);
+    }
+
+    [Fact]
+    public async Task ListRecipeVenues_OutsideVietnam_ThrowsForbiddenErrGuestRegionUnsupported()
+    {
+        // ARRANGE: Tọa độ Tokyo Nhật Bản (35.6762, 139.6503)
+        var act = () => _service.ListRecipeVenuesAsync(
+            recipeId: 1,
+            lat: 35.6762,
+            lng: 139.6503,
+            limit: 5,
+            userId: null,
+            userRole: UserRoles.Guest,
+            guestUuid: "guest-test");
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrGuestRegionUnsupported);
+    }
+
+    [Fact]
+    public async Task ListRecipeVenues_GuestQuotaExceeded_ThrowsForbiddenErrQuotaMapExceeded()
+    {
+        // ARRANGE: Guest đã dùng 3 lượt
+        var guestId = "guest-quota-test";
+        _mockRedis.Setup(r => r.GetAsync<int?>($"guest_quota:{guestId}:map", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(3);
+
+        // ACT & ASSERT: 403 ERR_QUOTA_MAP_EXCEEDED
+        var act = () => _service.ListRecipeVenuesAsync(
+            recipeId: 1,
+            lat: 21.0285,
+            lng: 105.8542,
+            limit: 5,
+            userId: null,
+            userRole: UserRoles.Guest,
+            guestUuid: guestId);
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrQuotaMapExceeded);
+    }
+
+    [Fact]
+    public async Task ListRecipeVenues_GuestWithResults_DeductsQuota()
+    {
+        // ARRANGE
+        var recipe = new Recipe
+        {
+            RecipeId = 503,
+            CategoryId = 1,
+            DietarySchoolId = 1,
+            Title = "Cơm Chiên Dương Châu Chay",
+            Instructions = "Chiên cơm với rau củ",
+            DifficultyLevel = "EASY",
+            Status = "APPROVED_ACTIVE",
+            Source = "COMMUNITY",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Recipes.Add(recipe);
+        await _db.SaveChangesAsync();
+
+        var guestId = "guest-fresh";
+        _mockRedis.Setup(r => r.GetAsync<int?>($"guest_quota:{guestId}:map", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+        _mockRedis.Setup(r => r.IncrementAsync($"guest_quota:{guestId}:map", 1, It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        // ACT
+        var results = await _service.ListRecipeVenuesAsync(
+            recipeId: 503,
+            lat: 21.0285,
+            lng: 105.8542,
+            limit: 5,
+            userId: null,
+            userRole: UserRoles.Guest,
+            guestUuid: guestId);
+
+        // ASSERT: Trả về kết quả và tăng quota của khách
+        results.Should().NotBeEmpty();
+        _mockRedis.Verify(r => r.IncrementAsync($"guest_quota:{guestId}:map", 1, TimeSpan.FromHours(24), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ListRecipeVenues_MemberRole_IncludesVenuesRegardlessOfRating()
+    {
+        // ARRANGE
+        var recipe = new Recipe
+        {
+            RecipeId = 504,
+            CategoryId = 1,
+            DietarySchoolId = 1,
+            Title = "Cơm Trắng Chay",
+            Instructions = "Nấu cơm",
+            DifficultyLevel = "EASY",
+            Status = "APPROVED_ACTIVE",
+            Source = "COMMUNITY",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Recipes.Add(recipe);
+        await _db.SaveChangesAsync();
+
+        // ACT: Member tìm quán
+        var results = await _service.ListRecipeVenuesAsync(
+            recipeId: 504,
+            lat: 21.0285,
+            lng: 105.8542,
+            limit: 5,
+            userId: 10,
+            userRole: UserRoles.Member,
+            guestUuid: null);
+
+        // ASSERT: Quán Dưỡng Sinh Cũ (Rating 2.1 < 2.5) vẫn được hiển thị (không lọc sao vì chỉ dùng Goong Map)
+        results.Should().Contain(v => v.VenueId == 305);
+    }
+
+    #endregion
 }
 

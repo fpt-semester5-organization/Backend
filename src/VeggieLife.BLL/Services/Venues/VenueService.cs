@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -245,17 +246,9 @@ public class VenueService : IVenueService
         }
 
         // BƯỚC: Danh mục quán chay (Data Object)
-        // Lọc bỏ quán có đánh giá < 2.5 sao đối với Thành viên (BR-USR-11)
-        var filteredList = candidateVenues.AsEnumerable();
-        if (!isGuest)
-        {
-            filteredList = filteredList.Where(v => v.Rating >= 2.5m);
-        }
-
-        // Sắp xếp: Ưu tiên khoảng cách gần nhất, sau đó đến điểm đánh giá (Rating) cao nhất
-        var sortedList = filteredList
+        // Sắp xếp: Ưu tiên khoảng cách gần nhất
+        var sortedList = candidateVenues
             .OrderBy(v => v.DistanceKm)
-            .ThenByDescending(v => v.Rating)
             .ToList();
 
         var total = sortedList.Count;
@@ -476,6 +469,299 @@ public class VenueService : IVenueService
         {
             _logger.LogWarning(ex, "Lỗi xảy ra khi tự động đồng bộ quán từ Goong Places API quanh ({Lat}, {Lng}).", targetLat, targetLng);
         }
+    }
+
+    /// <summary>
+    /// FN-MAP-02: Xem chi tiết quán ăn chay (không có thực đơn quán).
+    /// Kiểm tra quán Is_Active = 1 và không bị Admin ẩn (BR-ADM-MAP-001); không thì 404 ERR_VENUE_NOT_FOUND.
+    /// Cache Redis: venue_detail:{id} với TTL 24h (BR-SYS-CACHE-01).
+    /// </summary>
+    public async Task<VenueDetailDto> GetVenueDetailAsync(
+        int id,
+        double? lat = null,
+        double? lng = null,
+        CancellationToken ct = default)
+    {
+        // 1. Kiểm tra tham số đầu vào (BR-VALIDATION)
+        if (id <= 0)
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Mã định danh quán ăn (id) phải lớn hơn 0.");
+        }
+
+        if ((lat.HasValue && !lng.HasValue) || (!lat.HasValue && lng.HasValue))
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Vĩ độ (lat) và kinh độ (lng) phải được cung cấp cùng nhau.");
+        }
+
+        if (lat.HasValue && (lat.Value < -90.0 || lat.Value > 90.0 || lng!.Value < -180.0 || lng.Value > 180.0))
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Tọa độ không hợp lệ. Vĩ độ từ -90 đến 90, kinh độ từ -180 đến 180.");
+        }
+
+        // 2. Kiểm tra Cache Redis: venue_detail:{id} (TTL 24h, BR-SYS-CACHE-01)
+        var cacheKey = $"venue_detail:{id}";
+        var cachedVenue = await _redis.GetAsync<VenueDetailDto>(cacheKey, ct);
+        if (cachedVenue != null)
+        {
+            if (lat.HasValue && lng.HasValue)
+            {
+                ApplyCoordinatesDistance(cachedVenue, lat.Value, lng.Value);
+            }
+            return cachedVenue;
+        }
+
+        // 3. Đọc CSDL VeganVenues + VenueCategories (chỉ quán Is_Active = 1, BR-ADM-MAP-001)
+        var venue = await _db.VeganVenues
+            .AsNoTracking()
+            .Include(v => v.VenueCategories)
+                .ThenInclude(vc => vc.Category)
+            .FirstOrDefaultAsync(v => v.VenueId == id, ct);
+
+        // Quán không tồn tại hoặc đang bị Admin ẩn (Is_Active = 0) -> 404 ERR_VENUE_NOT_FOUND
+        if (venue == null || !venue.IsActive)
+        {
+            // Xóa cache cũ nếu quán vừa bị ẩn
+            await _redis.RemoveAsync(cacheKey, ct);
+
+            throw AppException.NotFound(
+                ErrorCodes.ErrVenueNotFound,
+                "Quán không tồn tại hoặc đang bị ẩn.");
+        }
+
+        // 4. Tạo directionsUrl Google Maps, mở rộng nguồn dữ liệu & giờ mở cửa
+        var directionsUrl = $"https://www.google.com/maps/dir/?api=1&destination={venue.Latitude.ToString("G29", CultureInfo.InvariantCulture)},{venue.Longitude.ToString("G29", CultureInfo.InvariantCulture)}";
+
+        var dto = new VenueDetailDto
+        {
+            VenueId = venue.VenueId,
+            Name = venue.VenueName,
+            Address = venue.Address,
+            DistanceKm = null,
+            Rating = venue.Rating,
+            IsFullyVegan = venue.IsFullyVegan,
+            ThumbnailUrl = venue.ThumbnailUrl,
+            Categories = venue.VenueCategories.Select(vc => vc.Category.CategoryName).ToList(),
+            DirectionsUrl = directionsUrl,
+            OpeningHours = ExtractOpeningHours(venue.RawOriginJson),
+            Source = venue.ExternalSource,
+            LastSyncedAt = venue.CreatedAt
+        };
+
+        // 5. Ghi cache Redis với TTL 24 giờ
+        await _redis.SetAsync(cacheKey, dto, TimeSpan.FromHours(24), ct);
+
+        // 6. Tính khoảng cách nếu có tọa độ truyền vào
+        if (lat.HasValue && lng.HasValue)
+        {
+            dto.DistanceKm = Math.Round(GeoHelper.CalculateDistanceKm(lat.Value, lng.Value, (double)venue.Latitude, (double)venue.Longitude), 1);
+        }
+
+        return dto;
+    }
+
+    /// <summary>
+    /// FN-MAP-03: Gợi ý các quán chay gần người dùng có danh mục món trùng danh mục của công thức đang xem.
+    /// Khách vãng lai: bán kính 5 km, trừ 1 lượt tìm kiếm; Thành viên: bán kính 10 km (BR-USR-11).
+    /// Trả về tối đa `limit` quán gần nhất (1..5, mặc định 5).
+    /// </summary>
+    public async Task<List<NearbyVenueItemDto>> ListRecipeVenuesAsync(
+        int recipeId,
+        double lat,
+        double lng,
+        int limit,
+        int? userId,
+        string userRole,
+        string? guestUuid,
+        CancellationToken ct = default)
+    {
+        // 1. Kiểm tra tham số đầu vào (BR-VALIDATION)
+        if (recipeId <= 0)
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Mã công thức (id) phải lớn hơn 0.");
+        }
+
+        if (lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0)
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Tọa độ không hợp lệ. Vĩ độ từ -90 đến 90, kinh độ từ -180 đến 180.");
+        }
+
+        if (limit < 1 || limit > 5)
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Số lượng gợi ý quán (limit) phải từ 1 đến 5.");
+        }
+
+        // 2. Kiểm tra lãnh thổ Việt Nam (BR-GUEST-06)
+        if (!GeoHelper.IsInVietnam(lat, lng))
+        {
+            throw AppException.Forbidden(
+                ErrorCodes.ErrGuestRegionUnsupported,
+                "IP ngoài lãnh thổ Việt Nam — dịch vụ bản đồ chưa hỗ trợ khu vực này (BR-GUEST-06).");
+        }
+
+        // 3. Kiểm tra Role và hạn mức tìm kiếm của Khách (BR-GUEST-03)
+        bool isGuest = string.Equals(userRole, UserRoles.Guest, StringComparison.OrdinalIgnoreCase) || !userId.HasValue;
+        double effectiveRadius = isGuest ? 5.0 : 10.0;
+        string? effectiveGuestId = null;
+
+        if (isGuest)
+        {
+            effectiveGuestId = !string.IsNullOrWhiteSpace(guestUuid)
+                ? guestUuid.Trim()
+                : (userId.HasValue ? userId.Value.ToString() : "anonymous");
+
+            var quotaUsed = await _redis.GetAsync<int?>($"guest_quota:{effectiveGuestId}:map", ct)
+                         ?? await _redis.GetAsync<int?>($"guest_quota:map:{effectiveGuestId}", ct)
+                         ?? 0;
+
+            if (quotaUsed >= 3)
+            {
+                throw AppException.Forbidden(
+                    ErrorCodes.ErrQuotaMapExceeded,
+                    "Khách đã tìm đủ 03 lần.");
+            }
+        }
+
+        // 4. Lấy Recipes.Category_ID của công thức (chỉ công thức APPROVED_ACTIVE)
+        var recipe = await _db.Recipes
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.RecipeId == recipeId && r.Status == "APPROVED_ACTIVE", ct);
+
+        if (recipe == null)
+        {
+            throw AppException.NotFound(
+                ErrorCodes.ErrContentNotFound,
+                "Công thức không tồn tại.");
+        }
+
+        // 5. Tìm VeganVenues có VenueCategories.Category_ID trùng, trong bán kính cho phép (Khách 5 km, Thành viên 10 km), chưa bị ẩn (Is_Active = 1, BR-ADM-MAP-001)
+        var query = _db.VeganVenues
+            .AsNoTracking()
+            .Where(v => v.IsActive && v.VenueCategories.Any(vc => vc.CategoryId == recipe.CategoryId));
+
+        var venuesFromDb = await query
+            .Include(v => v.VenueCategories)
+                .ThenInclude(vc => vc.Category)
+            .ToListAsync(ct);
+
+        var candidateVenues = new List<NearbyVenueItemDto>();
+        foreach (var v in venuesFromDb)
+        {
+            var distance = GeoHelper.CalculateDistanceKm(lat, lng, (double)v.Latitude, (double)v.Longitude);
+            if (distance <= effectiveRadius)
+            {
+                candidateVenues.Add(MapToDto(v, Math.Round(distance, 1)));
+            }
+        }
+
+        // 6. Xếp hạng theo khoảng cách gần nhất; trả tối đa `limit` quán
+        var results = candidateVenues
+            .OrderBy(v => v.DistanceKm)
+            .Take(limit)
+            .ToList();
+
+        // 7. Khách bị trừ 1 lần tìm quán như FN-MAP-01 (nếu có >= 1 kết quả)
+        if (isGuest && effectiveGuestId != null && results.Count > 0)
+        {
+            var newCount = await _redis.IncrementAsync($"guest_quota:{effectiveGuestId}:map", 1, TimeSpan.FromHours(24), ct);
+            await _redis.SetAsync($"guest_quota:map:{effectiveGuestId}", (int)newCount, TimeSpan.FromHours(24), ct);
+        }
+
+        return results;
+    }
+
+    private static void ApplyCoordinatesDistance(VenueDetailDto dto, double lat, double lng)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DirectionsUrl)) return;
+        var idx = dto.DirectionsUrl.IndexOf("destination=", StringComparison.OrdinalIgnoreCase);
+        if (idx >= 0)
+        {
+            var coordStr = dto.DirectionsUrl[(idx + "destination=".Length)..];
+            var parts = coordStr.Split(',');
+            if (parts.Length == 2 &&
+                double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var vLat) &&
+                double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var vLng))
+            {
+                dto.DistanceKm = Math.Round(GeoHelper.CalculateDistanceKm(lat, lng, vLat, vLng), 1);
+            }
+        }
+    }
+
+    private static Dictionary<string, string> ExtractOpeningHours(string? rawOriginJson)
+    {
+        var defaultHours = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["mon"] = "08:00-21:00",
+            ["tue"] = "08:00-21:00",
+            ["wed"] = "08:00-21:00",
+            ["thu"] = "08:00-21:00",
+            ["fri"] = "08:00-21:00",
+            ["sat"] = "08:00-21:00",
+            ["sun"] = "08:00-21:00"
+        };
+
+        if (string.IsNullOrWhiteSpace(rawOriginJson))
+        {
+            return defaultHours;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(rawOriginJson);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("opening_hours", out var hoursElement) ||
+                root.TryGetProperty("openingHours", out hoursElement) ||
+                root.TryGetProperty("hours", out hoursElement))
+            {
+                if (hoursElement.ValueKind == JsonValueKind.Object)
+                {
+                    var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var prop in hoursElement.EnumerateObject())
+                    {
+                        result[prop.Name.ToLowerInvariant()] = prop.Value.GetString() ?? "08:00-21:00";
+                    }
+                    if (result.Count > 0)
+                    {
+                        return result;
+                    }
+                }
+                else if (hoursElement.ValueKind == JsonValueKind.Array)
+                {
+                    var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    var days = new[] { "mon", "tue", "wed", "thu", "fri", "sat", "sun" };
+                    int index = 0;
+                    foreach (var item in hoursElement.EnumerateArray())
+                    {
+                        if (index < days.Length)
+                        {
+                            result[days[index++]] = item.GetString() ?? "08:00-21:00";
+                        }
+                    }
+                    if (result.Count > 0)
+                    {
+                        return result;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Bỏ qua lỗi parse JSON và dùng giờ mặc định
+        }
+
+        return defaultHours;
     }
 }
 
