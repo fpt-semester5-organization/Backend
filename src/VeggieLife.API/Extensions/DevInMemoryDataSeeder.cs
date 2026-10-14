@@ -77,8 +77,8 @@ public static class DevInMemoryDataSeeder
         var butterDairy = new Ingredient { IngredientId = 10, IngredientName = "Bơ lạt từ sữa bò", StandardUnit = "g", DefaultStallType = "DAIRY", FoodGroup = "DAIRY", CaloriesPer100g = 717m };
         db.Ingredients.AddRange(tofuSilken, mushroomStraw, mushroomShiitake, mushroomKingOyster, mushroomEnoki, tofuFried, sweetCorn, butterDairy);
 
-        // 4. Người dùng mẫu (Users)
-        var passwordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123");
+        // 4. Người dùng mẫu (Users) - Mật khẩu chung: Veggie@2026
+        var passwordHash = BCrypt.Net.BCrypt.HashPassword("Veggie@2026");
         var admin = new User
         {
             UserId = 1,
@@ -99,7 +99,17 @@ public static class DevInMemoryDataSeeder
             AccountStatus = "ACTIVE",
             CreatedAt = DateTime.UtcNow.AddDays(-20)
         };
-        db.Users.AddRange(admin, member);
+        var vip = new User
+        {
+            UserId = 3,
+            Email = "vip@veggielife.vn",
+            FullName = "Trần Thị VIP",
+            PasswordHash = passwordHash,
+            Role = "VIP",
+            AccountStatus = "ACTIVE",
+            CreatedAt = DateTime.UtcNow.AddDays(-15)
+        };
+        db.Users.AddRange(admin, member, vip);
 
         // 5. Hồ sơ thể trạng (HealthProfiles)
         var memberProfile = new HealthProfile
@@ -319,6 +329,26 @@ public static class DevInMemoryDataSeeder
             new Comment { CommentId = 1, PostId = 1001, UserId = 1, Content = "Canh nấu rất thanh mát và dễ ăn!", Status = "APPROVED_ACTIVE", IsSoftDeleted = false, CreatedAt = DateTime.UtcNow.AddDays(-2) },
             new Comment { CommentId = 2, PostId = 1001, UserId = 2, Content = "Cảm ơn tác giả đã chia sẻ công thức tuyệt vời này.", Status = "APPROVED_ACTIVE", IsSoftDeleted = false, CreatedAt = DateTime.UtcNow.AddDays(-1) },
             new Comment { CommentId = 3, PostId = 1002, UserId = 1, Content = "Món kho này ăn cùng cơm nóng rất đưa cơm.", Status = "APPROVED_ACTIVE", IsSoftDeleted = false, CreatedAt = DateTime.UtcNow.AddDays(-1) }
+        );
+
+        // 12. Tủ lạnh ảo mẫu cho Member (User 2) phục vụ FN-VIS-02, FN-VIS-03
+        db.FridgeInventories.AddRange(
+            new FridgeInventory
+            {
+                InventoryId = 1,
+                UserId = 2,
+                IngredientId = 39, // Đậu hũ non
+                CustomItemName = "Đậu hũ non hữu cơ",
+                FreshnessStatus = "FRESH"
+            },
+            new FridgeInventory
+            {
+                InventoryId = 2,
+                UserId = 2,
+                IngredientId = 90, // Nấm rơm tươi
+                CustomItemName = "Nấm rơm tươi",
+                FreshnessStatus = "NON-FRESH"
+            }
         );
 
         db.SaveChanges();

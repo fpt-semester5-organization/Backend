@@ -195,9 +195,30 @@ Accept: application/json
 GET {{VeggieLife.API_HostAddress}}/api/v1/users/me/scans?verdict=RED&page=1&size=10
 Authorization: Bearer {{memberToken}}
 Accept: application/json
+### ============================================================================
+### 17. FN-VIS-03: GỢI Ý MÓN NẤU TỪ TỦ LẠNH ẢO (RECIPE SUGGESTIONS)
+### ============================================================================
+### Gợi ý món từ nguyên liệu có sẵn trong tủ lạnh của Member (Mặc định minSimilarity=0.7, limit=10)
+GET {{VeggieLife.API_HostAddress}}/api/v1/fridge/recipe-suggestions
+Authorization: Bearer {{memberToken}}
+Accept: application/json
+
+### Gợi ý món với độ tương đồng tối thiểu 80% (minSimilarity=0.8) và lấy tối đa 5 món
+GET {{VeggieLife.API_HostAddress}}/api/v1/fridge/recipe-suggestions?minSimilarity=0.8&limit=5
+Authorization: Bearer {{memberToken}}
+Accept: application/json
+
+### Kiểm tra phân quyền: Khách vãng lai (GUEST) không được phép truy cập (Mong đợi: 403 Forbidden - ERR_GUEST_PERSONALIZATION_RESTRICTED)
+GET {{VeggieLife.API_HostAddress}}/api/v1/fridge/recipe-suggestions
+X-Guest-UUID: 00000000-0000-0000-0000-000000000001
+Accept: application/json
+
+### Kiểm tra phân quyền: Không truyền token (Mong đợi: 401 Unauthorized)
+GET {{VeggieLife.API_HostAddress}}/api/v1/fridge/recipe-suggestions
+Accept: application/json
 
 ### ============================================================================
-### 17. FN-AUTH-11: QUÊN MẬT KHẨU (GỬI OTP ĐẶT LẠI MẬT KHẨU)
+### 18. FN-AUTH-11: QUÊN MẬT KHẨU (GỬI OTP ĐẶT LẠI MẬT KHẨU)
 ### ============================================================================
 POST {{VeggieLife.API_HostAddress}}/api/v1/auth/forgot-password
 Content-Type: application/json
@@ -211,7 +232,7 @@ GET {{VeggieLife.API_HostAddress}}/api/v1/auth/dev-latest-otp?email={{MemberEmai
 Accept: application/json
 
 ### ============================================================================
-### 18. FN-AUTH-12: ĐẶT LẠI MẬT KHẨU BẰNG MÃ OTP (RESET PASSWORD)
+### 19. FN-AUTH-12: ĐẶT LẠI MẬT KHẨU BẰNG MÃ OTP (RESET PASSWORD)
 ### ============================================================================
 POST {{VeggieLife.API_HostAddress}}/api/v1/auth/reset-password
 Content-Type: application/json
@@ -223,7 +244,7 @@ Content-Type: application/json
 }
 
 ### ============================================================================
-### 19. FN-AUTH-13: ĐỔI MẬT KHẨU (CHANGE PASSWORD)
+### 20. FN-AUTH-13: ĐỔI MẬT KHẨU (CHANGE PASSWORD)
 ### ============================================================================
 PUT {{VeggieLife.API_HostAddress}}/api/v1/auth/password
 Authorization: Bearer {{memberToken}}
@@ -233,6 +254,4 @@ Content-Type: application/json
   "currentPassword": "Veggie@2026",
   "newPassword": "NewVeggie@2026"
 }
-
-
 
