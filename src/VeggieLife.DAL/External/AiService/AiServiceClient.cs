@@ -129,6 +129,78 @@ public class AiServiceClient : IAiServiceClient
         }
     }
 
+    public async Task<AiFridgeDetectionResult?> DetectFridgeIngredientsAsync(System.IO.Stream imageStream, string mimeType, CancellationToken ct = default)
+    {
+        if (IsCircuitOpen)
+        {
+            _logger.LogWarning("[AiServiceClient] Mạch AI đang mở (Circuit Breaker OPEN). Không thể gọi AI Vision.");
+            return null;
+        }
+
+        var sw = Stopwatch.StartNew();
+
+        try
+        {
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+
+            using var content = new MultipartFormDataContent();
+            using var streamContent = new StreamContent(imageStream);
+            streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType);
+            content.Add(streamContent, "image", "fridge.jpg");
+
+            // Gọi endpoint /vision/detect-ingredients chuẩn theo Kiến trúc D118-D119 (05. Architecture and Deployment.docx)
+            var response = await _httpClient.PostAsync("/vision/detect-ingredients", content, linkedCts.Token);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                // Fallback nếu microservice ai-service cũ dùng route /fridge/detect
+                using var fallbackContent = new MultipartFormDataContent();
+                using var fallbackStreamContent = new StreamContent(imageStream);
+                fallbackStreamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType);
+                fallbackContent.Add(fallbackStreamContent, "image", "fridge.jpg");
+                response = await _httpClient.PostAsync("/fridge/detect", fallbackContent, linkedCts.Token);
+            }
+            sw.Stop();
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<AiFridgeDetectionResult>(cancellationToken: linkedCts.Token);
+                if (result != null)
+                {
+                    result.ExecutionTimeMs = (int)sw.ElapsedMilliseconds;
+                    RecordSuccess();
+                    return result;
+                }
+            }
+
+            var statusCode = (int)response.StatusCode;
+            _logger.LogWarning("[AiServiceClient] ai-service /vision/detect-ingredients phản hồi lỗi HTTP {StatusCode}", statusCode);
+            RecordFailure();
+            return null;
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            sw.Stop();
+            _logger.LogWarning(ex, "[AiServiceClient] Gọi ai-service /fridge/detect bị TIMEOUT quá 4 giây ({ElapsedMs} ms).", sw.ElapsedMilliseconds);
+            RecordFailure();
+            return null;
+        }
+        catch (HttpRequestException ex)
+        {
+            sw.Stop();
+            _logger.LogWarning(ex, "[AiServiceClient] Không thể kết nối tới ai-service /fridge/detect ({BaseUrl}).", _httpClient.BaseAddress);
+            RecordFailure();
+            return null;
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            _logger.LogError(ex, "[AiServiceClient] Lỗi không xác định khi gọi ai-service /fridge/detect.");
+            RecordFailure();
+            return null;
+        }
+    }
+
     private void RecordSuccess()
     {
         lock (_lock)

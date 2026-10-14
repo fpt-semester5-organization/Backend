@@ -343,7 +343,8 @@ public static class ServiceExtensions
             sp.GetRequiredService<VeggieLife.BLL.Services.Community.CommunityInteractionService>());
 
         // Dịch vụ Thực đơn dinh dưỡng & AI Meal Planning (FN-MEAL-01)
-        services.Configure<VeggieLife.DAL.External.AiService.AiServiceSettings>(configuration.GetSection(VeggieLife.DAL.External.AiService.AiServiceSettings.SectionName));
+        services.Configure<VeggieLife.DAL.External.AiService.AiServiceSettings>(
+            configuration.GetSection(VeggieLife.DAL.External.AiService.AiServiceSettings.SectionName));
         services.AddHttpClient<VeggieLife.DAL.External.AiService.IAiServiceClient, VeggieLife.DAL.External.AiService.AiServiceClient>((sp, client) =>
         {
             var config = sp.GetRequiredService<IConfiguration>();
@@ -355,6 +356,7 @@ public static class ServiceExtensions
             client.Timeout = System.TimeSpan.FromSeconds(4); // Ràng buộc BR-ADM-AI-002: quá 4s chuyển sang Fallback
         });
         services.AddScoped<VeggieLife.BLL.Services.MealPlans.IMealPlanService, VeggieLife.BLL.Services.MealPlans.MealPlanService>();
+        services.AddScoped<VeggieLife.BLL.Services.Fridge.IFridgeService, VeggieLife.BLL.Services.Fridge.FridgeService>();
 
         // Các interface dịch vụ dùng chung khác (Bản mẫu rỗng để các thành viên khác hoàn thiện)
         services.AddScoped<IAiService, AiServiceStub>();

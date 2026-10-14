@@ -1,6 +1,166 @@
 @VeggieLife.API_HostAddress = http://localhost:5137
+@MemberEmail = member@veggielife.vn
+@VipEmail = vip@veggielife.vn
+@AdminEmail = admin@veggielife.vn
+@DefaultPassword = Veggie@2026
 
+### ============================================================================
+### 1. KIỂM TRA SWAGGER & HEALTH CHECK
+### ============================================================================
 GET {{VeggieLife.API_HostAddress}}/swagger/index.html
 Accept: text/html
 
-###
+### ============================================================================
+### 2. XÁC THỰC - ĐĂNG NHẬP THÀNH VIÊN (MEMBER)
+### ============================================================================
+# @name loginMember
+POST {{VeggieLife.API_HostAddress}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{MemberEmail}}",
+  "password": "{{DefaultPassword}}"
+}
+
+### Lấy Access Token của Member từ phản hồi trên
+@memberToken = {{loginMember.response.body.data.accessToken}}
+
+### ============================================================================
+### 3. XÁC THỰC - ĐĂNG NHẬP HỘI VIÊN VIP (VIP)
+### ============================================================================
+# @name loginVip
+POST {{VeggieLife.API_HostAddress}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{VipEmail}}",
+  "password": "{{DefaultPassword}}"
+}
+
+### Lấy Access Token của VIP từ phản hồi trên
+@vipToken = {{loginVip.response.body.data.accessToken}}
+
+### ============================================================================
+### 4. XÁC THỰC - ĐĂNG NHẬP QUẢN TRỊ VIÊN (ADMIN)
+### ============================================================================
+# @name loginAdmin
+POST {{VeggieLife.API_HostAddress}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{AdminEmail}}",
+  "password": "{{DefaultPassword}}"
+}
+
+### Lấy Access Token của Admin từ phản hồi trên
+@adminToken = {{loginAdmin.response.body.data.accessToken}}
+
+### ============================================================================
+### 5. KIỂM TRA HẠN MỨC DÙNG THỬ CỦA KHÁCH (GET /api/v1/guest/quota - FN-AUTH-02)
+### Lưu ý: Đối với Member/VIP, hạn mức quét ảnh được trả trực tiếp trong trường 'data.quota' của POST /fridge/detections
+### ============================================================================
+GET {{VeggieLife.API_HostAddress}}/api/v1/guest/quota
+X-Guest-UUID: 00000000-0000-0000-0000-000000000001
+Accept: application/json
+
+### ============================================================================
+### 6. QUÉT NHẬN DIỆN ẢNH TỦ LẠNH THUẦN CHAY (GEMINI VISION - FN-VIS-01)
+### Ảnh hợp lệ >= 640x480 (800x600 px) chứa: Đậu hũ, Cà chua, Nấm rơm, Rau cải
+### ============================================================================
+POST {{VeggieLife.API_HostAddress}}/api/v1/fridge/detections
+Authorization: Bearer {{memberToken}}
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="image"; filename="fridge_vegan.jpg"
+Content-Type: image/jpeg
+
+< ../../tests/test-assets/fridge_vegan.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### ============================================================================
+### 7. QUÉT NHẬN DIỆN ẢNH CÓ CHỨA THỊT (KIỂM TRA CẢNH BÁO RED ALERT - BR-ADM-CNT-003)
+### ============================================================================
+POST {{VeggieLife.API_HostAddress}}/api/v1/fridge/detections
+Authorization: Bearer {{memberToken}}
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="image"; filename="fridge_with_meat.jpg"
+Content-Type: image/jpeg
+
+< ../../tests/test-assets/fridge_with_meat.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### ============================================================================
+### 8. QUÉT ẢNH KÍCH THƯỚC QUÁ NHỎ (300x300 px < 640x480 -> KỲ VỌNG LỖI 422)
+### ============================================================================
+POST {{VeggieLife.API_HostAddress}}/api/v1/fridge/detections
+Authorization: Bearer {{memberToken}}
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="image"; filename="fridge_too_small.jpg"
+Content-Type: image/jpeg
+
+< ../../tests/test-assets/fridge_too_small.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### ============================================================================
+### 9. LẤY DANH SÁCH THỰC PHẨM TRONG TỦ LẠNH (GET /api/v1/fridge/items)
+### ============================================================================
+GET {{VeggieLife.API_HostAddress}}/api/v1/fridge/items
+Authorization: Bearer {{memberToken}}
+Accept: application/json
+
+### Lọc theo độ tươi: FRESH / NON-FRESH
+GET {{VeggieLife.API_HostAddress}}/api/v1/fridge/items?freshness=FRESH
+Authorization: Bearer {{memberToken}}
+Accept: application/json
+
+### ============================================================================
+### 10. THÊM THỦ CÔNG NGUYÊN LIỆU VÀO TỦ LẠNH (POST /api/v1/fridge/items - FN-VIS-02)
+### ============================================================================
+# @name createFridgeItem
+POST {{VeggieLife.API_HostAddress}}/api/v1/fridge/items
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{
+  "ingredientId": 1,
+  "customItemName": "Đậu hũ non organic thêm tay"
+}
+
+### ============================================================================
+### 11. GỢI Ý MÓN TỪ NGUYÊN LIỆU TRONG TỦ (GET /api/v1/fridge/recipe-suggestions - FN-VIS-03)
+### Ưu tiên món dùng nguyên liệu NON-FRESH và độ tương đồng >= 70%
+### ============================================================================
+GET {{VeggieLife.API_HostAddress}}/api/v1/fridge/recipe-suggestions?minSimilarity=0.7&limit=10
+Authorization: Bearer {{memberToken}}
+Accept: application/json
+
+### ============================================================================
+### 12. CẬP NHẬT TRẠNG THÁI NGUYÊN LIỆU TRONG TỦ LẠNH (PUT /api/v1/fridge/items/{id})
+### ============================================================================
+PUT {{VeggieLife.API_HostAddress}}/api/v1/fridge/items/1
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{
+  "customItemName": "Đậu hũ non sắp hết hạn",
+  "freshnessStatus": "NON-FRESH"
+}
+
+### ============================================================================
+### 12. XÓA NGUYÊN LIỆU KHỎI TỦ LẠNH
+### ============================================================================
+DELETE {{VeggieLife.API_HostAddress}}/api/v1/fridge/items/1
+Authorization: Bearer {{memberToken}}
+Accept: application/json
+
+### ============================================================================
+### 13. XEM THÔNG TIN HỒ SƠ CÁ NHÂN & THỂ TRẠNG (GET /api/v1/users/me)
+### ============================================================================
+GET {{VeggieLife.API_HostAddress}}/api/v1/users/me
+Authorization: Bearer {{memberToken}}
+Accept: application/json
