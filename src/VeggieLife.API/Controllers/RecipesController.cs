@@ -13,10 +13,13 @@ using VeggieLife.BLL.DTOs.Recipes.Requests;
 using VeggieLife.BLL.DTOs.Recipes.Responses;
 using VeggieLife.BLL.Services.Recipes;
 
+using VeggieLife.BLL.DTOs.Community.Responses;
+using VeggieLife.BLL.Services.Community;
+
 namespace VeggieLife.API.Controllers;
 
 /// <summary>
-/// Controller cung cấp các endpoint tìm kiếm, lọc, xem chi tiết, đăng, sửa, gỡ và xóa công thức nấu ăn (FN-POST-01, FN-POST-02, FN-POST-03, FN-POST-04).
+/// Controller cung cấp các endpoint tìm kiếm, lọc, xem chi tiết, đăng, sửa, gỡ và xóa công thức nấu ăn.
 /// Hỗ trợ cả Khách vãng lai (Guest) và Thành viên đã đăng nhập (Member, VIP, Admin).
 /// </summary>
 [ApiController]
@@ -24,14 +27,16 @@ namespace VeggieLife.API.Controllers;
 public class RecipesController : BaseApiController
 {
     private readonly IRecipeService _recipeService;
+    private readonly ICommunityInteractionService? _communityService;
 
-    public RecipesController(IRecipeService recipeService)
+    public RecipesController(IRecipeService recipeService, ICommunityInteractionService? communityService = null)
     {
         _recipeService = recipeService;
+        _communityService = communityService;
     }
 
     /// <summary>
-    /// FN-POST-01: Tìm kiếm & lọc công thức, video công khai.
+    /// Tìm kiếm & lọc công thức, video công khai.
     /// Tra cứu công thức/video đã được duyệt (APPROVED_ACTIVE) theo từ khóa, danh mục, trường phái, nguyên liệu, thời gian nấu; có phân trang.
     /// Dùng chung cho Khách và Thành viên (D18). Không trừ hạn mức.
     /// </summary>
@@ -54,7 +59,7 @@ public class RecipesController : BaseApiController
     }
 
     /// <summary>
-    /// FN-POST-02: Xem chi tiết công thức.
+    /// Xem chi tiết công thức.
     /// Trả chi tiết công thức đã duyệt: nguyên liệu có định lượng, các bước nấu, dinh dưỡng, video liên quan; hiển thị đầy đủ cho Khách (không làm mờ). Tăng View_Count.
     /// </summary>
     /// <param name="id">Mã định danh công thức (> 0).</param>
@@ -77,7 +82,43 @@ public class RecipesController : BaseApiController
     }
 
     /// <summary>
-    /// FN-POST-03: Đăng công thức nấu ăn mới (lưu nháp hoặc gửi kiểm duyệt tự động bằng AI).
+    /// FN-POST-11: Gợi ý nội dung liên quan khi xem chi tiết công thức.
+    /// Gợi ý công thức tương đồng (cùng trường phái, chung nguyên liệu chính, nhiều lượt thả tim) và bài viết/video liên quan.
+    /// Dùng chung cho Khách vãng lai và Thành viên (GUEST | MEMBER | VIP).
+    /// </summary>
+    /// <param name="id">Mã định danh công thức (> 0).</param>
+    /// <param name="limit">Số lượng gợi ý (1–10, mặc định 6).</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>Danh sách công thức, bài viết và video liên quan.</returns>
+    [HttpGet("{id:int}/related")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<RelatedRecipesResponseData>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ListRelatedRecipes(
+        [FromRoute] int id,
+        [FromQuery] int limit = 6,
+        CancellationToken ct = default)
+    {
+        if (id <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã công thức phải lớn hơn 0.");
+        }
+
+        if (limit < 1 || limit > 10)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Giới hạn số lượng gợi ý phải từ 1 đến 10.");
+        }
+
+        var currentUserId = CurrentUserId.HasValue ? (int?)CurrentUserId.Value : null;
+        var relatedData = await _recipeService.GetRelatedRecipesAsync(id, limit, currentUserId, ct);
+        return OkResponse(relatedData, "OK");
+    }
+
+    /// <summary>
+    /// Đăng công thức nấu ăn mới (lưu nháp hoặc gửi kiểm duyệt tự động bằng AI).
     /// Hỗ trợ kiểm duyệt Red Alert thành phần cấm theo trường phái và quét nội dung món chay qua AI Service.
     /// </summary>
     /// <param name="request">Payload thông tin công thức, định lượng nguyên liệu và các bước nấu.</param>
@@ -101,7 +142,7 @@ public class RecipesController : BaseApiController
     }
 
     /// <summary>
-    /// FN-POST-04: Cập nhật công thức nấu ăn của mình.
+    /// Cập nhật công thức nấu ăn của mình.
     /// Đối với công thức đã duyệt (APPROVED_ACTIVE), nếu thay đổi nội dung sẽ được kiểm duyệt AI đồng bộ trước khi ghi (D107).
     /// Nếu không qua kiểm duyệt, bản đang đăng được giữ nguyên và trả mã lỗi 422.
     /// </summary>
@@ -130,7 +171,7 @@ public class RecipesController : BaseApiController
     }
 
     /// <summary>
-    /// FN-POST-04: Gỡ công thức khỏi trang cá nhân (mode=archive) hoặc xóa mềm toàn hệ thống (mode=all).
+    /// Gỡ công thức khỏi trang cá nhân (mode=archive) hoặc xóa mềm toàn hệ thống (mode=all).
     /// </summary>
     /// <param name="id">Mã định danh công thức (> 0).</param>
     /// <param name="mode">Chế độ gỡ/xóa: 'archive' (mặc định) hoặc 'all'.</param>
@@ -155,7 +196,36 @@ public class RecipesController : BaseApiController
     }
 
     /// <summary>
-    /// Kiểm tra và xác thực quyền thành viên chính thức cho các tác vụ ghi dữ liệu công thức (FN-AUTH-03).
+    /// Thả tim hoặc bỏ tim cho công thức nấu ăn (mỗi thành viên tối đa 1 tim, thả lần 2 = bỏ tim).
+    /// </summary>
+    /// <param name="id">Mã định danh công thức (> 0).</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>Trạng thái voted và tổng số vote mới nhất của công thức.</returns>
+    [HttpPost("{id:int}/votes")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    [ProducesResponseType(typeof(ApiResponse<VoteResponseData>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> CreateRecipeVote([FromRoute] int id, CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+
+        if (_communityService == null)
+        {
+            throw AppException.Internal(ErrorCodes.ErrInternal, "Dịch vụ tương tác cộng đồng chưa được cấu hình.");
+        }
+
+        var userId = (int)CurrentUserId!.Value;
+        var result = await _communityService.VoteRecipeAsync(id, userId, ct);
+
+        return OkResponse(result, "OK");
+    }
+
+    /// <summary>
+    /// Kiểm tra và xác thực quyền thành viên chính thức cho các tác vụ ghi dữ liệu công thức.
     /// </summary>
     private void EnsureAuthorizedMember()
     {

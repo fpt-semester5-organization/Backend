@@ -121,6 +121,7 @@ public static class ServiceExtensions
                                       path.Contains("/likes") ||
                                       path.Contains("/votes") ||
                                       path.Contains("/violations") ||
+                                      path.Contains("/reports") ||
                                       (path.Contains("/recipes") && context.HttpContext?.Request.Method != "GET");
 
                     var errorCode = isGuest
@@ -334,8 +335,16 @@ public static class ServiceExtensions
         // Dịch vụ Video & Phương tiện nấu ăn (FN-POST-08)
         services.AddScoped<VeggieLife.BLL.Services.Videos.IVideoService, VeggieLife.BLL.Services.Videos.VideoService>();
 
+        // Dịch vụ Tương tác cộng đồng & Báo cáo vi phạm (FN-COMM-04, FN-COMM-05)
+        services.AddScoped<VeggieLife.BLL.Services.Community.CommunityInteractionService>();
+        services.AddScoped<VeggieLife.BLL.Services.Community.ICommunityInteractionService>(sp =>
+            sp.GetRequiredService<VeggieLife.BLL.Services.Community.CommunityInteractionService>());
+        services.AddScoped<VeggieLife.BLL.Services.Community.IInteractionService>(sp =>
+            sp.GetRequiredService<VeggieLife.BLL.Services.Community.CommunityInteractionService>());
+
         // Dịch vụ Thực đơn dinh dưỡng & AI Meal Planning (FN-MEAL-01)
-        services.Configure<VeggieLife.DAL.External.AiService.AiServiceSettings>(configuration.GetSection(VeggieLife.DAL.External.AiService.AiServiceSettings.SectionName));
+        services.Configure<VeggieLife.DAL.External.AiService.AiServiceSettings>(
+            configuration.GetSection(VeggieLife.DAL.External.AiService.AiServiceSettings.SectionName));
         services.AddHttpClient<VeggieLife.DAL.External.AiService.IAiServiceClient, VeggieLife.DAL.External.AiService.AiServiceClient>((sp, client) =>
         {
             var config = sp.GetRequiredService<IConfiguration>();
@@ -348,6 +357,7 @@ public static class ServiceExtensions
         });
         services.AddScoped<VeggieLife.BLL.Services.MealPlans.IMealPlanService, VeggieLife.BLL.Services.MealPlans.MealPlanService>();
         services.AddScoped<VeggieLife.BLL.Services.ShoppingLists.IShoppingListService, VeggieLife.BLL.Services.ShoppingLists.ShoppingListService>();
+        services.AddScoped<VeggieLife.BLL.Services.Fridge.IFridgeService, VeggieLife.BLL.Services.Fridge.FridgeService>();
 
         // Các interface dịch vụ dùng chung khác (Bản mẫu rỗng để các thành viên khác hoàn thiện)
         services.AddScoped<IAiService, AiServiceStub>();

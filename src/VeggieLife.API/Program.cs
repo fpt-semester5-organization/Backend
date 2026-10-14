@@ -10,9 +10,21 @@ using VeggieLife.DAL.External.OpenFoodFacts;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Cấu hình DbContext kết nối SQL Server
+// 1. Cấu hình DbContext kết nối SQL Server hoặc In-Memory (khi Database:UseInMemory = true hoặc chưa cấu hình SQL Server thật)
+var useInMemory = builder.Configuration.GetValue<bool>("Database:UseInMemory");
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+{
+    if (useInMemory || string.IsNullOrWhiteSpace(connectionString) || connectionString.Contains("YOUR_PASSWORD"))
+    {
+        options.UseInMemoryDatabase("VeggieLifeDb");
+    }
+    else
+    {
+        options.UseSqlServer(connectionString);
+    }
+});
 
 // 2. Cấu hình bộ nhớ đệm phân tán Redis
 builder.Services.AddRedisCaching(builder.Configuration);
@@ -69,6 +81,18 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerWithAuth();
 
 var app = builder.Build();
+
+// Tự động nạp dữ liệu mẫu khi chạy chế độ In-Memory Database cục bộ (không chạy trong Test Runner)
+if ((useInMemory || app.Environment.IsDevelopment()) && !AppDomain.CurrentDomain.GetAssemblies().Any(a => a.FullName?.Contains("xunit") == true))
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    if (db.Database.ProviderName?.Contains("InMemory") == true)
+    {
+        VeggieLife.API.Extensions.DevDataSeeder.SeedIfEmpty(db);
+        VeggieLife.API.Extensions.DevInMemoryDataSeeder.Seed(db);
+    }
+}
 
 app.UseCors();
 
