@@ -161,6 +161,26 @@ public class MealPlansController : BaseApiController
         return OkResponse(result, "OK");
     }
 
+    /// <summary>
+    /// FN-MEAL-07: Xem calo thực đơn (Free: tổng calo mỗi ngày; VIP: chi tiết từng món, bữa, ngày so với mục tiêu).
+    /// </summary>
+    [HttpGet("{id:int}/nutrition")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<GetMealPlanNutritionResponseData>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetMealPlanNutrition(
+        [FromRoute] int id,
+        [FromQuery] string level = "BASIC",
+        CancellationToken ct = default)
+    {
+        var (userId, userRole) = EnsureAuthorizedUser();
+        var result = await _mealPlanService.GetMealPlanNutritionAsync(id, userId, userRole, level, ct);
+        return OkResponse(result, "OK");
+    }
+
     private (int UserId, string UserRole) EnsureAuthorizedUser()
     {
         if (CurrentUserId == null)
