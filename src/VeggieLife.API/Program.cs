@@ -32,10 +32,6 @@ builder.Services.AddRedisCaching(builder.Configuration);
 // 3. Đăng ký các dịch vụ nghiệp vụ BLL, DAL, Cloudinary CDN & Auth
 builder.Services.AddApplicationServices(builder.Configuration);
 
-// Đăng ký dịch vụ Open Food Facts Client & Product Service
-builder.Services.AddHttpClient<IOpenFoodFactsClient, OpenFoodFactsClient>();
-builder.Services.AddScoped<IProductService, ProductService>();
-
 // 4. Cấu hình Xác thực JWT Bearer & Phân quyền Roles (GUEST, MEMBER, VIP, ADMIN)
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddRoleAuthorization();

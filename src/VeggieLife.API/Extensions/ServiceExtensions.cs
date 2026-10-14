@@ -17,9 +17,11 @@ using VeggieLife.BLL.Services.Email;
 using VeggieLife.BLL.Services.MasterData;
 using VeggieLife.BLL.Services.Media;
 using VeggieLife.BLL.Services.Payment;
+using VeggieLife.BLL.Services.Products;
 using VeggieLife.BLL.Services.Profile;
 using VeggieLife.DAL.External.Cloudinary;
 using VeggieLife.DAL.External.Email;
+using VeggieLife.DAL.External.OpenFoodFacts;
 
 namespace VeggieLife.API.Extensions;
 
@@ -326,6 +328,12 @@ public static class ServiceExtensions
         // Dịch vụ Hồ sơ cá nhân & Danh mục dùng chung
         services.AddScoped<IProfileService, ProfileService>();
         services.AddScoped<IMasterDataService, MasterDataService>();
+
+        // Cấu hình & Dịch vụ tra cứu mã vạch Open Food Facts (FN-BAR-01, FN-BAR-02)
+        services.Configure<OpenFoodFactsSettings>(configuration.GetSection(OpenFoodFactsSettings.SectionName));
+        services.AddHttpClient<IOpenFoodFactsClient, OpenFoodFactsClient>();
+        services.AddScoped<IProductService, ProductService>();
+
         // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
         services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();
 
