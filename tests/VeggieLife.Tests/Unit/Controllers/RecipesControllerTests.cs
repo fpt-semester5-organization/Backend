@@ -10,6 +10,7 @@ using VeggieLife.API.Controllers;
 using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.Recipes.Requests;
 using VeggieLife.BLL.DTOs.Recipes.Responses;
+using VeggieLife.BLL.DTOs.Venues.Responses;
 using VeggieLife.BLL.Services.Recipes;
 using Xunit;
 
@@ -23,13 +24,15 @@ public class RecipesControllerTests
 {
     private readonly Mock<IRecipeService> _mockService;
     private readonly Mock<VeggieLife.BLL.Services.Community.ICommunityInteractionService> _mockCommunityService;
+    private readonly Mock<VeggieLife.BLL.Services.Venues.IVenueService> _mockVenueService;
     private readonly RecipesController _controller;
 
     public RecipesControllerTests()
     {
         _mockService = new Mock<IRecipeService>();
         _mockCommunityService = new Mock<VeggieLife.BLL.Services.Community.ICommunityInteractionService>();
-        _controller = new RecipesController(_mockService.Object, _mockCommunityService.Object);
+        _mockVenueService = new Mock<VeggieLife.BLL.Services.Venues.IVenueService>();
+        _controller = new RecipesController(_mockService.Object, _mockCommunityService.Object, _mockVenueService.Object);
 
         // Thiết lập HttpContext mặc định
         var httpContext = new DefaultHttpContext();
@@ -272,5 +275,49 @@ public class RecipesControllerTests
         var ex = await act.Should().ThrowAsync<VeggieLife.BLL.Common.Exceptions.AppException>();
         ex.Which.StatusCode.Should().Be(403);
         ex.Which.ErrorCode.Should().Be(VeggieLife.BLL.Common.Constants.ErrorCodes.ErrGuestCommunityActionDenied);
+    }
+
+    [Fact]
+    public async Task ListRecipeVenues_ValidRecipe_Returns200OkWithVenues()
+    {
+        // Arrange
+        var sampleVenues = new List<NearbyVenueItemDto>
+        {
+            new()
+            {
+                VenueId = 301,
+                Name = "Ưu Đàm Chay",
+                Address = "34 Hàng Bài, Hoàn Kiếm, Hà Nội",
+                DistanceKm = 0.8,
+                Rating = 4.8m,
+                IsFullyVegan = true,
+                Categories = new List<string> { "Món Cơm & Xôi Chay" },
+                DirectionsUrl = "https://www.google.com/maps/dir/?api=1&destination=21.0227,105.8524"
+            }
+        };
+
+        _mockVenueService.Setup(s => s.ListRecipeVenuesAsync(
+                512,
+                21.0285,
+                105.8542,
+                5,
+                It.IsAny<int?>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(sampleVenues);
+
+        // Act
+        var result = await _controller.ListRecipeVenues(512, 21.0285, 105.8542, 5, CancellationToken.None);
+
+        // Assert
+        var okResult = result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+
+        var envelope = okResult.Value as ApiResponse<List<NearbyVenueItemDto>>;
+        envelope.Should().NotBeNull();
+        envelope!.Data.Should().HaveCount(1);
+        envelope.Data![0].VenueId.Should().Be(301);
     }
 }

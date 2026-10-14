@@ -30,7 +30,7 @@ public class VenuesController : BaseApiController
     /// <summary>
     /// FN-MAP-01: Tìm quán chay lân cận quanh tọa độ GPS hoặc theo tỉnh/thành.
     /// Khách vãng lai: bán kính tối đa 5 km, tối đa 03 lượt (BR-GUEST-03).
-    /// Thành viên: bán kính 1..10 km, không giới hạn lượt, loại bỏ quán &lt; 2.5 sao (BR-USR-11).
+    /// Thành viên: bán kính 1..10 km, không giới hạn lượt (BR-USR-11).
     /// </summary>
     [HttpGet("nearby")]
     [Authorize]
@@ -68,5 +68,29 @@ public class VenuesController : BaseApiController
             ct);
 
         return PagedResponse(result.Venues, result.Meta, "Tìm thấy quán chay quanh bạn.");
+    }
+
+    /// <summary>
+    /// FN-MAP-02: Xem chi tiết một quán chay (không có thực đơn quán).
+    /// Hỗ trợ cả Khách (GUEST) và Thành viên (MEMBER/VIP).
+    /// Quán bị ẩn trả về 404 ERR_VENUE_NOT_FOUND (BR-ADM-MAP-001).
+    /// </summary>
+    /// <param name="id">Mã định danh quán ăn (> 0).</param>
+    /// <param name="lat">Vĩ độ hiện tại của người dùng (tùy chọn, để tính khoảng cách).</param>
+    /// <param name="lng">Kinh độ hiện tại của người dùng (tùy chọn, để tính khoảng cách).</param>
+    /// <param name="ct">CancellationToken.</param>
+    [HttpGet("{id:int}")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<VenueDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetVenue(
+        [FromRoute] int id,
+        [FromQuery] double? lat = null,
+        [FromQuery] double? lng = null,
+        CancellationToken ct = default)
+    {
+        var result = await _venueService.GetVenueDetailAsync(id, lat, lng, ct);
+        return OkResponse(result, "OK");
     }
 }

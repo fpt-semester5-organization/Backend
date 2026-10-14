@@ -14,7 +14,9 @@ using VeggieLife.BLL.DTOs.Recipes.Responses;
 using VeggieLife.BLL.Services.Recipes;
 
 using VeggieLife.BLL.DTOs.Community.Responses;
+using VeggieLife.BLL.DTOs.Venues.Responses;
 using VeggieLife.BLL.Services.Community;
+using VeggieLife.BLL.Services.Venues;
 
 namespace VeggieLife.API.Controllers;
 
@@ -28,11 +30,16 @@ public class RecipesController : BaseApiController
 {
     private readonly IRecipeService _recipeService;
     private readonly ICommunityInteractionService? _communityService;
+    private readonly IVenueService? _venueService;
 
-    public RecipesController(IRecipeService recipeService, ICommunityInteractionService? communityService = null)
+    public RecipesController(
+        IRecipeService recipeService,
+        ICommunityInteractionService? communityService = null,
+        IVenueService? venueService = null)
     {
         _recipeService = recipeService;
         _communityService = communityService;
+        _venueService = venueService;
     }
 
     /// <summary>
@@ -283,6 +290,53 @@ public class RecipesController : BaseApiController
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// FN-MAP-03: Gợi ý các quán chay gần người dùng có danh mục món trùng với công thức đang xem.
+    /// Khách vãng lai: bán kính 5 km, trừ 1 lượt tìm kiếm (BR-GUEST-03).
+    /// Thành viên: bán kính 10 km (BR-USR-11).
+    /// </summary>
+    /// <param name="id">Mã định danh công thức (> 0).</param>
+    /// <param name="lat">Vĩ độ hiện tại (-90..90).</param>
+    /// <param name="lng">Kinh độ hiện tại (-180..180).</param>
+    /// <param name="limit">Số lượng quán gợi ý (1..5, mặc định 5).</param>
+    /// <param name="ct">CancellationToken.</param>
+    [HttpGet("{id:int}/venues")]
+    [AllowAnonymous]
+    [Tags("VENU")]
+    [ProducesResponseType(typeof(ApiResponse<List<NearbyVenueItemDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListRecipeVenues(
+        [FromRoute] int id,
+        [FromQuery] double lat,
+        [FromQuery] double lng,
+        [FromQuery] int limit = 5,
+        CancellationToken ct = default)
+    {
+        if (_venueService == null)
+        {
+            throw AppException.Internal(ErrorCodes.ErrInternal, "Dịch vụ bản đồ quán ăn chưa được cấu hình.");
+        }
+
+        var isGuest = IsGuestUser();
+        var userId = CurrentUserId.HasValue ? (int)CurrentUserId.Value : (int?)null;
+        var userRole = CurrentUserRole ?? (isGuest ? UserRoles.Guest : UserRoles.Member);
+        var guestUuid = ResolveGuestId();
+
+        var result = await _venueService.ListRecipeVenuesAsync(
+            id,
+            lat,
+            lng,
+            limit,
+            userId,
+            userRole,
+            guestUuid,
+            ct);
+
+        return OkResponse(result, "OK");
     }
 }
 
