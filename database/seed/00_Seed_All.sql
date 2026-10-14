@@ -1,4 +1,4 @@
-﻿-- ============================================================================
+-- ============================================================================
 -- File: 00_Seed_All.sql
 -- Thư mục: database/seed/
 -- Mục đích: Kịch bản tổng hợp toàn bộ Master Data & Seed Data cho VeggieLifeDb:
@@ -53,6 +53,10 @@ GO
 
 -- 8. SEED SUBSCRIPTION PLANS
 :r "08_Seed_SubscriptionPlans.sql"
+GO
+
+-- 9. SEED VEGAN VENUES GOONG (FN-MAP-01)
+:r "10_Seed_VeganVenues_Goong.sql"
 GO
 
 PRINT N'============================================================================';
