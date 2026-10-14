@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -386,9 +387,10 @@ public class VenueService : IVenueService
             IsFullyVegan = v.IsFullyVegan,
             ThumbnailUrl = v.ThumbnailUrl,
             Categories = v.VenueCategories.Select(vc => vc.Category.CategoryName).ToList(),
-            DirectionsUrl = $"https://www.google.com/maps/dir/?api=1&destination={v.Latitude:G29},{v.Longitude:G29}"
+            DirectionsUrl = $"https://www.google.com/maps/dir/?api=1&destination={v.Latitude.ToString("G29", CultureInfo.InvariantCulture)},{v.Longitude.ToString("G29", CultureInfo.InvariantCulture)}"
         };
     }
+
 
     private async Task TryFetchAndSaveFromGoongAsync(
         string keyword,

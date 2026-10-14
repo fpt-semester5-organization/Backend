@@ -55,11 +55,8 @@ GO
 :r "08_Seed_SubscriptionPlans.sql"
 GO
 
--- 9. SEED VEGAN VENUES GOONG (FN-MAP-01)
-:r "10_Seed_VeganVenues_Goong.sql"
-GO
-
 PRINT N'============================================================================';
 PRINT N'  HOÀN TẤT THỰC THI TOÀN BỘ MASTER DATA CHO VEGGIELIFE DB THÀNH CÔNG!';
 PRINT N'============================================================================';
 GO
+
