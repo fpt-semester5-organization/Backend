@@ -10,6 +10,7 @@ CREATE TABLE dbo.Products (
     Product_Name NVARCHAR(150) NOT NULL,
     Brand NVARCHAR(100) NULL,
     Ingredients_Text NVARCHAR(MAX) NULL,
+    Image_Url VARCHAR(500) NULL,
     Vegan_Verdict VARCHAR(15) NOT NULL,
     Admin_Verified BIT NOT NULL DEFAULT 0,
     Created_At DATETIME2(7) NOT NULL DEFAULT SYSDATETIME(),

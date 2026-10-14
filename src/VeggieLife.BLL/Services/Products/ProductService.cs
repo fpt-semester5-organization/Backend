@@ -134,6 +134,7 @@ public class ProductService : IProductService
                             ? $"Sản phẩm #{cleanBarcode}"
                             : offProduct.ProductName,
                         Brand = offProduct.Brand,
+                        ImageUrl = offProduct.ImageUrl,
                         IngredientsText = offProduct.IngredientsText,
                         VeganVerdict = offProduct.VeganVerdict,
                         AdminVerified = false,
@@ -147,6 +148,7 @@ public class ProductService : IProductService
                 {
                     product.ProductName = string.IsNullOrWhiteSpace(offProduct.ProductName) ? product.ProductName : offProduct.ProductName;
                     product.Brand = offProduct.Brand ?? product.Brand;
+                    product.ImageUrl = offProduct.ImageUrl ?? product.ImageUrl;
                     product.IngredientsText = offProduct.IngredientsText ?? product.IngredientsText;
                     product.VeganVerdict = offProduct.VeganVerdict;
                     product.LastSyncedAt = DateTime.UtcNow;
@@ -340,6 +342,7 @@ public class ProductService : IProductService
             Barcode = product.Barcode,
             ProductName = product.ProductName,
             Brand = product.Brand ?? "Không rõ thương hiệu",
+            ImageUrl = product.ImageUrl,
             VeganVerdict = apiVerdict,
             VerdictText = verdictText,
             DetectedAdditives = detectedAdditives,
@@ -389,7 +392,8 @@ public class ProductService : IProductService
                 ProductName = h.Product.ProductName,
                 VeganVerdict = MapToApiVerdict(h.Product.VeganVerdict),
                 IsAllergenTriggered = h.IsNonVeganTriggered,
-                ScannedAt = h.ScannedAt
+                ScannedAt = h.ScannedAt,
+                ImageUrl = h.Product.ImageUrl
             })
             .ToListAsync(ct);
 

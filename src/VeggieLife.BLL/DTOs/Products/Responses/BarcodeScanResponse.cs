@@ -7,6 +7,7 @@ namespace VeggieLife.BLL.DTOs.Products.Responses
         public string Barcode { get; set; } = string.Empty;
         public string ProductName { get; set; } = string.Empty;
         public string Brand { get; set; } = string.Empty;
+        public string? ImageUrl { get; set; }
         public string VeganVerdict { get; set; } = string.Empty;
         public string VerdictText { get; set; } = string.Empty;
         public List<DetectedAdditiveDto> DetectedAdditives { get; set; } = new();
