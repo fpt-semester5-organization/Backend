@@ -171,3 +171,29 @@ Accept: application/json
 GET {{VeggieLife.API_HostAddress}}/api/v1/recipes/1/related?limit=6
 Accept: application/json
 
+### ============================================================================
+### 15. FN-BAR-01: TRA CỨU SẢN PHẨM THEO MÃ VẠCH (BARCODE LOOKUP)
+### ============================================================================
+### Quét mã vạch bởi Khách vãng lai (Giới hạn tối đa 03 lần/ngày - BR-GUEST-07)
+GET {{VeggieLife.API_HostAddress}}/api/v1/products/barcode/8934567890123
+X-Guest-UUID: 00000000-0000-0000-0000-000000000001
+Accept: application/json
+
+### Quét mã vạch bởi Thành viên (Kèm cảnh báo dị ứng cá nhân)
+GET {{VeggieLife.API_HostAddress}}/api/v1/products/barcode/8934567890123?method=CAMERA_BARCODE
+Authorization: Bearer {{memberToken}}
+Accept: application/json
+
+### ============================================================================
+### 16. FN-BAR-02: LỊCH SỬ QUÉT MÃ VẠCH CỦA THÀNH VIÊN
+### ============================================================================
+GET {{VeggieLife.API_HostAddress}}/api/v1/users/me/scans?page=1&size=20
+Authorization: Bearer {{memberToken}}
+Accept: application/json
+
+### Lọc lịch sử quét chỉ các sản phẩm có kết luận RED
+GET {{VeggieLife.API_HostAddress}}/api/v1/users/me/scans?verdict=RED&page=1&size=10
+Authorization: Bearer {{memberToken}}
+Accept: application/json
+
+
