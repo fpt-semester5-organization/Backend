@@ -9,7 +9,10 @@ using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.MealPlans.Requests;
 using VeggieLife.BLL.DTOs.MealPlans.Responses;
+using VeggieLife.BLL.DTOs.ShoppingLists.Requests;
+using VeggieLife.BLL.DTOs.ShoppingLists.Responses;
 using VeggieLife.BLL.Services.MealPlans;
+using VeggieLife.BLL.Services.ShoppingLists;
 
 namespace VeggieLife.API.Controllers;
 
@@ -21,10 +24,12 @@ namespace VeggieLife.API.Controllers;
 public class MealPlansController : BaseApiController
 {
     private readonly IMealPlanService _mealPlanService;
+    private readonly IShoppingListService? _shoppingListService;
 
-    public MealPlansController(IMealPlanService mealPlanService)
+    public MealPlansController(IMealPlanService mealPlanService, IShoppingListService? shoppingListService = null)
     {
         _mealPlanService = mealPlanService;
+        _shoppingListService = shoppingListService;
     }
 
     /// <summary>
@@ -179,6 +184,33 @@ public class MealPlansController : BaseApiController
         var (userId, userRole) = EnsureAuthorizedUser();
         var result = await _mealPlanService.GetMealPlanNutritionAsync(id, userId, userRole, level, ct);
         return OkResponse(result, "OK");
+    }
+
+    /// <summary>
+    /// FN-MEAL-05: Sinh danh sách đi chợ từ thực đơn tuần.
+    /// Tổng hợp nguyên liệu của 21 bữa, cộng dồn nguyên liệu trùng, chuẩn hóa đơn vị và nhóm theo 4 quầy.
+    /// </summary>
+    [HttpPost("{id:int}/shopping-list")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<CreateMealPlanShoppingListResponseData>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CreateMealPlanShoppingList(
+        [FromRoute] int id,
+        [FromBody] CreateMealPlanShoppingListRequest? request,
+        CancellationToken ct = default)
+    {
+        if (_shoppingListService == null)
+        {
+            throw AppException.Internal(ErrorCodes.ErrInternal, "ShoppingListService chưa được khởi tạo.");
+        }
+
+        var (userId, _) = EnsureAuthorizedUser();
+        var result = await _shoppingListService.CreateMealPlanShoppingListAsync(id, userId, request ?? new CreateMealPlanShoppingListRequest(), ct);
+        return CreatedResponse(result, "Đã tạo danh sách đi chợ.");
     }
 
     private (int UserId, string UserRole) EnsureAuthorizedUser()
