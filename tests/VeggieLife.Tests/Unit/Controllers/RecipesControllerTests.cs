@@ -152,4 +152,68 @@ public class RecipesControllerTests
         okResult.Should().NotBeNull();
         _mockService.Verify(s => s.GetRecipeByIdAsync(512, false, 42, It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task GetRelatedRecipes_AnonymousGuest_CallsServiceWithNullUserId_ReturnsOkEnvelope()
+    {
+        // Arrange
+        var responseData = new RelatedRecipesResponseData
+        {
+            Recipes = new List<RecipeSummaryDto>
+            {
+                new() { RecipeId = 513, Title = "Công thức tương tự" }
+            },
+            Posts = new List<RelatedPostDto>(),
+            Videos = new List<RelatedVideoDto>()
+        };
+
+        _mockService.Setup(s => s.GetRelatedRecipesAsync(512, 6, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var result = await _controller.ListRelatedRecipes(512, 6, CancellationToken.None);
+
+        // Assert
+        var okResult = result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        var envelope = okResult!.Value as ApiResponse<RelatedRecipesResponseData>;
+        envelope.Should().NotBeNull();
+        envelope!.StatusCode.Should().Be(200);
+        envelope.Message.Should().Be("OK");
+        envelope.Data.Should().NotBeNull();
+        envelope.Data!.Recipes.Should().HaveCount(1);
+        envelope.Data.Recipes[0].RecipeId.Should().Be(513);
+        _mockService.Verify(s => s.GetRelatedRecipesAsync(512, 6, null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetRelatedRecipes_AuthenticatedMember_CallsServiceWithUserId_ReturnsOkEnvelope()
+    {
+        // Arrange
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "99"),
+            new(ClaimTypes.Role, "MEMBER")
+        };
+        var identity = new ClaimsIdentity(claims, "TestAuth");
+        _controller.ControllerContext.HttpContext.User = new ClaimsPrincipal(identity);
+
+        var responseData = new RelatedRecipesResponseData
+        {
+            Recipes = new List<RecipeSummaryDto>(),
+            Posts = new List<RelatedPostDto>(),
+            Videos = new List<RelatedVideoDto>()
+        };
+
+        _mockService.Setup(s => s.GetRelatedRecipesAsync(512, 4, 99, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var result = await _controller.ListRelatedRecipes(512, 4, CancellationToken.None);
+
+        // Assert
+        var okResult = result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        _mockService.Verify(s => s.GetRelatedRecipesAsync(512, 4, 99, It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

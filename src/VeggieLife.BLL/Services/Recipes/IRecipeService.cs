@@ -57,4 +57,14 @@ public interface IRecipeService
         string userRole,
         string mode,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// FN-POST-11: Gợi ý các công thức tương đồng (cùng trường phái, chung nguyên liệu, nhiều votes) và bài viết/video liên quan.
+    /// </summary>
+    Task<RelatedRecipesResponseData> GetRelatedRecipesAsync(
+        int recipeId,
+        int limit = 6,
+        int? currentUserId = null,
+        CancellationToken ct = default);
 }
+

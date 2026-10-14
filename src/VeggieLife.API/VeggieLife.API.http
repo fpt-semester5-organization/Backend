@@ -3,4 +3,8 @@
 GET {{VeggieLife.API_HostAddress}}/swagger/index.html
 Accept: text/html
 
+### FN-POST-11: Gợi ý nội dung liên quan khi xem chi tiết công thức
+GET {{VeggieLife.API_HostAddress}}/api/v1/recipes/1/related?limit=6
+Accept: application/json
+
 ###

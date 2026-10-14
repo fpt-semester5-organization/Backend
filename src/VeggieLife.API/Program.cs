@@ -10,9 +10,19 @@ using VeggieLife.DAL.External.OpenFoodFacts;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Cấu hình DbContext kết nối SQL Server
+// 1. Cấu hình DbContext kết nối SQL Server hoặc In-Memory (khi Database:UseInMemory = true)
+var useInMemory = builder.Configuration.GetValue<bool>("Database:UseInMemory");
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+{
+    if (useInMemory)
+    {
+        options.UseInMemoryDatabase("VeggieLifeDb");
+    }
+    else
+    {
+        options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+    }
+});
 
 // 2. Cấu hình bộ nhớ đệm phân tán Redis
 builder.Services.AddRedisCaching(builder.Configuration);
@@ -69,6 +79,14 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerWithAuth();
 
 var app = builder.Build();
+
+// Tự động nạp dữ liệu mẫu khi chạy chế độ In-Memory Database
+if (useInMemory)
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    DevInMemoryDataSeeder.Seed(db);
+}
 
 app.UseCors();
 
