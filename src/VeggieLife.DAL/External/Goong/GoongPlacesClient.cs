@@ -168,4 +168,52 @@ public class GoongPlacesClient : IGoongPlacesClient
             return null;
         }
     }
+
+    public async Task<GoongLocation?> GeocodeAddressAsync(
+        string address,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsConfigured || string.IsNullOrWhiteSpace(address))
+        {
+            return null;
+        }
+
+        var baseUrl = _settings.BaseUrl.TrimEnd('/');
+        var query = Uri.EscapeDataString(address.Trim());
+        var url = $"{baseUrl}/Geocode?address={query}&api_key={_settings.ApiKey}";
+
+        try
+        {
+            using var response = await _httpClient.GetAsync(url, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Goong Geocode API trả về mã lỗi HTTP {StatusCode} cho địa chỉ '{Address}'", response.StatusCode, address);
+                return null;
+            }
+
+            var jsonStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            var result = await JsonSerializer.DeserializeAsync<GoongGeocodeResponse>(jsonStream, SerializerOptions, cancellationToken);
+
+            if (result?.Results != null && result.Results.Count > 0)
+            {
+                var firstLocation = result.Results[0].Geometry?.Location;
+                if (firstLocation != null)
+                {
+                    return firstLocation;
+                }
+            }
+
+            return null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi xảy ra khi gọi Goong Geocode API cho địa chỉ '{Address}'", address);
+            return null;
+        }
+    }
 }
+

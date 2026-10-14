@@ -80,3 +80,28 @@ public class GoongLocation
     [JsonPropertyName("lng")]
     public double Lng { get; set; }
 }
+
+/// <summary>
+/// Cấu trúc phản hồi từ Goong Geocode API (Bước 7c trong luồng Swimlane).
+/// </summary>
+public class GoongGeocodeResponse
+{
+    [JsonPropertyName("results")]
+    public List<GoongGeocodeResult>? Results { get; set; }
+
+    [JsonPropertyName("status")]
+    public string? Status { get; set; }
+}
+
+public class GoongGeocodeResult
+{
+    [JsonPropertyName("place_id")]
+    public string PlaceId { get; set; } = string.Empty;
+
+    [JsonPropertyName("formatted_address")]
+    public string FormattedAddress { get; set; } = string.Empty;
+
+    [JsonPropertyName("geometry")]
+    public GoongGeometry? Geometry { get; set; }
+}
+

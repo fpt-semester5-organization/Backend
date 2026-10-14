@@ -39,4 +39,12 @@ public interface IGoongPlacesClient
     Task<GoongPlaceDetailDto?> GetPlaceDetailAsync(
         string placeId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Chuyển đổi địa chỉ nhập (Tỉnh/TP, Quận/Huyện) thành tọa độ trung tâm (lat, lng) qua Goong Geocode API (Bước 7c trong luồng Swimlane).
+    /// </summary>
+    Task<GoongLocation?> GeocodeAddressAsync(
+        string address,
+        CancellationToken cancellationToken = default);
 }
+

@@ -560,4 +560,97 @@ public class VenueServiceTests : IDisposable
         savedDbItem!.Address.Should().Contain("Đà Nẵng");
         savedDbItem.ExternalSource.Should().Be("GOONG");
     }
+
+    [Fact]
+    public async Task ListNearbyVenues_WhenGpsDenied_ShouldGeocodeAddressAndSearchVenues()
+    {
+        // ARRANGE: Người dùng từ chối GPS, nhập "TP. Hồ Chí Minh" (Bước 7b -> 7c)
+        var request = new ListNearbyVenuesRequest
+        {
+            Province = "TP. Hồ Chí Minh",
+            RadiusKm = 5.0
+        };
+
+        // ACT
+        var result = await _service.ListNearbyVenuesAsync(request, userId: 1, userRole: UserRoles.Member, guestUuid: null);
+
+        // ASSERT: Trả về các quán tại TP.HCM được tính khoảng cách từ tâm TP.HCM và sắp xếp tăng dần
+        result.Should().NotBeNull();
+        result.Venues.Should().NotBeEmpty();
+        result.Venues.Should().OnlyContain(v => v.Address.Contains("TP.HCM"));
+
+        var venues = result.Venues;
+        for (int i = 0; i < venues.Count - 1; i++)
+        {
+            venues[i].DistanceKm.Should().BeLessThanOrEqualTo(venues[i + 1].DistanceKm);
+        }
+    }
+
+    [Fact]
+    public async Task ListNearbyVenues_WhenGpsDeniedAndAddressOutsideVietnam_ShouldThrowForbidden()
+    {
+        // ARRANGE: Goong Geocode trả về tọa độ ngoài lãnh thổ Việt Nam (Tokyo: 35.6762, 139.6503)
+        var mockGoong = new Mock<VeggieLife.DAL.External.Goong.IGoongPlacesClient>();
+        mockGoong.Setup(g => g.IsConfigured).Returns(true);
+        mockGoong.Setup(g => g.GeocodeAddressAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VeggieLife.DAL.External.Goong.GoongLocation { Lat = 35.6762, Lng = 139.6503 });
+
+        var service = new VenueService(_db, _mockRedis.Object, _mockLogger.Object, mockGoong.Object);
+
+        var request = new ListNearbyVenuesRequest
+        {
+            Province = "Tokyo Japan"
+        };
+
+        // ACT & ASSERT: Bị chặn với 403 ERR_GUEST_REGION_UNSUPPORTED (Bước 3 / 3a)
+        var act = () => service.ListNearbyVenuesAsync(request, userId: 1, userRole: UserRoles.Member, guestUuid: null);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrGuestRegionUnsupported);
+    }
+
+    [Fact]
+    public async Task ListNearbyVenues_WhenGpsDeniedAndAddressUnresolvable_ShouldThrowBadRequest()
+    {
+        // ARRANGE: Nhập địa chỉ lạ không thể geocode và không nằm trong từ điển 63 tỉnh thành
+        var request = new ListNearbyVenuesRequest
+        {
+            Province = "UnknownCityXYZ12345"
+        };
+
+        // ACT & ASSERT: 400 ERR_VALIDATION
+        var act = () => _service.ListNearbyVenuesAsync(request, userId: 1, userRole: UserRoles.Member, guestUuid: null);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+        ex.Which.Message.Should().Contain("Không xác định được tọa độ trung tâm");
+    }
+
+    [Fact]
+    public async Task ListNearbyVenues_WhenGpsDeniedAndGoongConfigured_ShouldUseGoongGeocoding()
+    {
+        // ARRANGE: Goong Geocode thành công địa chỉ nhập tay
+        var mockGoong = new Mock<VeggieLife.DAL.External.Goong.IGoongPlacesClient>();
+        mockGoong.Setup(g => g.IsConfigured).Returns(true);
+        mockGoong.Setup(g => g.GeocodeAddressAsync("Hoàn Kiếm, Hà Nội", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VeggieLife.DAL.External.Goong.GoongLocation { Lat = 21.0285, Lng = 105.8542 });
+
+        var service = new VenueService(_db, _mockRedis.Object, _mockLogger.Object, mockGoong.Object);
+
+        var request = new ListNearbyVenuesRequest
+        {
+            Province = "Hà Nội",
+            District = "Hoàn Kiếm",
+            RadiusKm = 5.0
+        };
+
+        // ACT
+        var result = await service.ListNearbyVenuesAsync(request, userId: 1, userRole: UserRoles.Member, guestUuid: null);
+
+        // ASSERT: Gọi Goong Geocode thành công và trả về danh sách quán Hà Nội
+        mockGoong.Verify(g => g.GeocodeAddressAsync("Hoàn Kiếm, Hà Nội", It.IsAny<CancellationToken>()), Times.Once);
+        result.Venues.Should().NotBeEmpty();
+        result.Venues.Should().OnlyContain(v => v.Address.Contains("Hà Nội"));
+    }
 }
+

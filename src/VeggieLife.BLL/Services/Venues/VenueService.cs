@@ -49,13 +49,16 @@ public class VenueService : IVenueService
         // 1. Kiểm tra tham số đầu vào (BR-VALIDATION)
         ValidateRequest(request);
 
-        // 2. Xác định vai trò người dùng (Khách hay Thành viên)
+        // BƯỚC 4 & RẼ NHÁNH: Kiểm tra Role: Guest hay Member
         bool isGuest = string.Equals(userRole, UserRoles.Guest, StringComparison.OrdinalIgnoreCase) || !userId.HasValue;
 
         double effectiveRadius = 5.0;
+        string? effectiveGuestId = null;
+        int currentGuestUsage = 0;
+
         if (isGuest)
         {
-            // Khách: bán kính cố định 5 km (BR-GUEST-03)
+            // BƯỚC 5a: Gán Bán kính mặc định 5km & đếm lượt tra cứu (BR-GUEST-03)
             if (request.RadiusKm > 5.0)
             {
                 throw AppException.BadRequest(
@@ -63,24 +66,7 @@ public class VenueService : IVenueService
                     "Khách vãng lai chỉ được tìm kiếm trong phạm vi bán kính tối đa 5 km.");
             }
             effectiveRadius = 5.0;
-        }
-        else
-        {
-            // Thành viên: bán kính 1..10 km (mặc định 5)
-            if (request.RadiusKm < 1.0 || request.RadiusKm > 10.0)
-            {
-                throw AppException.BadRequest(
-                    ErrorCodes.ErrValidation,
-                    "Bán kính tìm kiếm của thành viên phải từ 1 đến 10 km.");
-            }
-            effectiveRadius = request.RadiusKm;
-        }
 
-        // 3. Kiểm tra hạn mức dùng thử của Khách vãng lai qua Redis (BR-GUEST-03)
-        string? effectiveGuestId = null;
-        int currentGuestUsage = 0;
-        if (isGuest)
-        {
             effectiveGuestId = !string.IsNullOrWhiteSpace(guestUuid)
                 ? guestUuid.Trim()
                 : (userId.HasValue ? userId.Value.ToString() : "anonymous");
@@ -98,26 +84,123 @@ public class VenueService : IVenueService
 
             currentGuestUsage = quotaUsed;
         }
+        else
+        {
+            // BƯỚC 5b: Gán Bán kính 10km mở rộng & cho phép tùy chỉnh bộ lọc (BR-USR-11)
+            if (request.RadiusKm < 1.0 || request.RadiusKm > 10.0)
+            {
+                throw AppException.BadRequest(
+                    ErrorCodes.ErrValidation,
+                    "Bán kính tìm kiếm của thành viên phải từ 1 đến 10 km.");
+            }
+            effectiveRadius = request.RadiusKm;
+        }
 
-        // 4. Kiểm tra Cache Geohash trên Redis (TTL 24 giờ, BR-SYS-CACHE-01)
-        List<NearbyVenueItemDto>? candidateVenues = null;
-        string? cacheKey = null;
+        // BƯỚC 6, 7a, 7b, 7c: Quyền GPS và Xác định Tọa độ trung tâm
+        double targetLat;
+        double targetLng;
 
         if (request.Lat.HasValue && request.Lng.HasValue)
         {
-            var geohash6 = GeoHelper.EncodeGeohash(request.Lat.Value, request.Lng.Value, 6);
-            cacheKey = $"venue_geo:{geohash6}:{Math.Round(effectiveRadius, 1)}";
-            if (request.CategoryId.HasValue)
+            // Bước 7a: API lấy tọa độ hiện tại từ thiết bị
+            targetLat = request.Lat.Value;
+            targetLng = request.Lng.Value;
+
+            // Bước 3: Kiểm tra toạ độ Việt Nam hay Nước ngoài
+            if (!GeoHelper.IsInVietnam(targetLat, targetLng))
             {
-                cacheKey += $":{request.CategoryId.Value}";
+                // Bước 3a: Báo lỗi: Chưa hỗ trợ dịch vụ ngoài lãnh thổ VN
+                throw AppException.Forbidden(
+                    ErrorCodes.ErrGuestRegionUnsupported,
+                    "IP ngoài lãnh thổ Việt Nam — dịch vụ bản đồ chưa hỗ trợ khu vực này (BR-GUEST-06).");
+            }
+        }
+        else
+        {
+            // Bước 7b: Nhập thủ công địa chỉ (Tỉnh/TP -> Quận/Huyện)
+            var province = request.Province!.Trim();
+            var district = request.District?.Trim();
+            var fullAddress = string.IsNullOrWhiteSpace(district) ? province : $"{district}, {province}";
+
+            // Bước 7c: Chuyển đổi địa chỉ nhập thành tọa độ trung tâm
+            GoongLocation? geocodedLocation = null;
+            if (_goongClient?.IsConfigured == true)
+            {
+                geocodedLocation = await _goongClient.GeocodeAddressAsync(fullAddress, ct);
             }
 
-            candidateVenues = await _redis.GetAsync<List<NearbyVenueItemDto>>(cacheKey, ct);
+            if (geocodedLocation != null)
+            {
+                targetLat = geocodedLocation.Lat;
+                targetLng = geocodedLocation.Lng;
+            }
+            else if (GeoHelper.TryGetProvinceCenter(province, out var centerLat, out var centerLng))
+            {
+                targetLat = centerLat;
+                targetLng = centerLng;
+            }
+            else
+            {
+                throw AppException.BadRequest(
+                    ErrorCodes.ErrValidation,
+                    "Không xác định được tọa độ trung tâm cho địa chỉ đã nhập. Vui lòng kiểm tra lại tỉnh/thành phố.");
+            }
+
+            // Bước 3: Kiểm tra toạ độ Việt Nam hay Nước ngoài
+            if (!GeoHelper.IsInVietnam(targetLat, targetLng))
+            {
+                // Bước 3a: Báo lỗi: Chưa hỗ trợ dịch vụ ngoài lãnh thổ VN
+                throw AppException.Forbidden(
+                    ErrorCodes.ErrGuestRegionUnsupported,
+                    "Địa chỉ ngoài lãnh thổ Việt Nam — dịch vụ bản đồ chưa hỗ trợ khu vực này (BR-GUEST-06).");
+            }
         }
+
+        // BƯỚC 8: Tổng hợp Query: Tọa độ, Bán kính, Bộ lọc & Từ khóa món ăn
+        string foodKeyword = "quán chay";
+        if (request.CategoryId.HasValue)
+        {
+            var category = await _db.FoodCategories.FindAsync(new object[] { request.CategoryId.Value }, ct);
+            if (category != null && !string.IsNullOrWhiteSpace(category.CategoryName))
+            {
+                var catName = category.CategoryName.ToLowerInvariant();
+                if (catName.Contains("cơm") || catName.Contains("xôi"))
+                {
+                    foodKeyword = "cơm chay";
+                }
+                else if (catName.Contains("lẩu"))
+                {
+                    foodKeyword = "lẩu chay";
+                }
+                else if (catName.Contains("bún") || catName.Contains("phở"))
+                {
+                    foodKeyword = "bún phở chay";
+                }
+                else if (catName.Contains("bánh"))
+                {
+                    foodKeyword = "bánh chay";
+                }
+                else
+                {
+                    foodKeyword = $"{category.CategoryName} chay";
+                }
+            }
+        }
+
+        // Kiểm tra Cache Geohash trên Redis (TTL 24 giờ, BR-SYS-CACHE-01)
+        var geohash6 = GeoHelper.EncodeGeohash(targetLat, targetLng, 6);
+        var cacheKey = $"venue_geo:{geohash6}:{Math.Round(effectiveRadius, 1)}";
+        if (request.CategoryId.HasValue)
+        {
+            cacheKey += $":{request.CategoryId.Value}";
+        }
+
+        var candidateVenues = await _redis.GetAsync<List<NearbyVenueItemDto>>(cacheKey, ct);
 
         if (candidateVenues == null)
         {
-            // 5. Truy vấn CSDL bảng VeganVenues (chỉ quán Is_Active = 1, BR-ADM-MAP-001)
+            // BƯỚC 9b: Goong Places API: Quét tìm địa điểm quán chay (tên quán, địa chỉ, tọa độ)
+            // Đồng thời truy vấn CSDL địa phương bảng VeganVenues (chỉ quán Is_Active = 1, BR-ADM-MAP-001)
             var query = _db.VeganVenues
                 .AsNoTracking()
                 .Where(v => v.IsActive);
@@ -134,57 +217,34 @@ public class VenueService : IVenueService
 
             candidateVenues = new List<NearbyVenueItemDto>();
 
-            if (request.Lat.HasValue && request.Lng.HasValue)
+            foreach (var v in venuesFromDb)
             {
-                var userLat = request.Lat.Value;
-                var userLng = request.Lng.Value;
-
-                foreach (var v in venuesFromDb)
+                var distance = GeoHelper.CalculateDistanceKm(targetLat, targetLng, (double)v.Latitude, (double)v.Longitude);
+                if (distance <= effectiveRadius)
                 {
-                    var distance = GeoHelper.CalculateDistanceKm(userLat, userLng, (double)v.Latitude, (double)v.Longitude);
-                    if (distance <= effectiveRadius)
-                    {
-                        candidateVenues.Add(MapToDto(v, distance));
-                    }
-                }
-
-                // Nếu có tích hợp Goong API Key và kết quả trong CSDL địa phương ít (hoặc chưa có quán ở khu vực này)
-                if (_goongClient?.IsConfigured == true && candidateVenues.Count < 5)
-                {
-                    await TryFetchAndSaveFromGoongAsync(userLat, userLng, effectiveRadius, venuesFromDb, candidateVenues, ct);
-                }
-            }
-            else if (!string.IsNullOrWhiteSpace(request.Province))
-            {
-                var prov = request.Province.Trim();
-                var dist = request.District?.Trim();
-
-                foreach (var v in venuesFromDb)
-                {
-                    bool matchProvince = v.Address.Contains(prov, StringComparison.OrdinalIgnoreCase);
-                    bool matchDistrict = string.IsNullOrEmpty(dist) || v.Address.Contains(dist, StringComparison.OrdinalIgnoreCase);
-
-                    if (matchProvince && matchDistrict)
-                    {
-                        candidateVenues.Add(MapToDto(v, 0.0));
-                    }
-                }
-
-                // Nếu tìm theo tỉnh/thành mà CSDL nội bộ chưa có quán nào và Goong API Key đã cấu hình
-                if (_goongClient?.IsConfigured == true && candidateVenues.Count == 0)
-                {
-                    await TryFetchByProvinceFromGoongAsync(prov, dist, venuesFromDb, candidateVenues, ct);
+                    candidateVenues.Add(MapToDto(v, distance));
                 }
             }
 
-            // Ghi vào Redis cache 24 giờ nếu có cache key
-            if (!string.IsNullOrEmpty(cacheKey))
+            // Gọi Goong Places API quét tìm thêm địa điểm quán chay quanh tọa độ trung tâm
+            if (_goongClient?.IsConfigured == true)
             {
-                await _redis.SetAsync(cacheKey, candidateVenues, TimeSpan.FromHours(24), ct);
+                await TryFetchAndSaveFromGoongAsync(
+                    foodKeyword,
+                    targetLat,
+                    targetLng,
+                    effectiveRadius,
+                    venuesFromDb,
+                    candidateVenues,
+                    ct);
             }
+
+            // Ghi vào Redis cache 24 giờ nếu có kết quả
+            await _redis.SetAsync(cacheKey, candidateVenues, TimeSpan.FromHours(24), ct);
         }
 
-        // 6. Áp dụng quy tắc xếp hạng và loại bỏ quán < 2.5 sao đối với Thành viên (BR-USR-11)
+        // BƯỚC: Danh mục quán chay (Data Object)
+        // Lọc bỏ quán có đánh giá < 2.5 sao đối với Thành viên (BR-USR-11)
         var filteredList = candidateVenues.AsEnumerable();
         if (!isGuest)
         {
@@ -199,13 +259,13 @@ public class VenueService : IVenueService
 
         var total = sortedList.Count;
 
-        // 7. Phân trang
+        // Phân trang
         var pagedItems = sortedList
             .Skip((request.Page - 1) * request.Size)
             .Take(request.Size)
             .ToList();
 
-        // 8. Trừ lượt Khách chỉ khi có >= 1 kết quả (BR-GUEST-03 Rule 8)
+        // Trừ lượt Khách chỉ khi có >= 1 kết quả (BR-GUEST-03 Rule 8)
         GuestMapQuotaDto? quotaMeta = null;
         if (isGuest && effectiveGuestId != null)
         {
@@ -225,26 +285,14 @@ public class VenueService : IVenueService
             };
         }
 
-        // 9. Ghi nhật ký với tọa độ làm tròn 2 chữ số (BR-AUTH-002)
-        if (request.Lat.HasValue && request.Lng.HasValue)
-        {
-            _logger.LogInformation(
-                "Tìm thấy {Total} quán chay trong bán kính {Radius} km quanh tọa độ ({Lat}, {Lng}) cho vai trò {Role}.",
-                total,
-                effectiveRadius,
-                Math.Round(request.Lat.Value, 2),
-                Math.Round(request.Lng.Value, 2),
-                userRole);
-        }
-        else
-        {
-            _logger.LogInformation(
-                "Tìm thấy {Total} quán chay theo địa bàn {Province} - {District} cho vai trò {Role}.",
-                total,
-                request.Province,
-                request.District ?? "Tất cả",
-                userRole);
-        }
+        // Ghi nhật ký với tọa độ làm tròn 2 chữ số (BR-AUTH-002)
+        _logger.LogInformation(
+            "Tìm thấy {Total} quán chay trong bán kính {Radius} km quanh tọa độ ({Lat}, {Lng}) cho vai trò {Role}.",
+            total,
+            effectiveRadius,
+            Math.Round(targetLat, 2),
+            Math.Round(targetLng, 2),
+            userRole);
 
         return new ListNearbyVenuesResult
         {
@@ -257,6 +305,7 @@ public class VenueService : IVenueService
                 quota: quotaMeta)
         };
     }
+
 
     private static void ValidateRequest(ListNearbyVenuesRequest request)
     {
@@ -342,8 +391,9 @@ public class VenueService : IVenueService
     }
 
     private async Task TryFetchAndSaveFromGoongAsync(
-        double userLat,
-        double userLng,
+        string keyword,
+        double targetLat,
+        double targetLng,
         double effectiveRadius,
         List<VeganVenue> venuesFromDb,
         List<NearbyVenueItemDto> candidateVenues,
@@ -357,9 +407,9 @@ public class VenueService : IVenueService
         try
         {
             var predictions = await _goongClient.SearchNearbyPlacesAsync(
-                "quán chay",
-                userLat,
-                userLng,
+                keyword,
+                targetLat,
+                targetLng,
                 (int)(effectiveRadius * 1000),
                 10,
                 ct);
@@ -386,7 +436,7 @@ public class VenueService : IVenueService
                 var detail = await _goongClient.GetPlaceDetailAsync(pred.PlaceId, ct);
                 if (detail?.Geometry?.Location != null && GeoHelper.IsInVietnam(detail.Geometry.Location.Lat, detail.Geometry.Location.Lng))
                 {
-                    var distance = GeoHelper.CalculateDistanceKm(userLat, userLng, detail.Geometry.Location.Lat, detail.Geometry.Location.Lng);
+                    var distance = GeoHelper.CalculateDistanceKm(targetLat, targetLng, detail.Geometry.Location.Lat, detail.Geometry.Location.Lng);
                     if (distance <= effectiveRadius)
                     {
                         var newVenue = new VeganVenue
@@ -417,88 +467,13 @@ public class VenueService : IVenueService
             if (hasNewEntities)
             {
                 await _db.SaveChangesAsync(ct);
-                _logger.LogInformation("Đã đồng bộ tự động các quán chay mới từ Goong API vào CSDL.");
+                _logger.LogInformation("Đã đồng bộ tự động các quán chay mới từ Goong Places API vào CSDL.");
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Lỗi xảy ra khi tự động đồng bộ quán từ Goong API quanh ({Lat}, {Lng}).", userLat, userLng);
-        }
-    }
-
-    private async Task TryFetchByProvinceFromGoongAsync(
-        string province,
-        string? district,
-        List<VeganVenue> venuesFromDb,
-        List<NearbyVenueItemDto> candidateVenues,
-        CancellationToken ct)
-    {
-        if (_goongClient == null)
-        {
-            return;
-        }
-
-        try
-        {
-            var searchText = string.IsNullOrWhiteSpace(district)
-                ? $"quán chay {province}"
-                : $"quán chay {district} {province}";
-
-            var predictions = await _goongClient.SearchPlacesByTextAsync(searchText, 10, ct);
-            bool hasNewEntities = false;
-
-            foreach (var pred in predictions)
-            {
-                if (string.IsNullOrWhiteSpace(pred.PlaceId))
-                {
-                    continue;
-                }
-
-                bool exists = venuesFromDb.Any(v => v.ExternalPlaceId == pred.PlaceId)
-                    || candidateVenues.Any(cv => !string.IsNullOrEmpty(pred.StructuredFormatting?.MainText) &&
-                                                 cv.Name.Equals(pred.StructuredFormatting.MainText, StringComparison.OrdinalIgnoreCase));
-
-                if (exists)
-                {
-                    continue;
-                }
-
-                var detail = await _goongClient.GetPlaceDetailAsync(pred.PlaceId, ct);
-                if (detail?.Geometry?.Location != null && GeoHelper.IsInVietnam(detail.Geometry.Location.Lat, detail.Geometry.Location.Lng))
-                {
-                    var newVenue = new VeganVenue
-                    {
-                        VenueName = !string.IsNullOrWhiteSpace(detail.Name)
-                            ? detail.Name
-                            : (!string.IsNullOrWhiteSpace(pred.StructuredFormatting?.MainText) ? pred.StructuredFormatting.MainText : "Quán chay"),
-                        Address = !string.IsNullOrWhiteSpace(detail.FormattedAddress) ? detail.FormattedAddress : pred.Description,
-                        Latitude = (decimal)detail.Geometry.Location.Lat,
-                        Longitude = (decimal)detail.Geometry.Location.Lng,
-                        Rating = detail.Rating.HasValue && detail.Rating.Value > 0 ? detail.Rating.Value : 4.2m,
-                        IsActive = true,
-                        IsFullyVegan = true,
-                        ExternalSource = "GOONG",
-                        ExternalPlaceId = detail.PlaceId,
-                        CreatedAt = DateTime.UtcNow,
-                        ThumbnailUrl = "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=600&auto=format&fit=crop"
-                    };
-
-                    _db.VeganVenues.Add(newVenue);
-                    venuesFromDb.Add(newVenue);
-                    candidateVenues.Add(MapToDto(newVenue, 0.0));
-                    hasNewEntities = true;
-                }
-            }
-
-            if (hasNewEntities)
-            {
-                await _db.SaveChangesAsync(ct);
-                _logger.LogInformation("Đã đồng bộ tự động các quán chay từ Goong API cho địa bàn {Province} vào CSDL.", province);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Lỗi xảy ra khi tự động đồng bộ quán từ Goong API cho {Province}.", province);
+            _logger.LogWarning(ex, "Lỗi xảy ra khi tự động đồng bộ quán từ Goong Places API quanh ({Lat}, {Lng}).", targetLat, targetLng);
         }
     }
 }
+

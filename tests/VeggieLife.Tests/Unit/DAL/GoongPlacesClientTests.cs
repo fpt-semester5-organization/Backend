@@ -171,4 +171,88 @@ public class GoongPlacesClientTests
         result.Geometry?.Location?.Lng.Should().Be(108.2208);
         result.Rating.Should().Be(4.8m);
     }
+
+    [Fact]
+    public async Task GeocodeAddressAsync_WhenNotConfigured_ReturnsNull()
+    {
+        // Arrange
+        var settings = Options.Create(new GoongSettings { ApiKey = "" });
+        var client = new GoongPlacesClient(new HttpClient(), settings, _mockLogger.Object);
+
+        // Act
+        var result = await client.GeocodeAddressAsync("Hà Nội");
+
+        // Assert
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GeocodeAddressAsync_WhenAddressIsEmpty_ReturnsNull()
+    {
+        // Arrange
+        var settings = Options.Create(new GoongSettings { ApiKey = "valid_key" });
+        var client = new GoongPlacesClient(new HttpClient(), settings, _mockLogger.Object);
+
+        // Act
+        var result = await client.GeocodeAddressAsync("   ");
+
+        // Assert
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GeocodeAddressAsync_WhenSuccessResponse_ReturnsLocation()
+    {
+        // Arrange
+        var mockHandler = new Mock<HttpMessageHandler>();
+        var fakeResponse = new GoongGeocodeResponse
+        {
+            Status = "OK",
+            Results = new List<GoongGeocodeResult>
+            {
+                new()
+                {
+                    PlaceId = "GOONG_GEO_01",
+                    FormattedAddress = "Hà Nội, Việt Nam",
+                    Geometry = new GoongGeometry
+                    {
+                        Location = new GoongLocation
+                        {
+                            Lat = 21.0285,
+                            Lng = 105.8542
+                        }
+                    }
+                }
+            }
+        };
+
+        mockHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.OK,
+                Content = JsonContent.Create(fakeResponse)
+            });
+
+        var httpClient = new HttpClient(mockHandler.Object);
+        var settings = Options.Create(new GoongSettings
+        {
+            ApiKey = "valid_key",
+            BaseUrl = "https://rsapi.goong.io"
+        });
+
+        var client = new GoongPlacesClient(httpClient, settings, _mockLogger.Object);
+
+        // Act
+        var result = await client.GeocodeAddressAsync("Hà Nội");
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Lat.Should().Be(21.0285);
+        result.Lng.Should().Be(105.8542);
+    }
 }
+
