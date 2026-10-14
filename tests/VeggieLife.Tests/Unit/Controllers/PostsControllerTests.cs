@@ -23,12 +23,14 @@ namespace VeggieLife.Tests.Unit.Controllers;
 public class PostsControllerTests
 {
     private readonly Mock<IPostService> _mockService;
+    private readonly Mock<VeggieLife.BLL.Services.Community.ICommunityInteractionService> _mockCommunityService;
     private readonly PostsController _controller;
 
     public PostsControllerTests()
     {
         _mockService = new Mock<IPostService>();
-        _controller = new PostsController(_mockService.Object);
+        _mockCommunityService = new Mock<VeggieLife.BLL.Services.Community.ICommunityInteractionService>();
+        _controller = new PostsController(_mockService.Object, _mockCommunityService.Object);
 
         var httpContext = new DefaultHttpContext();
         _controller.ControllerContext = new ControllerContext
@@ -349,6 +351,61 @@ public class PostsControllerTests
         envelope!.StatusCode.Should().Be(200);
         envelope.Message.Should().Be("Đã xóa bài viết.");
         envelope.Data.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CreatePostVote_AuthenticatedMember_ShouldReturnOk200WithVoteData()
+    {
+        // Arrange
+        var user = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, "1024"),
+            new Claim(ClaimTypes.Role, "MEMBER")
+        }, "TestAuth"));
+        _controller.ControllerContext.HttpContext.User = user;
+
+        var voteData = new VeggieLife.BLL.DTOs.Community.Responses.VoteResponseData
+        {
+            Voted = true,
+            VoteCount = 13
+        };
+
+        _mockCommunityService
+            .Setup(s => s.VotePostAsync(77, 1024, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(voteData);
+
+        // Act
+        var result = await _controller.CreatePostVote(77, CancellationToken.None);
+
+        // Assert
+        var okResult = result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+
+        var envelope = okResult.Value as ApiResponse<VeggieLife.BLL.DTOs.Community.Responses.VoteResponseData>;
+        envelope.Should().NotBeNull();
+        envelope!.StatusCode.Should().Be(200);
+        envelope.Message.Should().Be("OK");
+        envelope.Data!.Voted.Should().BeTrue();
+        envelope.Data.VoteCount.Should().Be(13);
+    }
+
+    [Fact]
+    public async Task CreatePostVote_GuestUser_ShouldThrowForbidden403()
+    {
+        // Arrange: Khách vãng lai
+        var user = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, "guest-uuid-123"),
+            new Claim(ClaimTypes.Role, "GUEST")
+        }, "TestAuth"));
+        _controller.ControllerContext.HttpContext.User = user;
+
+        // Act & Assert
+        var act = () => _controller.CreatePostVote(77, CancellationToken.None);
+        var ex = await act.Should().ThrowAsync<VeggieLife.BLL.Common.Exceptions.AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(VeggieLife.BLL.Common.Constants.ErrorCodes.ErrGuestCommunityActionDenied);
     }
 }
 

@@ -121,6 +121,7 @@ public static class ServiceExtensions
                                       path.Contains("/likes") ||
                                       path.Contains("/votes") ||
                                       path.Contains("/violations") ||
+                                      path.Contains("/reports") ||
                                       (path.Contains("/recipes") && context.HttpContext?.Request.Method != "GET");
 
                     var errorCode = isGuest
@@ -333,6 +334,13 @@ public static class ServiceExtensions
 
         // Dịch vụ Video & Phương tiện nấu ăn (FN-POST-08)
         services.AddScoped<VeggieLife.BLL.Services.Videos.IVideoService, VeggieLife.BLL.Services.Videos.VideoService>();
+
+        // Dịch vụ Tương tác cộng đồng & Báo cáo vi phạm (FN-COMM-04, FN-COMM-05)
+        services.AddScoped<VeggieLife.BLL.Services.Community.CommunityInteractionService>();
+        services.AddScoped<VeggieLife.BLL.Services.Community.ICommunityInteractionService>(sp =>
+            sp.GetRequiredService<VeggieLife.BLL.Services.Community.CommunityInteractionService>());
+        services.AddScoped<VeggieLife.BLL.Services.Community.IInteractionService>(sp =>
+            sp.GetRequiredService<VeggieLife.BLL.Services.Community.CommunityInteractionService>());
 
         // Dịch vụ Thực đơn dinh dưỡng & AI Meal Planning (FN-MEAL-01)
         services.Configure<VeggieLife.DAL.External.AiService.AiServiceSettings>(configuration.GetSection(VeggieLife.DAL.External.AiService.AiServiceSettings.SectionName));

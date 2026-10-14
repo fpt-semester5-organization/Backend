@@ -334,4 +334,98 @@ public class MealPlansControllerTests
         apiResponse!.Data!.Completed.Should().Be(5);
         apiResponse.Data.Total.Should().Be(21);
     }
+
+    [Fact]
+    public async Task GetMealPlanNutrition_MemberBasic_ShouldReturn200Ok()
+    {
+        // Arrange
+        var userId = 45;
+        var userRole = UserRoles.Member;
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(ClaimTypes.Role, userRole)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        var responseData = new GetMealPlanNutritionResponseData
+        {
+            PlanId = 1,
+            Level = "BASIC",
+            TargetKcalPerDay = 1800m,
+            TotalKcalWeek = 11550m,
+            Days = new List<MealPlanDayNutritionDto>()
+        };
+
+        _mockService.Setup(s => s.GetMealPlanNutritionAsync(1, userId, userRole, "BASIC", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var actionResult = await _controller.GetMealPlanNutrition(1, "BASIC", CancellationToken.None);
+
+        // Assert
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var apiResponse = objectResult.Value as ApiResponse<GetMealPlanNutritionResponseData>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data!.Level.Should().Be("BASIC");
+    }
+
+    [Fact]
+    public async Task GetMealPlanNutrition_VipDetailed_ShouldReturn200Ok()
+    {
+        // Arrange
+        var userId = 45;
+        var userRole = UserRoles.Vip;
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(ClaimTypes.Role, userRole)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        var responseData = new GetMealPlanNutritionResponseData
+        {
+            PlanId = 1,
+            Level = "DETAILED",
+            TargetKcalPerDay = 1800m,
+            TotalKcalWeek = 11550m,
+            Days = new List<MealPlanDayNutritionDto>()
+        };
+
+        _mockService.Setup(s => s.GetMealPlanNutritionAsync(1, userId, userRole, "DETAILED", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var actionResult = await _controller.GetMealPlanNutrition(1, "DETAILED", CancellationToken.None);
+
+        // Assert
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var apiResponse = objectResult.Value as ApiResponse<GetMealPlanNutritionResponseData>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data!.Level.Should().Be("DETAILED");
+    }
+
+    [Fact]
+    public async Task GetMealPlanNutrition_GuestUser_ShouldThrowForbidden()
+    {
+        // Arrange
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "999"),
+            new(ClaimTypes.Role, UserRoles.Guest)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        // Act & Assert
+        var act = () => _controller.GetMealPlanNutrition(1, "BASIC", CancellationToken.None);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrGuestPersonalizationRestricted);
+    }
 }
