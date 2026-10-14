@@ -12,7 +12,10 @@ using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.MealPlans.Requests;
 using VeggieLife.BLL.DTOs.MealPlans.Responses;
+using VeggieLife.BLL.DTOs.ShoppingLists.Requests;
+using VeggieLife.BLL.DTOs.ShoppingLists.Responses;
 using VeggieLife.BLL.Services.MealPlans;
+using VeggieLife.BLL.Services.ShoppingLists;
 using Xunit;
 
 namespace VeggieLife.Tests.Unit.Controllers;
@@ -424,6 +427,77 @@ public class MealPlansControllerTests
 
         // Act & Assert
         var act = () => _controller.GetMealPlanNutrition(1, "BASIC", CancellationToken.None);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrGuestPersonalizationRestricted);
+    }
+
+    [Fact]
+    public async Task CreateMealPlanShoppingList_AuthorizedUser_ShouldReturn201Created()
+    {
+        // Arrange
+        var mockShoppingListService = new Mock<IShoppingListService>();
+        var controller = new MealPlansController(_mockService.Object, mockShoppingListService.Object);
+
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "45"),
+            new(ClaimTypes.Role, UserRoles.Member)
+        };
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"))
+            }
+        };
+
+        var responseData = new CreateMealPlanShoppingListResponseData
+        {
+            ListId = 12,
+            PlanId = 45,
+            Status = "PENDING",
+            Aisles = new List<ShoppingListAisleDto>()
+        };
+
+        mockShoppingListService.Setup(s => s.CreateMealPlanShoppingListAsync(45, 45, It.IsAny<CreateMealPlanShoppingListRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var actionResult = await controller.CreateMealPlanShoppingList(45, new CreateMealPlanShoppingListRequest(), CancellationToken.None);
+
+        // Assert
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status201Created);
+
+        var apiResponse = objectResult.Value as ApiResponse<CreateMealPlanShoppingListResponseData>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data!.ListId.Should().Be(12);
+    }
+
+    [Fact]
+    public async Task CreateMealPlanShoppingList_GuestUser_ShouldThrowForbidden()
+    {
+        // Arrange
+        var mockShoppingListService = new Mock<IShoppingListService>();
+        var controller = new MealPlansController(_mockService.Object, mockShoppingListService.Object);
+
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "999"),
+            new(ClaimTypes.Role, UserRoles.Guest)
+        };
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"))
+            }
+        };
+
+        // Act & Assert
+        var act = () => controller.CreateMealPlanShoppingList(45, new CreateMealPlanShoppingListRequest(), CancellationToken.None);
         var ex = await act.Should().ThrowAsync<AppException>();
         ex.Which.StatusCode.Should().Be(403);
         ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrGuestPersonalizationRestricted);

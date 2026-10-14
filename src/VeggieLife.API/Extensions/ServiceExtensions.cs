@@ -347,6 +347,7 @@ public static class ServiceExtensions
             client.Timeout = System.TimeSpan.FromSeconds(4); // Ràng buộc BR-ADM-AI-002: quá 4s chuyển sang Fallback
         });
         services.AddScoped<VeggieLife.BLL.Services.MealPlans.IMealPlanService, VeggieLife.BLL.Services.MealPlans.MealPlanService>();
+        services.AddScoped<VeggieLife.BLL.Services.ShoppingLists.IShoppingListService, VeggieLife.BLL.Services.ShoppingLists.ShoppingListService>();
 
         // Các interface dịch vụ dùng chung khác (Bản mẫu rỗng để các thành viên khác hoàn thiện)
         services.AddScoped<IAiService, AiServiceStub>();
