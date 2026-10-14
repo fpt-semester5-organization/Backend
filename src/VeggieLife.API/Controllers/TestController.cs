@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -98,11 +98,11 @@ public class TestController : BaseApiController
     /// Sinh Token mẫu cho Thành viên (MEMBER).
     /// </summary>
     [HttpGet("token/member")]
-    public IActionResult GenerateMemberToken()
+    public IActionResult GenerateMemberToken([FromQuery] int? userId = null)
     {
         var mockUser = new User
         {
-            UserId = 101,
+            UserId = userId ?? 2,
             Email = "member@veggielife.vn",
             FullName = "Nguyễn Văn Member",
             Role = UserRoles.Member,
@@ -182,7 +182,7 @@ public class TestController : BaseApiController
     }
 
     /// <summary>
-    /// Thao tác ghi cộng đồng (Thích, Bình luận, Đăng bài): Chặn Khách vãng lai và trả thông báo mời đăng ký (FN-AUTH-03).
+    /// Thao tác ghi cộng đồng (Thích, Bình luận, Đăng bài): Chặn Khách vãng lai và trả thông báo mời đăng ký.
     /// </summary>
     [HttpPost("auth/community-action")]
     [VeggieLife.API.Authorization.RequireMember(MemberFeatureType.Community)]
@@ -197,7 +197,7 @@ public class TestController : BaseApiController
     }
 
     /// <summary>
-    /// Thao tác cá nhân hóa (BMI/TDEE, Hồ sơ, Thực đơn cá nhân): Chặn Khách vãng lai và trả thông báo mời đăng ký (FN-AUTH-03).
+    /// Thao tác cá nhân hóa (BMI/TDEE, Hồ sơ, Thực đơn cá nhân): Chặn Khách vãng lai và trả thông báo mời đăng ký.
     /// </summary>
     [HttpGet("auth/personalization-action")]
     [VeggieLife.API.Authorization.RequireMember(MemberFeatureType.Personalization)]
