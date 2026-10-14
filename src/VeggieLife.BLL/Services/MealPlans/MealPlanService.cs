@@ -1216,4 +1216,95 @@ public class MealPlanService : IMealPlanService
             Days = daysList
         };
     }
+
+    public async Task<byte[]> ExportMealPlanPdfAsync(
+        int id,
+        int userId,
+        string userRole,
+        string? include = "PLAN,SHOPPING",
+        CancellationToken ct = default)
+    {
+        if (id <= 0)
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Mã thực đơn phải lớn hơn 0.");
+        }
+
+        var normalizedInclude = string.IsNullOrWhiteSpace(include) ? "PLAN,SHOPPING" : include.Trim().ToUpperInvariant();
+        var parts = normalizedInclude.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        bool includePlan = parts.Contains("PLAN");
+        bool includeShopping = parts.Contains("SHOPPING");
+
+        if (!includePlan && !includeShopping)
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Giá trị include không hợp lệ. Chỉ chấp nhận PLAN, SHOPPING, hoặc PLAN,SHOPPING.");
+        }
+
+        foreach (var part in parts)
+        {
+            if (part != "PLAN" && part != "SHOPPING")
+            {
+                throw AppException.BadRequest(
+                    ErrorCodes.ErrValidation,
+                    $"Tham số 'include' chứa giá trị không hợp lệ: '{part}'. Chỉ chấp nhận PLAN, SHOPPING hoặc PLAN,SHOPPING.");
+            }
+        }
+
+        // Kiểm tra quyền VIP (BR-PAY-SUB-03)
+        var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase)
+                 || string.Equals(userRole, UserRoles.Admin, StringComparison.OrdinalIgnoreCase);
+
+        if (!isVip)
+        {
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == userId, ct);
+            if (user != null && (string.Equals(user.Role, UserRoles.Vip, StringComparison.OrdinalIgnoreCase)
+                             || string.Equals(user.Role, UserRoles.Admin, StringComparison.OrdinalIgnoreCase)))
+            {
+                isVip = true;
+            }
+        }
+
+        if (!isVip)
+        {
+            throw AppException.Forbidden(
+                ErrorCodes.ErrVipRequired,
+                "Tính năng chỉ dành cho thành viên VIP (BR-PAY-SUB-03).");
+        }
+
+        // Kiểm tra quyền sở hữu thực đơn
+        var plan = await _db.MealPlans
+            .Include(p => p.MealSlots)
+                .ThenInclude(s => s.Recipe)
+                    .ThenInclude(r => r.RecipeIngredients)
+                        .ThenInclude(ri => ri.Ingredient)
+            .FirstOrDefaultAsync(p => p.PlanId == id && p.UserId == userId, ct);
+
+        if (plan == null)
+        {
+            throw AppException.NotFound(
+                ErrorCodes.ErrMealPlanNotFound,
+                "Thực đơn không tồn tại hoặc không thuộc về bạn.");
+        }
+
+        ShoppingList? shoppingList = null;
+        if (includeShopping)
+        {
+            shoppingList = await _db.ShoppingLists
+                .Include(s => s.ShoppingListItems)
+                    .ThenInclude(i => i.Ingredient)
+                .FirstOrDefaultAsync(s => s.PlanId == id, ct);
+
+            if (shoppingList == null)
+            {
+                throw AppException.Conflict(
+                    ErrorCodes.ErrShoppingListNotFound,
+                    "Thực đơn chưa có danh sách đi chợ.");
+            }
+        }
+
+        return MealPlanPdfExporter.GeneratePdf(plan, shoppingList, includePlan, includeShopping);
+    }
 }

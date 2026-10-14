@@ -901,6 +901,174 @@ public class MealPlanServiceTests : IDisposable
         ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
     }
 
+    #region FN-MEAL-08 Export PDF Tests
+
+    [Fact]
+    public async Task ExportMealPlanPdfAsync_VipUser_PlanOnly_ShouldReturnValidPdfBytes()
+    {
+        // ARRANGE: Thành viên VIP xuất PDF thực đơn (PLAN)
+        var userId = 520;
+        _db.Users.Add(new User { UserId = userId, Email = "user520@test.com", FullName = "User 520 VIP", Role = UserRoles.Vip, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(520, userId, "ACTIVE");
+
+        // ACT
+        var pdfBytes = await _service.ExportMealPlanPdfAsync(520, userId, UserRoles.Vip, include: "PLAN");
+
+        // ASSERT
+        pdfBytes.Should().NotBeNull();
+        pdfBytes.Length.Should().BeGreaterThan(100);
+        // Header PDF chuẩn: %PDF-
+        pdfBytes.Take(4).Should().Equal(new byte[] { 0x25, 0x50, 0x44, 0x46 });
+    }
+
+    [Fact]
+    public async Task ExportMealPlanPdfAsync_VipUser_BothPlanAndShopping_ShouldReturnValidPdfBytes()
+    {
+        // ARRANGE: Thành viên VIP xuất PDF cả thực đơn và danh sách đi chợ (PLAN,SHOPPING)
+        var userId = 521;
+        _db.Users.Add(new User { UserId = userId, Email = "user521@test.com", FullName = "User 521 VIP", Role = UserRoles.Vip, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(521, userId, "ACTIVE");
+        CreateTestShoppingList(521);
+
+        // ACT
+        var pdfBytes = await _service.ExportMealPlanPdfAsync(521, userId, UserRoles.Vip, include: "PLAN,SHOPPING");
+
+        // ASSERT
+        pdfBytes.Should().NotBeNull();
+        pdfBytes.Length.Should().BeGreaterThan(100);
+        pdfBytes.Take(4).Should().Equal(new byte[] { 0x25, 0x50, 0x44, 0x46 });
+    }
+
+    [Fact]
+    public async Task ExportMealPlanPdfAsync_VipUser_ShoppingOnly_ShouldReturnValidPdfBytes()
+    {
+        // ARRANGE: Thành viên VIP xuất PDF chỉ danh sách đi chợ (SHOPPING)
+        var userId = 522;
+        _db.Users.Add(new User { UserId = userId, Email = "user522@test.com", FullName = "User 522 VIP", Role = UserRoles.Vip, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(522, userId, "ACTIVE");
+        CreateTestShoppingList(522);
+
+        // ACT
+        var pdfBytes = await _service.ExportMealPlanPdfAsync(522, userId, UserRoles.Vip, include: "SHOPPING");
+
+        // ASSERT
+        pdfBytes.Should().NotBeNull();
+        pdfBytes.Length.Should().BeGreaterThan(100);
+        pdfBytes.Take(4).Should().Equal(new byte[] { 0x25, 0x50, 0x44, 0x46 });
+    }
+
+    [Fact]
+    public async Task ExportMealPlanPdfAsync_MemberUser_ShouldThrow403VipRequired()
+    {
+        // ARRANGE: Thành viên thường (MEMBER) xuất PDF -> Bị từ chối theo BR-PAY-SUB-03
+        var userId = 523;
+        _db.Users.Add(new User { UserId = userId, Email = "user523@test.com", FullName = "User 523 Member", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(523, userId, "ACTIVE");
+
+        // ACT & ASSERT: Lỗi 403 ERR_VIP_REQUIRED
+        var act = () => _service.ExportMealPlanPdfAsync(523, userId, UserRoles.Member, include: "PLAN,SHOPPING");
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrVipRequired);
+        ex.Which.Message.Should().Contain("VIP");
+    }
+
+    [Fact]
+    public async Task ExportMealPlanPdfAsync_VipUser_IncludeShopping_WhenNoShoppingListExists_ShouldThrow409Conflict()
+    {
+        // ARRANGE: VIP yêu cầu SHOPPING nhưng chưa có danh sách đi chợ -> 409 ERR_SHOPPING_LIST_NOT_FOUND
+        var userId = 524;
+        _db.Users.Add(new User { UserId = userId, Email = "user524@test.com", FullName = "User 524 VIP", Role = UserRoles.Vip, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(524, userId, "ACTIVE");
+
+        // ACT & ASSERT
+        var act = () => _service.ExportMealPlanPdfAsync(524, userId, UserRoles.Vip, include: "PLAN,SHOPPING");
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(409);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrShoppingListNotFound);
+    }
+
+    [Fact]
+    public async Task ExportMealPlanPdfAsync_InvalidId_ShouldThrow400BadRequest()
+    {
+        // ACT & ASSERT: id <= 0
+        var act = () => _service.ExportMealPlanPdfAsync(0, 520, UserRoles.Vip);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+    }
+
+    [Fact]
+    public async Task ExportMealPlanPdfAsync_InvalidInclude_ShouldThrow400BadRequest()
+    {
+        // ARRANGE
+        var userId = 525;
+        _db.Users.Add(new User { UserId = userId, Email = "user525@test.com", FullName = "User 525 VIP", Role = UserRoles.Vip, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(525, userId, "ACTIVE");
+
+        // ACT & ASSERT: include giá trị không hợp lệ
+        var act = () => _service.ExportMealPlanPdfAsync(525, userId, UserRoles.Vip, include: "INVALID_OPTION");
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+    }
+
+    [Fact]
+    public async Task ExportMealPlanPdfAsync_NotOwnerOrNonExistent_ShouldThrow404NotFound()
+    {
+        // ARRANGE
+        var userId = 526;
+        _db.Users.Add(new User { UserId = userId, Email = "user526@test.com", FullName = "User 526 VIP", Role = UserRoles.Vip, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(526, userId, "ACTIVE");
+
+        // ACT & ASSERT: Không phải chủ sở hữu thực đơn
+        var act = () => _service.ExportMealPlanPdfAsync(526, userId: 9999, UserRoles.Vip, include: "PLAN");
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrMealPlanNotFound);
+    }
+
+    #endregion
+
+    private ShoppingList CreateTestShoppingList(int planId)
+    {
+        var shoppingList = new ShoppingList
+        {
+            ListId = planId * 10,
+            PlanId = planId,
+            ListTitle = $"Danh sách đi chợ tuần - Thực đơn #{planId}",
+            TargetShoppingDate = DateOnly.Parse("2026-10-18"),
+            Status = "PENDING",
+            IsOfflineSynced = false,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.ShoppingLists.Add(shoppingList);
+
+        _db.ShoppingListItems.AddRange(
+            new ShoppingListItem
+            {
+                ItemId = planId * 100 + 1,
+                ListId = shoppingList.ListId,
+                IngredientId = 8,
+                AggregatedQuantity = 500m,
+                Unit = "g",
+                IsPurchased = false
+            },
+            new ShoppingListItem
+            {
+                ItemId = planId * 100 + 2,
+                ListId = shoppingList.ListId,
+                IngredientId = 9,
+                AggregatedQuantity = 300m,
+                Unit = "g",
+                IsPurchased = false
+            }
+        );
+
+        _db.SaveChanges();
+        return shoppingList;
+    }
+
     private MealPlan CreateTestMealPlan(int planId, int userId, string status = "DRAFT", string startDate = "2026-10-19")
     {
         var plan = new MealPlan
