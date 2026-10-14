@@ -81,4 +81,15 @@ public interface IMealPlanService
         string userRole,
         string level = "BASIC",
         CancellationToken ct = default);
+
+    /// <summary>
+    /// FN-MEAL-08: Xuất thực đơn tuần và danh sách đi chợ ra PDF dành riêng cho VIP (BR-PAY-SUB-03).
+    /// Tạo theo yêu cầu trực tiếp trong bộ nhớ, dùng font nhúng tiếng Việt có dấu, không lưu tệp trên server.
+    /// </summary>
+    Task<byte[]> ExportMealPlanPdfAsync(
+        int id,
+        int userId,
+        string userRole,
+        string? include = "PLAN,SHOPPING",
+        CancellationToken ct = default);
 }

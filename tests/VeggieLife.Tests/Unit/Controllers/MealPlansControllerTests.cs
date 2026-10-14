@@ -502,4 +502,48 @@ public class MealPlansControllerTests
         ex.Which.StatusCode.Should().Be(403);
         ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrGuestPersonalizationRestricted);
     }
+
+    [Fact]
+    public async Task ExportMealPlan_VipUser_ShouldReturn200FileContentResult()
+    {
+        // Arrange
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "45"),
+            new(ClaimTypes.Role, UserRoles.Vip)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        var dummyPdf = new byte[] { 0x25, 0x50, 0x44, 0x46, 0x01, 0x02 };
+        _mockService.Setup(s => s.ExportMealPlanPdfAsync(45, 45, UserRoles.Vip, "PLAN,SHOPPING", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(dummyPdf);
+
+        // Act
+        var actionResult = await _controller.ExportMealPlan(45, "PLAN,SHOPPING", CancellationToken.None);
+
+        // Assert
+        var fileResult = actionResult as FileContentResult;
+        fileResult.Should().NotBeNull();
+        fileResult!.ContentType.Should().Be("application/pdf");
+        fileResult.FileDownloadName.Should().Be("veggielife-meal-plan-45.pdf");
+        fileResult.FileContents.Should().Equal(dummyPdf);
+    }
+
+    [Fact]
+    public async Task ExportMealPlan_GuestUser_ShouldThrowForbidden()
+    {
+        // Arrange
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "999"),
+            new(ClaimTypes.Role, UserRoles.Guest)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        // Act & Assert
+        var act = () => _controller.ExportMealPlan(45, "PLAN,SHOPPING", CancellationToken.None);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrGuestPersonalizationRestricted);
+    }
 }

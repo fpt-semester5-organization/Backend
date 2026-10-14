@@ -213,6 +213,27 @@ public class MealPlansController : BaseApiController
         return CreatedResponse(result, "Đã tạo danh sách đi chợ.");
     }
 
+    /// <summary>
+    /// FN-MEAL-08: Xuất thực đơn tuần và danh sách đi chợ ra PDF dành riêng cho VIP (BR-PAY-SUB-03).
+    /// </summary>
+    [HttpGet("{id:int}/export")]
+    [Authorize]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ExportMealPlan(
+        [FromRoute] int id,
+        [FromQuery] string? include = "PLAN,SHOPPING",
+        CancellationToken ct = default)
+    {
+        var (userId, userRole) = EnsureAuthorizedUser();
+        var pdfBytes = await _mealPlanService.ExportMealPlanPdfAsync(id, userId, userRole, include, ct);
+        return File(pdfBytes, "application/pdf", $"veggielife-meal-plan-{id}.pdf");
+    }
+
     private (int UserId, string UserRole) EnsureAuthorizedUser()
     {
         if (CurrentUserId == null)
