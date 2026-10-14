@@ -164,3 +164,10 @@ Accept: application/json
 GET {{VeggieLife.API_HostAddress}}/api/v1/users/me
 Authorization: Bearer {{memberToken}}
 Accept: application/json
+
+### ============================================================================
+### 14. FN-POST-11: GỢI Ý NỘI DUNG LIÊN QUAN KHI XEM CHI TIẾT CÔNG THỨC
+### ============================================================================
+GET {{VeggieLife.API_HostAddress}}/api/v1/recipes/1/related?limit=6
+Accept: application/json
+

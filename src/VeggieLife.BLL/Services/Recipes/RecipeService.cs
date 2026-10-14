@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -35,9 +36,10 @@ public class RecipeService : IRecipeService
     private readonly IContentModerationService _moderationService;
     private readonly IKnowledgeSyncQueue _knowledgeSyncQueue;
 
-    private static readonly TimeSpan RecipeSearchCacheTtl = TimeSpan.FromHours(24); // BR-SYS-CACHE-01
-    private static readonly TimeSpan RecipeDetailCacheTtl = TimeSpan.FromHours(24); // BR-SYS-CACHE-01
-    private static readonly TimeSpan GuestHistoryTtl = TimeSpan.FromHours(24);      // BR-GUEST-AUTH-01
+    private static readonly TimeSpan RecipeSearchCacheTtl = TimeSpan.FromHours(24);  // BR-SYS-CACHE-01
+    private static readonly TimeSpan RecipeDetailCacheTtl = TimeSpan.FromHours(24);  // BR-SYS-CACHE-01
+    private static readonly TimeSpan RecipeRelatedCacheTtl = TimeSpan.FromHours(24); // BR-SYS-CACHE-01
+    private static readonly TimeSpan GuestHistoryTtl = TimeSpan.FromHours(24);       // BR-GUEST-AUTH-01
 
     public RecipeService(
         AppDbContext db,
@@ -330,6 +332,222 @@ public class RecipeService : IRecipeService
         await IncrementViewCountAsync(id, ct);
 
         return detailDto;
+    }
+
+    /// <summary>
+    /// FN-POST-11: Gợi ý các công thức tương đồng (cùng trường phái, chung nguyên liệu, nhiều votes)
+    /// và bài viết/video liên quan khi đang xem một công thức.
+    /// </summary>
+    public async Task<RelatedRecipesResponseData> GetRelatedRecipesAsync(
+        int recipeId,
+        int limit = 6,
+        int? currentUserId = null,
+        CancellationToken ct = default)
+    {
+        if (recipeId <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã công thức phải lớn hơn 0.");
+        }
+
+        if (limit < 1 || limit > 10)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Giới hạn số lượng gợi ý phải từ 1 đến 10.");
+        }
+
+        // 1. Xác định trường phái của người dùng nếu có đăng nhập (hồ sơ thể trạng)
+        int? userDietarySchoolId = null;
+        if (currentUserId.HasValue)
+        {
+            var profile = await _db.HealthProfiles
+                .AsNoTracking()
+                .FirstOrDefaultAsync(hp => hp.UserId == currentUserId.Value, ct);
+            if (profile != null && profile.DietarySchoolId > 0)
+            {
+                userDietarySchoolId = profile.DietarySchoolId;
+            }
+        }
+
+        // 2. Kiểm tra bộ nhớ đệm Redis: recipe_related:{id} (BR-SYS-CACHE-01)
+        var cacheKey = userDietarySchoolId.HasValue
+            ? $"recipe_related:{recipeId}:ds_{userDietarySchoolId.Value}:lim_{limit}"
+            : $"recipe_related:{recipeId}:lim_{limit}";
+
+        var cachedResult = await _redis.GetAsync<RelatedRecipesResponseData>(cacheKey, ct);
+        if (cachedResult != null)
+        {
+            return cachedResult;
+        }
+
+        // 3. Truy vấn công thức gốc đang xem: kiểm tra tồn tại và APPROVED_ACTIVE
+        var sourceRecipe = await _db.Recipes
+            .AsNoTracking()
+            .Include(r => r.Category)
+            .Include(r => r.DietarySchool)
+            .Include(r => r.RecipeIngredients)
+            .FirstOrDefaultAsync(r => r.RecipeId == recipeId && r.Status == "APPROVED_ACTIVE", ct);
+
+        if (sourceRecipe == null)
+        {
+            throw AppException.NotFound(
+                ErrorCodes.ErrContentNotFound,
+                "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
+        }
+
+        // Ưu tiên trường phái của người dùng; nếu không có thì lấy theo công thức gốc
+        var targetDietarySchoolId = userDietarySchoolId ?? sourceRecipe.DietarySchoolId;
+        var sourceIngredientIds = sourceRecipe.RecipeIngredients
+            .Select(ri => ri.IngredientId)
+            .ToHashSet();
+
+        // 4. Truy vấn các công thức APPROVED_ACTIVE cùng trường phái, loại trừ chính công thức đang xem
+        var candidateRecipes = await _db.Recipes
+            .AsNoTracking()
+            .Include(r => r.Category)
+            .Include(r => r.DietarySchool)
+            .Include(r => r.RecipeIngredients)
+            .Include(r => r.Posts)
+                .ThenInclude(p => p.Votes)
+            .Include(r => r.Posts)
+                .ThenInclude(p => p.Videos)
+            .Where(r => r.RecipeId != recipeId &&
+                        r.Status == "APPROVED_ACTIVE" &&
+                        r.Category.IsActive &&
+                        r.DietarySchoolId == targetDietarySchoolId)
+            .ToListAsync(ct);
+
+        // 5. Tính điểm tương đồng & xếp hạng theo BR-USR-16:
+        //    - Số nguyên liệu chung nhiều nhất
+        //    - Cùng danh mục món ăn (Category)
+        //    - Số lượt vote/thả tim giảm dần
+        //    - ViewCount giảm dần
+        var scoredList = candidateRecipes
+            .Select(r =>
+            {
+                var sharedIngredientsCount = r.RecipeIngredients.Count(ri => sourceIngredientIds.Contains(ri.IngredientId));
+                var isSameCategory = r.CategoryId == sourceRecipe.CategoryId;
+                var voteCount = r.Posts.SelectMany(p => p.Votes).Count();
+
+                return new
+                {
+                    Recipe = r,
+                    SharedIngredientsCount = sharedIngredientsCount,
+                    IsSameCategory = isSameCategory,
+                    VoteCount = voteCount
+                };
+            })
+            .OrderByDescending(x => x.SharedIngredientsCount)
+            .ThenByDescending(x => x.IsSameCategory ? 1 : 0)
+            .ThenByDescending(x => x.VoteCount)
+            .ThenByDescending(x => x.Recipe.ViewCount)
+            .ThenByDescending(x => x.Recipe.RecipeId)
+            .Take(limit)
+            .Select(x => new RecipeSummaryDto
+            {
+                RecipeId = x.Recipe.RecipeId,
+                Type = x.Recipe.Posts.Any(p => p.Videos.Any(v => v.Status == "READY")) ? "VIDEO" : "RECIPE",
+                Title = x.Recipe.Title,
+                ImageUrl = x.Recipe.ImageUrl,
+                DietarySchool = x.Recipe.DietarySchool.SchoolCode,
+                CookTimeMinutes = x.Recipe.CookTimeMinutes,
+                CaloriesKcal = x.Recipe.CaloriesKcal,
+                VoteCount = x.VoteCount,
+                IsVerified = x.Recipe.IsVerified
+            })
+            .ToList();
+
+        // 6. Tìm thêm tối đa 3 bài viết / video liên quan theo từ khóa tiêu đề (FN-POST-11)
+        var keywords = sourceRecipe.Title
+            .Split(new[] { ' ', ',', '-', '(', ')' }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length >= 2)
+            .Take(5)
+            .ToList();
+
+        var stringContainsMethod = typeof(string).GetMethod(nameof(string.Contains), new[] { typeof(string) })!;
+
+        // Xây dựng predicate lọc bài viết: p.RecipeId == recipeId || p.Title.Contains(k1) || ...
+        var postParam = Expression.Parameter(typeof(Post), "p");
+        Expression postExpr = Expression.Equal(
+            Expression.Property(postParam, nameof(Post.RecipeId)),
+            Expression.Constant((int?)recipeId, typeof(int?)));
+
+        foreach (var kw in keywords)
+        {
+            var containsCall = Expression.Call(
+                Expression.Property(postParam, nameof(Post.Title)),
+                stringContainsMethod,
+                Expression.Constant(kw, typeof(string)));
+            postExpr = Expression.OrElse(postExpr, containsCall);
+        }
+
+        var postPredicate = Expression.Lambda<Func<Post, bool>>(postExpr, postParam);
+
+        var relatedPosts = await _db.Posts
+            .AsNoTracking()
+            .Include(p => p.User)
+            .Include(p => p.Votes)
+            .Include(p => p.Comments)
+            .Where(p => p.ModerationStatus == "APPROVED_ACTIVE" && p.Visibility == "PUBLIC")
+            .Where(postPredicate)
+            .OrderByDescending(p => p.Votes.Count)
+            .Take(3)
+            .Select(p => new RelatedPostDto
+            {
+                PostId = p.PostId,
+                Title = p.Title,
+                ImageUrl = p.ImageUrl,
+                AuthorName = p.User != null ? p.User.FullName : "Thành viên VeggieLife",
+                VoteCount = p.Votes.Count,
+                CommentCount = p.Comments.Count(c => !c.IsSoftDeleted)
+            })
+            .ToListAsync(ct);
+
+        // Xây dựng predicate lọc video: (v.Post != null && v.Post.RecipeId == recipeId) || v.Title.Contains(k1) || ...
+        var videoParam = Expression.Parameter(typeof(Video), "v");
+        var postNav = Expression.Property(videoParam, nameof(Video.Post));
+        Expression videoExpr = Expression.Equal(
+            Expression.Property(postNav, nameof(Post.RecipeId)),
+            Expression.Constant((int?)recipeId, typeof(int?)));
+
+        foreach (var kw in keywords)
+        {
+            var containsCall = Expression.Call(
+                Expression.Property(videoParam, nameof(Video.Title)),
+                stringContainsMethod,
+                Expression.Constant(kw, typeof(string)));
+            videoExpr = Expression.OrElse(videoExpr, containsCall);
+        }
+
+        var videoPredicate = Expression.Lambda<Func<Video, bool>>(videoExpr, videoParam);
+
+        var relatedVideos = await _db.Videos
+            .AsNoTracking()
+            .Include(v => v.Post)
+            .Where(v => v.Status == "READY")
+            .Where(videoPredicate)
+            .OrderByDescending(v => v.ViewCount)
+            .Take(3)
+            .Select(v => new RelatedVideoDto
+            {
+                VideoId = v.VideoId,
+                Title = v.Title,
+                VideoUrl = v.VideoUrl,
+                ThumbnailUrl = v.ThumbnailUrl,
+                DurationSeconds = v.DurationSeconds,
+                ViewCount = v.ViewCount
+            })
+            .ToListAsync(ct);
+
+        var result = new RelatedRecipesResponseData
+        {
+            Recipes = scoredList,
+            Posts = relatedPosts,
+            Videos = relatedVideos
+        };
+
+        // 7. Lưu kết quả vào bộ nhớ đệm Redis: recipe_related:{id} (TTL 24h - BR-SYS-CACHE-01)
+        await _redis.SetAsync(cacheKey, result, RecipeRelatedCacheTtl, ct);
+
+        return result;
     }
 
     /// <summary>
@@ -1402,6 +1620,7 @@ public class RecipeService : IRecipeService
         try
         {
             await _redis.RemoveAsync($"recipe_detail:{recipeId}", ct);
+            await _redis.RemoveAsync($"recipe_related:{recipeId}*", ct);
             await _redis.RemoveAsync("recipe_search:*", ct);
         }
         catch (Exception ex)

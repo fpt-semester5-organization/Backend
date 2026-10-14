@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -79,6 +79,42 @@ public class RecipesController : BaseApiController
 
         var recipe = await _recipeService.GetRecipeByIdAsync(id, isGuest, currentUserId, ct);
         return OkResponse(recipe, "OK");
+    }
+
+    /// <summary>
+    /// FN-POST-11: Gợi ý nội dung liên quan khi xem chi tiết công thức.
+    /// Gợi ý công thức tương đồng (cùng trường phái, chung nguyên liệu chính, nhiều lượt thả tim) và bài viết/video liên quan.
+    /// Dùng chung cho Khách vãng lai và Thành viên (GUEST | MEMBER | VIP).
+    /// </summary>
+    /// <param name="id">Mã định danh công thức (> 0).</param>
+    /// <param name="limit">Số lượng gợi ý (1–10, mặc định 6).</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>Danh sách công thức, bài viết và video liên quan.</returns>
+    [HttpGet("{id:int}/related")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<RelatedRecipesResponseData>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ListRelatedRecipes(
+        [FromRoute] int id,
+        [FromQuery] int limit = 6,
+        CancellationToken ct = default)
+    {
+        if (id <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã công thức phải lớn hơn 0.");
+        }
+
+        if (limit < 1 || limit > 10)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Giới hạn số lượng gợi ý phải từ 1 đến 10.");
+        }
+
+        var currentUserId = CurrentUserId.HasValue ? (int?)CurrentUserId.Value : null;
+        var relatedData = await _recipeService.GetRelatedRecipesAsync(id, limit, currentUserId, ct);
+        return OkResponse(relatedData, "OK");
     }
 
     /// <summary>
