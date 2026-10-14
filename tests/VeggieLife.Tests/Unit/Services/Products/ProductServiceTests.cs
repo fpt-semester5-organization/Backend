@@ -274,7 +274,8 @@ public class ProductServiceTests : IDisposable
                 Brand = "Thương hiệu mới",
                 IngredientsText = "Gạo lứt, muối khoáng",
                 VeganVerdict = "VEGAN",
-                VerdictText = "Thuần chay"
+                VerdictText = "Thuần chay",
+                ImageUrl = "https://images.openfoodfacts.org/images/products/893/999/988/8777/front_en.jpg"
             });
 
         _mockRedis.Setup(r => r.GetAsync<int?>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -288,11 +289,13 @@ public class ProductServiceTests : IDisposable
         // Assert
         result.ProductName.Should().Be("Bánh gạo lứt cao cấp");
         result.VeganVerdict.Should().Be("GREEN");
+        result.ImageUrl.Should().Be("https://images.openfoodfacts.org/images/products/893/999/988/8777/front_en.jpg");
         _mockOffClient.Verify(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()), Times.Once);
 
-        // Kiểm tra CSDL đã được cập nhật LastSyncedAt
+        // Kiểm tra CSDL đã được cập nhật LastSyncedAt và ImageUrl
         var updatedInDb = await _db.Products.FirstAsync(p => p.Barcode == barcode);
         updatedInDb.ProductName.Should().Be("Bánh gạo lứt cao cấp");
+        updatedInDb.ImageUrl.Should().Be("https://images.openfoodfacts.org/images/products/893/999/988/8777/front_en.jpg");
         (DateTime.UtcNow - updatedInDb.LastSyncedAt).TotalMinutes.Should().BeLessThan(1);
     }
 
@@ -358,8 +361,8 @@ public class ProductServiceTests : IDisposable
     public async Task GetUserScanHistory_ReturnsPaginatedAndFiltered()
     {
         // Arrange
-        var p1 = new Product { Barcode = "8930000000010", ProductName = "Món 1", VeganVerdict = "VEGAN", LastSyncedAt = DateTime.UtcNow };
-        var p2 = new Product { Barcode = "8930000000020", ProductName = "Món 2", VeganVerdict = "NON_VEGAN", LastSyncedAt = DateTime.UtcNow };
+        var p1 = new Product { Barcode = "8930000000010", ProductName = "Món 1", ImageUrl = "https://images.openfoodfacts.org/1.jpg", VeganVerdict = "VEGAN", LastSyncedAt = DateTime.UtcNow };
+        var p2 = new Product { Barcode = "8930000000020", ProductName = "Món 2", ImageUrl = "https://images.openfoodfacts.org/2.jpg", VeganVerdict = "NON_VEGAN", LastSyncedAt = DateTime.UtcNow };
         _db.Products.AddRange(p1, p2);
         await _db.SaveChangesAsync();
 
@@ -373,11 +376,48 @@ public class ProductServiceTests : IDisposable
         var allScans = await _service.GetUserScanHistoryAsync(10, page: 1, size: 20);
         allScans.TotalItems.Should().Be(2);
         allScans.Items.First().ProductName.Should().Be("Món 2"); // Xếp ScannedAt giảm dần
+        allScans.Items.First().ImageUrl.Should().Be("https://images.openfoodfacts.org/2.jpg");
 
         // Act 2: Lọc theo verdict RED
         var redScans = await _service.GetUserScanHistoryAsync(10, verdict: "RED", page: 1, size: 20);
         redScans.TotalItems.Should().Be(1);
         redScans.Items.First().ProductName.Should().Be("Món 2");
         redScans.Items.First().VeganVerdict.Should().Be("RED");
+        redScans.Items.First().ImageUrl.Should().Be("https://images.openfoodfacts.org/2.jpg");
+    }
+
+    [Fact]
+    public async Task ScanBarcode_NewProductWithImageUrl_SavesImageUrlToDatabaseAndReturnsInResponse()
+    {
+        // Arrange
+        var barcode = "8938888777666";
+        var expectedImageUrl = "https://images.openfoodfacts.org/images/products/893/888/877/7666/front_en.400.jpg";
+        _mockOffClient.Setup(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenFoodFactsProductDto
+            {
+                Barcode = barcode,
+                ProductName = "Sữa yến mạch hữu cơ",
+                Brand = "OatLife",
+                ImageUrl = expectedImageUrl,
+                IngredientsText = "Yến mạch, nước tinh khiết, muối biển",
+                VeganVerdict = "VEGAN",
+                VerdictText = "Thuần chay"
+            });
+
+        _mockRedis.Setup(r => r.GetAsync<int?>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+        _mockRedis.Setup(r => r.IncrementAsync(It.IsAny<string>(), 1, It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        // Act
+        var result = await _service.ScanBarcodeAsync(barcode, null, "guest-1");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.ImageUrl.Should().Be(expectedImageUrl);
+
+        var savedProduct = await _db.Products.FirstOrDefaultAsync(p => p.Barcode == barcode);
+        savedProduct.Should().NotBeNull();
+        savedProduct!.ImageUrl.Should().Be(expectedImageUrl);
     }
 }
