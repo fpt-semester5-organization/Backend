@@ -179,7 +179,7 @@ public class FridgeController : BaseApiController
         [FromQuery] int limit = 10,
         CancellationToken ct = default)
     {
-        if (minSimilarity < 0.7 || minSimilarity > 1.0)
+        if (minSimilarity < 0.699999 || minSimilarity > 1.000001)
         {
             throw AppException.BadRequest(
                 ErrorCodes.ErrValidation,
