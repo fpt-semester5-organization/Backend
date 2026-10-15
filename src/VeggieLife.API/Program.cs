@@ -10,19 +10,30 @@ using VeggieLife.DAL.External.OpenFoodFacts;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Cấu hình DbContext kết nối SQL Server hoặc In-Memory (khi Database:UseInMemory = true hoặc chưa cấu hình SQL Server thật)
+// 1. Cấu hình DbContext kết nối SQL Server (Bắt buộc dùng SQL Server để lưu bền vững vào CSDL, không lưu trên RAM)
 var useInMemory = builder.Configuration.GetValue<bool>("Database:UseInMemory");
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
+if (string.IsNullOrWhiteSpace(connectionString) || connectionString.Contains("YOUR_PASSWORD"))
+{
+    connectionString = "Server=localhost;Database=VeggieLifeDb;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true;";
+}
+
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    if (useInMemory || string.IsNullOrWhiteSpace(connectionString) || connectionString.Contains("YOUR_PASSWORD"))
+    if (useInMemory)
     {
         options.UseInMemoryDatabase("VeggieLifeDb");
     }
     else
     {
-        options.UseSqlServer(connectionString);
+        options.UseSqlServer(connectionString, sqlOptions =>
+        {
+            sqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 3,
+                maxRetryDelay: TimeSpan.FromSeconds(5),
+                errorNumbersToAdd: null);
+        });
     }
 });
 
@@ -78,13 +89,31 @@ builder.Services.AddSwaggerWithAuth();
 
 var app = builder.Build();
 
-// Tự động nạp dữ liệu mẫu khi chạy chế độ In-Memory Database cục bộ (không chạy trong Test Runner)
-if ((useInMemory || app.Environment.IsDevelopment()) && !AppDomain.CurrentDomain.GetAssemblies().Any(a => a.FullName?.Contains("xunit") == true))
+// Tự động kiểm tra và khởi tạo Database / Seed dữ liệu nếu là database mới (không chạy trong Test Runner)
+if (!AppDomain.CurrentDomain.GetAssemblies().Any(a => a.FullName?.Contains("xunit") == true))
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    if (db.Database.ProviderName?.Contains("InMemory") == true)
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    if (db.Database.ProviderName?.Contains("SqlServer") == true)
     {
+        try
+        {
+            // Tự động tạo CSDL VeggieLifeDb và 38 bảng nếu máy mới chưa có
+            db.Database.EnsureCreated();
+            VeggieLife.API.Extensions.DevDataSeeder.SeedIfEmpty(db);
+            logger.LogInformation("CSDL SQL Server (VeggieLifeDb) đã kết nối thành công và sẵn sàng lưu trữ bền vững.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "LỖI KẾT NỐI SQL SERVER: Không thể kết nối tới SQL Server ({ConnectionString}). Vui lòng đảm bảo dịch vụ SQL Server (MSSQLSERVER/SQLEXPRESS) đang chạy trên máy.", connectionString);
+            throw new InvalidOperationException($"[LỖI CSDL]: Không thể kết nối tới SQL Server tại '{connectionString}'. Vui lòng bật dịch vụ SQL Server trên máy để lưu dữ liệu bền vững, không lưu trên RAM.", ex);
+        }
+    }
+    else if (db.Database.ProviderName?.Contains("InMemory") == true)
+    {
+        logger.LogWarning("CẢNH BÁO: Ứng dụng đang chạy ở chế độ IN-MEMORY DATABASE (lưu trên RAM). Mọi dữ liệu sẽ bị mất khi tắt ứng dụng!");
         VeggieLife.API.Extensions.DevDataSeeder.SeedIfEmpty(db);
         VeggieLife.API.Extensions.DevInMemoryDataSeeder.Seed(db);
     }
