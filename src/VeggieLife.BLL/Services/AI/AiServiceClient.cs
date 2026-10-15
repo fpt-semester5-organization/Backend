@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
@@ -19,15 +20,31 @@ public class AiServiceClient : IAiServiceClient
     private readonly HttpClient _httpClient;
     private readonly IAiCircuitBreaker _circuitBreaker;
     private readonly ILogger<AiServiceClient> _logger;
+    private readonly IConfiguration _configuration;
 
     public AiServiceClient(
         HttpClient httpClient,
         IAiCircuitBreaker circuitBreaker,
-        ILogger<AiServiceClient> logger)
+        ILogger<AiServiceClient> logger,
+        IConfiguration configuration)
     {
         _httpClient = httpClient;
         _circuitBreaker = circuitBreaker;
         _logger = logger;
+        _configuration = configuration;
+
+        // Cấu hình BaseAddress và Header nếu chưa được thiết lập từ DI
+        if (_httpClient.BaseAddress == null)
+        {
+            var baseUrl = _configuration["AiService:BaseUrl"] ?? "http://localhost:8080";
+            _httpClient.BaseAddress = new Uri(baseUrl);
+        }
+
+        if (!_httpClient.DefaultRequestHeaders.Contains("X-Internal-Api-Key"))
+        {
+            var apiKey = _configuration["AiService:InternalApiKey"] ?? "dev-internal-key";
+            _httpClient.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
+        }
     }
 
     public async Task<AiChatAnswerResponse> GetChatAnswerAsync(
@@ -49,10 +66,19 @@ public class AiServiceClient : IAiServiceClient
 
                 if (statusCode == 400)
                 {
-                    // Lọc an toàn nội dung câu hỏi (thô tục, nguy hiểm y tế - D119, FN-CHAT-02)
+                    if (errorBody.Contains("UNSAFE_CONTENT", StringComparison.OrdinalIgnoreCase) ||
+                        errorBody.Contains("vi phạm tiêu chuẩn an toàn", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Lọc an toàn nội dung câu hỏi (thô tục, nguy hiểm y tế - D119, FN-CHAT-02)
+                        throw AppException.BadRequest(
+                            ErrorCodes.ErrChatUnsafeContent,
+                            "Nội dung vi phạm tiêu chuẩn an toàn (vẫn tính lượt).");
+                    }
+
+                    _logger.LogError("[AiServiceClient] AI Service trả về lỗi dữ liệu đầu vào (HTTP 400): {ErrorBody}", errorBody);
                     throw AppException.BadRequest(
-                        ErrorCodes.ErrChatUnsafeContent,
-                        "Nội dung vi phạm tiêu chuẩn an toàn (vẫn tính lượt).");
+                        ErrorCodes.ErrValidation,
+                        $"Dữ liệu gửi sang AI Service không hợp lệ: {errorBody}");
                 }
 
                 if (statusCode == 503)

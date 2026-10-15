@@ -1,16 +1,43 @@
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace VeggieLife.BLL.DTOs.Ai;
 
 /// <summary>
 /// DTO gửi yêu cầu trả lời tư vấn sang AI Service (POST /chat/answer).
-/// Tuân thủ tài liệu đặc tả Backend & AI Service (Decision D118, S5-N1).
+/// Khớp 100% với schema ChatAnswerRequest của AI-Service (question, history, profile, candidateRecipes, userId, guestId).
 /// </summary>
 public class AiChatAnswerRequest
 {
-    public long SessionId { get; set; }
-    public string UserQuestion { get; set; } = string.Empty;
+    [JsonPropertyName("question")]
+    public string Question { get; set; } = string.Empty;
+
+    [JsonIgnore]
+    public string UserQuestion
+    {
+        get => Question;
+        set => Question = value;
+    }
+
+    [JsonPropertyName("history")]
     public List<AiChatMessageHistoryDto> History { get; set; } = new();
-    public AiUserProfileDto? UserProfile { get; set; }
+
+    [JsonPropertyName("profile")]
+    public AiUserProfileDto? Profile { get; set; }
+
+    [JsonIgnore]
+    public AiUserProfileDto? UserProfile
+    {
+        get => Profile;
+        set => Profile = value;
+    }
+
+    [JsonPropertyName("candidateRecipes")]
     public List<AiCandidateRecipeDto> CandidateRecipes { get; set; } = new();
+
+    [JsonPropertyName("userId")]
+    public int? UserId { get; set; }
+
+    [JsonPropertyName("guestId")]
+    public string? GuestId { get; set; }
 }

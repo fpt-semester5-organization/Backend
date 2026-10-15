@@ -305,8 +305,8 @@ public class ChatService : IChatService
             .OrderBy(m => m.MessageId)
             .Select(m => new AiChatMessageHistoryDto
             {
-                SenderType = m.SenderType,
-                Content = m.Content
+                Role = m.SenderType == ChatConstants.SenderAssistant ? "model" : "user",
+                Text = m.Content
             })
             .ToListAsync(ct);
 
@@ -337,9 +337,9 @@ public class ChatService : IChatService
 
                 userProfile = new AiUserProfileDto
                 {
-                    DietarySchool = profile.DietarySchool?.SchoolName ?? "Thuần chay",
-                    RequiresAlliumFree = profile.RequiresAlliumFree,
-                    Allergens = userAllergies.Select(ua => ua.Allergen.AllergenName).ToList(),
+                    DietarySchoolCode = profile.DietarySchool?.SchoolName ?? "Thuần chay",
+                    ForbiddenFoodGroups = profile.RequiresAlliumFree ? new List<string> { "ALLIUM" } : new List<string>(),
+                    AllergenGroups = userAllergies.Select(ua => ua.Allergen.AllergenName).ToList(),
                     HeightCm = profile.HeightCm,
                     CurrentWeightKg = profile.CurrentWeightKg,
                     TargetWeightKg = profile.TargetWeightKg,
@@ -378,17 +378,18 @@ public class ChatService : IChatService
                 RecipeId = r.RecipeId,
                 Title = r.Title,
                 CookTimeMinutes = r.CookTimeMinutes,
-                CaloriesKcal = r.CaloriesKcal
+                CaloriesKcal = (int)Math.Round(r.CaloriesKcal)
             })
             .ToListAsync(ct);
 
         var aiRequest = new AiChatAnswerRequest
         {
-            SessionId = sessionId,
-            UserQuestion = request.Message,
+            Question = request.Message,
             History = history,
-            UserProfile = userProfile,
-            CandidateRecipes = candidateRecipes
+            Profile = userProfile,
+            CandidateRecipes = candidateRecipes,
+            UserId = !isGuest ? (int?)userId!.Value : null,
+            GuestId = isGuest ? cleanedGuestUuid : null
         };
 
         // 4. Gọi AI Service POST /chat/answer & xử lý an toàn, hoàn lượt khi lỗi
@@ -497,10 +498,14 @@ public class ChatService : IChatService
             _dbContext.AiquotaLogs.Add(quotaLog);
         }
 
+        var auditRole = isGuest || string.Equals(userRole, UserRoles.Guest, StringComparison.OrdinalIgnoreCase)
+            ? "SYSTEM"
+            : userRole;
+
         var auditLog = new AuditLog
         {
             ActorUserId = !isGuest ? (int)userId!.Value : null,
-            ActorRole = userRole,
+            ActorRole = auditRole,
             Action = ChatConstants.ActionAiRequest,
             TargetTable = "ChatMessages",
             TargetId = sessionId.ToString(),
@@ -509,7 +514,8 @@ public class ChatService : IChatService
                 model = aiResponse.Usage?.Model,
                 prompt = aiResponse.Audit?.Prompt,
                 temperature = aiResponse.Usage?.Temperature,
-                rawResponse = aiResponse.Audit?.RawResponse
+                rawResponse = aiResponse.Audit?.RawResponse,
+                guestUuid = isGuest ? cleanedGuestUuid : null
             }, JsonOptions),
             CreatedAt = DateTime.UtcNow
         };
