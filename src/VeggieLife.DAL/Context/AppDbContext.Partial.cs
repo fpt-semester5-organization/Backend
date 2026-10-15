@@ -164,6 +164,12 @@ public partial class AppDbContext
         {
             entity.Property(q => q.CostEstimateUsd).HasPrecision(8, 4);
         });
+
+        // VeganVenues (Hỗ trợ Goong Place ID có độ dài lên tới 255 ký tự)
+        modelBuilder.Entity<VeganVenue>(entity =>
+        {
+            entity.Property(v => v.ExternalPlaceId).HasMaxLength(255).IsUnicode(false);
+        });
     }
 
     /// <summary>

@@ -15,7 +15,7 @@ BEGIN
     CREATE TABLE [dbo].[VeganVenues] (
         [Venue_ID]              INT IDENTITY(1,1) NOT NULL,
         [External_Source]       VARCHAR(20) NOT NULL,
-        [External_Place_ID]     VARCHAR(100) NULL,
+        [External_Place_ID]     VARCHAR(255) NULL,
         [Venue_Name]            NVARCHAR(150) NOT NULL,
         [Address]               NVARCHAR(255) NOT NULL,
         [Latitude]              DECIMAL(9,6) NOT NULL,
