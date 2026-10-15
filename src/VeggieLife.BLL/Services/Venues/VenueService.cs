@@ -376,7 +376,6 @@ public class VenueService : IVenueService
             Name = v.VenueName,
             Address = v.Address,
             DistanceKm = distanceKm,
-            IsFullyVegan = v.IsFullyVegan,
             ThumbnailUrl = v.ThumbnailUrl,
             Categories = v.VenueCategories.Select(vc => vc.Category.CategoryName).ToList(),
             DirectionsUrl = $"https://www.google.com/maps/dir/?api=1&destination={v.Latitude.ToString("G29", CultureInfo.InvariantCulture)},{v.Longitude.ToString("G29", CultureInfo.InvariantCulture)}"
@@ -567,11 +566,9 @@ public class VenueService : IVenueService
             Name = venue.VenueName,
             Address = venue.Address,
             DistanceKm = null,
-            IsFullyVegan = venue.IsFullyVegan,
             ThumbnailUrl = venue.ThumbnailUrl,
             Categories = venue.VenueCategories.Select(vc => vc.Category.CategoryName).ToList(),
             DirectionsUrl = directionsUrl,
-            OpeningHours = ExtractOpeningHours(venue.RawOriginJson),
             Source = venue.ExternalSource,
             LastSyncedAt = venue.CreatedAt
         };
@@ -719,72 +716,6 @@ public class VenueService : IVenueService
                 dto.DistanceKm = Math.Round(GeoHelper.CalculateDistanceKm(lat, lng, vLat, vLng), 1);
             }
         }
-    }
-
-    private static Dictionary<string, string> ExtractOpeningHours(string? rawOriginJson)
-    {
-        var defaultHours = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["mon"] = "08:00-21:00",
-            ["tue"] = "08:00-21:00",
-            ["wed"] = "08:00-21:00",
-            ["thu"] = "08:00-21:00",
-            ["fri"] = "08:00-21:00",
-            ["sat"] = "08:00-21:00",
-            ["sun"] = "08:00-21:00"
-        };
-
-        if (string.IsNullOrWhiteSpace(rawOriginJson))
-        {
-            return defaultHours;
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(rawOriginJson);
-            var root = doc.RootElement;
-
-            if (root.TryGetProperty("opening_hours", out var hoursElement) ||
-                root.TryGetProperty("openingHours", out hoursElement) ||
-                root.TryGetProperty("hours", out hoursElement))
-            {
-                if (hoursElement.ValueKind == JsonValueKind.Object)
-                {
-                    var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var prop in hoursElement.EnumerateObject())
-                    {
-                        result[prop.Name.ToLowerInvariant()] = prop.Value.GetString() ?? "08:00-21:00";
-                    }
-                    if (result.Count > 0)
-                    {
-                        return result;
-                    }
-                }
-                else if (hoursElement.ValueKind == JsonValueKind.Array)
-                {
-                    var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    var days = new[] { "mon", "tue", "wed", "thu", "fri", "sat", "sun" };
-                    int index = 0;
-                    foreach (var item in hoursElement.EnumerateArray())
-                    {
-                        if (index < days.Length)
-                        {
-                            result[days[index++]] = item.GetString() ?? "08:00-21:00";
-                        }
-                    }
-                    if (result.Count > 0)
-                    {
-                        return result;
-                    }
-                }
-            }
-        }
-        catch
-        {
-            // Bỏ qua lỗi parse JSON và dùng giờ mặc định
-        }
-
-        return defaultHours;
     }
 }
 

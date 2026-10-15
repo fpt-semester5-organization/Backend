@@ -289,7 +289,6 @@ public class RecipesControllerTests
                 Name = "Ưu Đàm Chay",
                 Address = "34 Hàng Bài, Hoàn Kiếm, Hà Nội",
                 DistanceKm = 0.8,
-                IsFullyVegan = true,
                 Categories = new List<string> { "Món Cơm & Xôi Chay" },
                 DirectionsUrl = "https://www.google.com/maps/dir/?api=1&destination=21.0227,105.8524"
             }

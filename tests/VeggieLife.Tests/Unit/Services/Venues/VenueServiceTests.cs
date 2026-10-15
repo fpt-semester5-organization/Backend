@@ -654,7 +654,7 @@ public class VenueServiceTests : IDisposable
     #region FN-MAP-02: Xem chi tiết quán (GetVenueDetailAsync)
 
     [Fact]
-    public async Task GetVenueDetail_ValidId_ReturnsVenueDetailWithCategoriesAndOpeningHours()
+    public async Task GetVenueDetail_ValidId_ReturnsVenueDetailWithCategories()
     {
         // ACT
         var result = await _service.GetVenueDetailAsync(301);
@@ -664,11 +664,8 @@ public class VenueServiceTests : IDisposable
         result.VenueId.Should().Be(301);
         result.Name.Should().Be("Ưu Đàm Chay");
         result.Address.Should().Be("34 Hàng Bài, Hoàn Kiếm, Hà Nội");
-        result.IsFullyVegan.Should().BeTrue();
         result.Categories.Should().Contain("Món Cơm & Xôi Chay");
         result.DirectionsUrl.Should().Contain("destination=21.0227,105.8524");
-        result.OpeningHours.Should().NotBeNull();
-        result.OpeningHours.Should().ContainKey("mon");
         result.Source.Should().Be("GOONG");
 
         // Xác nhận đã lưu cache với TTL 24h (BR-SYS-CACHE-01)
@@ -750,7 +747,6 @@ public class VenueServiceTests : IDisposable
             Name = "Ưu Đàm Chay (From Cache)",
             Address = "34 Hàng Bài, Hà Nội",
             DirectionsUrl = "https://www.google.com/maps/dir/?api=1&destination=21.0227,105.8524",
-            IsFullyVegan = true,
             Source = "GOONG"
         };
         _mockRedis.Setup(r => r.GetAsync<VenueDetailDto>("venue_detail:301", It.IsAny<CancellationToken>()))

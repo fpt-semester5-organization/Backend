@@ -57,7 +57,6 @@ public class VenuesControllerTests
                 Name = "Ưu Đàm Chay",
                 Address = "34 Hàng Bài, Hà Nội",
                 DistanceKm = 0.7,
-                IsFullyVegan = true,
                 DirectionsUrl = "https://www.google.com/maps/dir/?api=1&destination=21.0227,105.8524"
             }
         };
@@ -115,8 +114,7 @@ public class VenuesControllerTests
                 VenueId = 311,
                 Name = "Cơm Chay Tâm An",
                 Address = "12 Lê Lợi, Quận 1, TP.HCM",
-                DistanceKm = 0.1,
-                IsFullyVegan = true
+                DistanceKm = 0.1
             }
         };
         var quota = new GuestMapQuotaDto { Used = 1, Limit = 3, Remaining = 2 };
@@ -174,7 +172,6 @@ public class VenuesControllerTests
             VenueId = venueId,
             Name = "Cơm Chay Tâm An",
             Address = "12 Lê Lợi, Quận 1, TP.HCM",
-            IsFullyVegan = true,
             Categories = new List<string> { "Cơm chay" },
             DirectionsUrl = "https://www.google.com/maps/dir/?api=1&destination=10.7729,106.6983",
             Source = "HAPPYCOW"
