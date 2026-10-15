@@ -304,9 +304,9 @@ public class VenueServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ListNearbyVenues_DoesNotFilterByRating_ReturnsVenuesRegardlessOfRating()
+    public async Task ListNearbyVenues_MemberAndGuest_ReturnsAllVenuesInRadius()
     {
-        // ARRANGE: Hà Nội (chỉ tích hợp Goong Places, không lọc theo số sao Rating)
+        // ARRANGE: Hà Nội
         var request = new ListNearbyVenuesRequest
         {
             Lat = 21.0285,
@@ -320,9 +320,9 @@ public class VenueServiceTests : IDisposable
         // ACT: Khách (GUEST)
         var guestResult = await _service.ListNearbyVenuesAsync(request, userId: null, userRole: UserRoles.Guest, guestUuid: "guest-test-1");
 
-        // ASSERT: Cả Thành viên và Khách đều nhận được quán bất kể số sao (kể cả rating < 2.5 sao)
-        memberResult.Venues.Should().Contain(v => v.Rating < 2.5m);
-        guestResult.Venues.Should().Contain(v => v.Rating < 2.5m);
+        // ASSERT: Cả Thành viên và Khách đều nhận được quán trong bán kính
+        memberResult.Venues.Should().Contain(v => v.VenueId == 305);
+        guestResult.Venues.Should().Contain(v => v.VenueId == 305);
     }
 
     [Fact]
@@ -533,8 +533,7 @@ public class VenueServiceTests : IDisposable
                         Lat = 16.0680,
                         Lng = 108.2210
                     }
-                },
-                Rating = 4.7m
+                }
             });
 
         var serviceWithGoong = new VenueService(_db, _mockRedis.Object, _mockLogger.Object, mockGoong.Object);
@@ -665,7 +664,6 @@ public class VenueServiceTests : IDisposable
         result.VenueId.Should().Be(301);
         result.Name.Should().Be("Ưu Đàm Chay");
         result.Address.Should().Be("34 Hàng Bài, Hoàn Kiếm, Hà Nội");
-        result.Rating.Should().Be(4.8m);
         result.IsFullyVegan.Should().BeTrue();
         result.Categories.Should().Contain("Món Cơm & Xôi Chay");
         result.DirectionsUrl.Should().Contain("destination=21.0227,105.8524");
@@ -752,7 +750,6 @@ public class VenueServiceTests : IDisposable
             Name = "Ưu Đàm Chay (From Cache)",
             Address = "34 Hàng Bài, Hà Nội",
             DirectionsUrl = "https://www.google.com/maps/dir/?api=1&destination=21.0227,105.8524",
-            Rating = 4.8m,
             IsFullyVegan = true,
             Source = "GOONG"
         };
@@ -945,7 +942,7 @@ public class VenueServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ListRecipeVenues_MemberRole_IncludesVenuesRegardlessOfRating()
+    public async Task ListRecipeVenues_MemberRole_ReturnsMatchingCategoryVenues()
     {
         // ARRANGE
         var recipe = new Recipe
@@ -973,7 +970,7 @@ public class VenueServiceTests : IDisposable
             userRole: UserRoles.Member,
             guestUuid: null);
 
-        // ASSERT: Quán Dưỡng Sinh Cũ (Rating 2.1 < 2.5) vẫn được hiển thị (không lọc sao vì chỉ dùng Goong Map)
+        // ASSERT: Quán Dưỡng Sinh Cũ (VenueId 305) cùng danh mục vẫn được hiển thị
         results.Should().Contain(v => v.VenueId == 305);
     }
 

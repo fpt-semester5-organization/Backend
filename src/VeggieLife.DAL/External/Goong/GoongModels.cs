@@ -61,9 +61,6 @@ public class GoongPlaceDetailDto
 
     [JsonPropertyName("geometry")]
     public GoongGeometry? Geometry { get; set; }
-
-    [JsonPropertyName("rating")]
-    public decimal? Rating { get; set; }
 }
 
 public class GoongGeometry
