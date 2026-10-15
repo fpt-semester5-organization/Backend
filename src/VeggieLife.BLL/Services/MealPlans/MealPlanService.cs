@@ -671,7 +671,7 @@ public class MealPlanService : IMealPlanService
         var aiLog = new AiquotaLog
         {
             UserId = userId,
-            FeatureCode = "MEAL_PLAN",
+            FeatureCode = "MEAL_PLAN_GEN",
             TokensConsumed = generatedByAi ? (tokensConsumed > 0 ? tokensConsumed : 450) : 0,
             CostEstimateUsd = generatedByAi ? 0.0015m : 0m,
             RequestStatus = "SUCCESS",
@@ -889,8 +889,8 @@ public class MealPlanService : IMealPlanService
             Action = "MEAL_PLAN_ACTIVATED",
             TargetTable = "MealPlans",
             TargetId = id.ToString(),
-            OldValue = "DRAFT",
-            NewValue = "ACTIVE",
+            OldValue = JsonSerializer.Serialize(new { status = "DRAFT" }),
+            NewValue = JsonSerializer.Serialize(new { status = "ACTIVE" }),
             CreatedAt = DateTime.UtcNow
         };
         _db.AuditLogs.Add(auditLog);
@@ -1026,8 +1026,8 @@ public class MealPlanService : IMealPlanService
             Action = "MEAL_SLOT_SWAPPED",
             TargetTable = "MealPlans",
             TargetId = id.ToString(),
-            OldValue = oldRecipe.RecipeId.ToString(),
-            NewValue = newRecipe.RecipeId.ToString(),
+            OldValue = JsonSerializer.Serialize(new { recipeId = oldRecipe.RecipeId }),
+            NewValue = JsonSerializer.Serialize(new { recipeId = newRecipe.RecipeId }),
             Note = currentPhase,
             CreatedAt = DateTime.UtcNow
         };
