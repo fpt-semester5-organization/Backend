@@ -408,7 +408,7 @@ public class VenueService : IVenueService
                 10,
                 ct);
 
-            bool hasNewEntities = false;
+            var newVenuesToInsert = new List<(VeganVenue Entity, double Distance)>();
 
             foreach (var pred in predictions)
             {
@@ -433,40 +433,65 @@ public class VenueService : IVenueService
                     var distance = GeoHelper.CalculateDistanceKm(targetLat, targetLng, detail.Geometry.Location.Lat, detail.Geometry.Location.Lng);
                     if (distance <= effectiveRadius)
                     {
+                        var venueName = !string.IsNullOrWhiteSpace(detail.Name)
+                            ? detail.Name.Trim()
+                            : (!string.IsNullOrWhiteSpace(pred.StructuredFormatting?.MainText) ? pred.StructuredFormatting.MainText.Trim() : "Quán chay");
+                        if (venueName.Length > 150)
+                        {
+                            venueName = venueName[..150];
+                        }
+
+                        var address = !string.IsNullOrWhiteSpace(detail.FormattedAddress)
+                            ? detail.FormattedAddress.Trim()
+                            : (pred.Description?.Trim() ?? string.Empty);
+                        if (address.Length > 255)
+                        {
+                            address = address[..255];
+                        }
+
+                        var rawPlaceId = !string.IsNullOrWhiteSpace(detail.PlaceId) ? detail.PlaceId : pred.PlaceId;
+                        if (!string.IsNullOrWhiteSpace(rawPlaceId) && rawPlaceId.Length > 255)
+                        {
+                            rawPlaceId = rawPlaceId[..255];
+                        }
+
                         var newVenue = new VeganVenue
                         {
-                            VenueName = !string.IsNullOrWhiteSpace(detail.Name)
-                                ? detail.Name
-                                : (!string.IsNullOrWhiteSpace(pred.StructuredFormatting?.MainText) ? pred.StructuredFormatting.MainText : "Quán chay"),
-                            Address = !string.IsNullOrWhiteSpace(detail.FormattedAddress) ? detail.FormattedAddress : pred.Description,
-                            Latitude = (decimal)detail.Geometry.Location.Lat,
-                            Longitude = (decimal)detail.Geometry.Location.Lng,
+                            VenueName = venueName,
+                            Address = address,
+                            Latitude = (decimal)Math.Round(detail.Geometry.Location.Lat, 6),
+                            Longitude = (decimal)Math.Round(detail.Geometry.Location.Lng, 6),
                             Rating = 0.0m,
                             IsActive = true,
                             IsFullyVegan = true,
                             ExternalSource = "GOONG",
-                            ExternalPlaceId = detail.PlaceId,
+                            ExternalPlaceId = rawPlaceId,
                             CreatedAt = DateTime.UtcNow,
                             ThumbnailUrl = "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=600&auto=format&fit=crop"
                         };
 
                         _db.VeganVenues.Add(newVenue);
-                        venuesFromDb.Add(newVenue);
-                        candidateVenues.Add(MapToDto(newVenue, distance));
-                        hasNewEntities = true;
+                        newVenuesToInsert.Add((newVenue, distance));
                     }
                 }
             }
 
-            if (hasNewEntities)
+            if (newVenuesToInsert.Count > 0)
             {
                 await _db.SaveChangesAsync(ct);
-                _logger.LogInformation("Đã đồng bộ tự động các quán chay mới từ Goong Places API vào CSDL.");
+                _logger.LogInformation("Đã đồng bộ tự động {Count} quán chay mới từ Goong Places API vào CSDL.", newVenuesToInsert.Count);
+
+                // Chỉ map sang DTO sau khi SaveChangesAsync thành công để Entity nhận VenueId thực từ SQL Server
+                foreach (var (savedVenue, distance) in newVenuesToInsert)
+                {
+                    venuesFromDb.Add(savedVenue);
+                    candidateVenues.Add(MapToDto(savedVenue, distance));
+                }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Lỗi xảy ra khi tự động đồng bộ quán từ Goong Places API quanh ({Lat}, {Lng}).", targetLat, targetLng);
+            _logger.LogError(ex, "Lỗi xảy ra khi tự động đồng bộ quán từ Goong Places API quanh ({Lat}, {Lng}).", targetLat, targetLng);
         }
     }
 
