@@ -304,7 +304,7 @@ public class RecipesController : BaseApiController
     /// <param name="ct">CancellationToken.</param>
     [HttpGet("{id:int}/venues")]
     [AllowAnonymous]
-    [Tags("VENU")]
+    [Tags("Venues")]
     [ProducesResponseType(typeof(ApiResponse<List<NearbyVenueItemDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
