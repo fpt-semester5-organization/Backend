@@ -13,11 +13,9 @@ public class VenueDetailDto
     public string Name { get; set; } = string.Empty;
     public string Address { get; set; } = string.Empty;
     public double? DistanceKm { get; set; }
-    public bool IsFullyVegan { get; set; }
     public string? ThumbnailUrl { get; set; }
     public List<string> Categories { get; set; } = new();
     public string DirectionsUrl { get; set; } = string.Empty;
-    public Dictionary<string, string> OpeningHours { get; set; } = new();
     public string Source { get; set; } = string.Empty;
     public DateTime LastSyncedAt { get; set; }
 }
