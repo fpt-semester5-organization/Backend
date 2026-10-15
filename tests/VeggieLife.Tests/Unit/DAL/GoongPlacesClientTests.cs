@@ -136,8 +136,7 @@ public class GoongPlacesClientTests
                         Lat = 16.0678,
                         Lng = 108.2208
                     }
-                },
-                Rating = 4.8m
+                }
             }
         };
 
@@ -169,7 +168,6 @@ public class GoongPlacesClientTests
         result!.Name.Should().Be("Quán Cơm Chay An Lạc");
         result.Geometry?.Location?.Lat.Should().Be(16.0678);
         result.Geometry?.Location?.Lng.Should().Be(108.2208);
-        result.Rating.Should().Be(4.8m);
     }
 
     [Fact]
