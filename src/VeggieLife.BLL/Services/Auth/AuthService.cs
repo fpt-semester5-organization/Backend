@@ -886,6 +886,300 @@ public class AuthService : IAuthService
         _logger.LogInformation("Người dùng UserId {UserId} đã đăng xuất thành công.", userId);
     }
 
+    public async Task ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken ct = default)
+    {
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+
+        // 1. Kiểm tra khóa OTP 15 phút (otp_lock:{email}) theo BR-USR-AUTH-01
+        var lockKey = $"otp_lock:{normalizedEmail}";
+        if (await _redisService.ExistsAsync(lockKey, ct))
+        {
+            throw AppException.TooManyRequests(
+                ErrorCodes.ErrAuthOtpLocked,
+                "Địa chỉ email này đang bị tạm khóa xác thực OTP trong vòng 15 phút. Vui lòng thử lại sau.");
+        }
+
+        // 2. Tìm Users ACTIVE theo Email; không có hoặc không ACTIVE thì bỏ qua nhưng vẫn trả thành công (chống User Enumeration)
+        var user = await _dbContext.Users
+            .FirstOrDefaultAsync(u => u.Email == normalizedEmail, ct);
+
+        if (user == null || user.AccountStatus != AccountStatuses.Active)
+        {
+            _logger.LogInformation(
+                "Yêu cầu quên mật khẩu cho {Email} bị bỏ qua do người dùng không tồn tại hoặc tài khoản không ở trạng thái ACTIVE.",
+                normalizedEmail);
+            return;
+        }
+
+        // 3. Sinh mã OTP 6 chữ số bằng CSPRNG (BR-USR-AUTH-01)
+        var otpCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+        var otpHash = ComputeSha256(otpCode);
+
+        // 4. Lưu OTP trên Redis: otp:PASSWORD_RESET:{email} (SET, TTL 5m)
+        var otpKey = $"otp:{OtpPurposes.PasswordReset}:{normalizedEmail}";
+        var cacheItem = new OtpCacheItem
+        {
+            OtpHash = otpHash,
+            FailedAttempts = 0,
+            CreatedAt = DateTime.UtcNow,
+            Purpose = OtpPurposes.PasswordReset
+        };
+
+        await _redisService.SetAsync(otpKey, cacheItem, TimeSpan.FromSeconds(OtpExpirySeconds), ct);
+
+        // 5. Gửi email bất đồng bộ
+        await _emailService.SendOtpEmailAsync(normalizedEmail, otpCode, OtpPurposes.PasswordReset, ct);
+
+        _logger.LogInformation("Đã gửi mã OTP đặt lại mật khẩu thành công tới email {Email}.", normalizedEmail);
+    }
+
+    public async Task ResetPasswordAsync(ResetPasswordRequest request, CancellationToken ct = default)
+    {
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+
+        // 1. Kiểm tra chuẩn mật khẩu mới theo BR-AUTH-001 (≥ 8 ký tự, hoa, thường, số, ký tự đặc biệt)
+        var (isPassValid, passError) = PasswordValidator.Validate(request.NewPassword);
+        if (!isPassValid)
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrAuthWeakPassword,
+                passError ?? "Mật khẩu không đạt tiêu chuẩn bảo mật.");
+        }
+
+        // 2. Kiểm tra khóa 15 phút (otp_lock:{email}) theo BR-USR-AUTH-01
+        var lockKey = $"otp_lock:{normalizedEmail}";
+        if (await _redisService.ExistsAsync(lockKey, ct))
+        {
+            throw AppException.TooManyRequests(
+                ErrorCodes.ErrAuthOtpLocked,
+                "Bạn đã nhập sai mã OTP 5 lần liên tiếp. Chức năng xác thực bị tạm khóa trong vòng 15 phút. Vui lòng thử lại sau.");
+        }
+
+        // 3. Đọc OTP trên Redis; nếu không có hoặc hết hạn thì báo lỗi chung
+        var otpKey = $"otp:{OtpPurposes.PasswordReset}:{normalizedEmail}";
+        var cacheItem = await _redisService.GetAsync<OtpCacheItem>(otpKey, ct);
+
+        if (cacheItem == null)
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrAuthOtpExpired,
+                "Mã xác thực không hợp lệ hoặc đã hết hạn. Vui lòng yêu cầu gửi lại mã mới.");
+        }
+
+        // 4. So sánh chuỗi băm SHA-256 theo thời gian hằng (Constant-time comparison)
+        var inputHash = ComputeSha256(request.Otp.Trim());
+        var isMatch = CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(inputHash),
+            Encoding.UTF8.GetBytes(cacheItem.OtpHash));
+
+        if (!isMatch)
+        {
+            cacheItem.FailedAttempts++;
+
+            // Nếu sai đủ 5 lần: xóa mã OTP và kích hoạt khóa 15 phút
+            if (cacheItem.FailedAttempts >= MaxFailedAttempts)
+            {
+                await _redisService.RemoveAsync(otpKey, ct);
+                await _redisService.SetAsync(lockKey, "LOCKED", TimeSpan.FromMinutes(LockoutMinutes), ct);
+
+                _logger.LogWarning("Email {Email} đã nhập sai OTP đặt lại mật khẩu 5 lần. Đã khóa 15 phút.", normalizedEmail);
+
+                throw AppException.TooManyRequests(
+                    ErrorCodes.ErrAuthOtpLocked,
+                    "Bạn đã nhập sai mã OTP 5 lần liên tiếp. Chức năng xác thực bị tạm khóa trong vòng 15 phút. Vui lòng thử lại sau.");
+            }
+
+            // Chưa đủ 5 lần: cập nhật lại số lần sai trên Redis với thời gian sống còn lại
+            var elapsed = DateTime.UtcNow - cacheItem.CreatedAt;
+            var remainingTtl = TimeSpan.FromSeconds(OtpExpirySeconds) - elapsed;
+            if (remainingTtl <= TimeSpan.Zero)
+            {
+                remainingTtl = TimeSpan.FromSeconds(10);
+            }
+
+            await _redisService.SetAsync(otpKey, cacheItem, remainingTtl, ct);
+
+            var remainingAttempts = MaxFailedAttempts - cacheItem.FailedAttempts;
+            throw AppException.BadRequest(
+                ErrorCodes.ErrAuthOtpIncorrect,
+                $"Mã xác thực OTP không chính xác. Bạn còn {remainingAttempts} lần thử.",
+                new { remainingAttempts });
+        }
+
+        // 5. Mã hợp lệ: Xóa OTP khỏi Redis
+        await _redisService.RemoveAsync(otpKey, ct);
+
+        // 6. Tìm người dùng trong CSDL
+        var user = await _dbContext.Users
+            .FirstOrDefaultAsync(u => u.Email == normalizedEmail, ct);
+
+        if (user == null)
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrAuthOtpExpired,
+                "Mã xác thực không hợp lệ hoặc tài khoản không tồn tại.");
+        }
+
+        // 7. Cập nhật mật khẩu mới, mở khóa tài khoản và reset đếm đăng nhập sai (FN-AUTH-12)
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword, workFactor: 12);
+        user.FailedLoginCount = 0;
+        user.LockedUntil = null;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        // 8. Thu hồi toàn bộ refresh token của tài khoản (BR-AUTH-004)
+        try
+        {
+            var userSessionsKey = $"user_sessions:{user.UserId}";
+            var activeHashes = await _redisService.GetAsync<List<string>>(userSessionsKey, ct);
+            if (activeHashes != null)
+            {
+                foreach (var hash in activeHashes)
+                {
+                    await _redisService.RemoveAsync($"refresh:{hash}", ct);
+                }
+            }
+            await _redisService.RemoveAsync(userSessionsKey, ct);
+            await _redisService.RemoveAsync($"admin_session:{user.UserId}", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi khi thu hồi các phiên đăng nhập cũ trên Redis cho User {UserId}.", user.UserId);
+        }
+
+        // 9. Ghi AuditLogs PASSWORD_RESET
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            ActorUserId = user.UserId,
+            ActorRole = user.Role ?? UserRoles.Member,
+            Action = "PASSWORD_RESET",
+            TargetTable = "Users",
+            TargetId = user.UserId.ToString(),
+            CreatedAt = DateTime.UtcNow,
+            Note = "Đặt lại mật khẩu thành công qua xác thực mã OTP."
+        });
+
+        await _dbContext.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Người dùng {Email} (UserId: {UserId}) đã đặt lại mật khẩu thành công.", normalizedEmail, user.UserId);
+    }
+
+    public async Task ChangePasswordAsync(long userId, ChangePasswordRequest request, string? currentRefreshToken = null, CancellationToken ct = default)
+    {
+        // 1. Kiểm tra tham số và tìm người dùng trong CSDL
+        if (userId <= 0)
+        {
+            throw AppException.Unauthorized(
+                ErrorCodes.ErrAuthInvalidToken,
+                "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.");
+        }
+
+        var user = await _dbContext.Users
+            .FirstOrDefaultAsync(u => u.UserId == (int)userId, ct);
+
+        if (user == null)
+        {
+            throw AppException.Unauthorized(
+                ErrorCodes.ErrAuthInvalidToken,
+                "Người dùng không tồn tại hoặc phiên đăng nhập không hợp lệ.");
+        }
+
+        // 2. Không áp dụng cho tài khoản chỉ dùng Google (chưa tạo mật khẩu)
+        if (string.IsNullOrEmpty(user.PasswordHash))
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Tài khoản đăng nhập bằng Google không thể đổi mật khẩu qua chức năng này.");
+        }
+
+        // 3. Xác minh mật khẩu hiện tại bằng BCrypt
+        var isCurrentPasswordValid = BCrypt.Net.BCrypt.Verify(request.CurrentPassword, user.PasswordHash);
+        if (!isCurrentPasswordValid)
+        {
+            throw AppException.Unauthorized(
+                ErrorCodes.ErrAuthInvalidCredentials,
+                "Mật khẩu hiện tại không chính xác.");
+        }
+
+        // 4. Kiểm tra độ mạnh mật khẩu mới theo chuẩn BR-AUTH-001
+        var (isPassValid, passError) = PasswordValidator.Validate(request.NewPassword);
+        if (!isPassValid)
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrAuthWeakPassword,
+                passError ?? "Mật khẩu mới không đạt tiêu chuẩn bảo mật.");
+        }
+
+        // 5. Kiểm tra mật khẩu mới phải khác mật khẩu hiện tại
+        if (request.CurrentPassword == request.NewPassword || BCrypt.Net.BCrypt.Verify(request.NewPassword, user.PasswordHash))
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrAuthWeakPassword,
+                "Mật khẩu mới không được trùng với mật khẩu hiện tại.");
+        }
+
+        // 6. Cập nhật PasswordHash mới
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword, workFactor: 12);
+        user.UpdatedAt = DateTime.UtcNow;
+
+        // 7. Thu hồi các refresh token khác của tài khoản (BR-AUTH-004)
+        try
+        {
+            var userSessionsKey = $"user_sessions:{user.UserId}";
+            var activeHashes = await _redisService.GetAsync<List<string>>(userSessionsKey, ct);
+            if (activeHashes != null)
+            {
+                string? currentHash = !string.IsNullOrEmpty(currentRefreshToken)
+                    ? ComputeSha256(currentRefreshToken.Trim())
+                    : null;
+
+                var remainingSessions = new List<string>();
+
+                foreach (var hash in activeHashes)
+                {
+                    if (currentHash != null && hash == currentHash)
+                    {
+                        // Giữ lại phiên hiện tại của thiết bị đang gọi
+                        remainingSessions.Add(hash);
+                    }
+                    else
+                    {
+                        // Thu hồi các phiên khác
+                        await _redisService.RemoveAsync($"refresh:{hash}", ct);
+                    }
+                }
+
+                if (remainingSessions.Count > 0)
+                {
+                    await _redisService.SetAsync(userSessionsKey, remainingSessions, TimeSpan.FromDays(7), ct);
+                }
+                else
+                {
+                    await _redisService.RemoveAsync(userSessionsKey, ct);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi khi thu hồi các phiên đăng nhập khác trên Redis cho User {UserId}.", user.UserId);
+        }
+
+        // 8. Ghi AuditLogs PASSWORD_CHANGED
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            ActorUserId = user.UserId,
+            ActorRole = user.Role ?? UserRoles.Member,
+            Action = "PASSWORD_CHANGED",
+            TargetTable = "Users",
+            TargetId = user.UserId.ToString(),
+            CreatedAt = DateTime.UtcNow,
+            Note = "Người dùng đổi mật khẩu thành công. Các phiên đăng nhập khác đã bị thu hồi."
+        });
+
+        await _dbContext.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Người dùng UserId {UserId} ({Email}) đã đổi mật khẩu thành công.", user.UserId, user.Email);
+    }
+
     private static string ComputeSha256(string raw)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(raw));

@@ -196,4 +196,43 @@ GET {{VeggieLife.API_HostAddress}}/api/v1/users/me/scans?verdict=RED&page=1&size
 Authorization: Bearer {{memberToken}}
 Accept: application/json
 
+### ============================================================================
+### 17. FN-AUTH-11: QUÊN MẬT KHẨU (GỬI OTP ĐẶT LẠI MẬT KHẨU)
+### ============================================================================
+POST {{VeggieLife.API_HostAddress}}/api/v1/auth/forgot-password
+Content-Type: application/json
+
+{
+  "email": "{{MemberEmail}}"
+}
+
+### Kiểm tra mã OTP vừa sinh trong môi trường Dev (dev-latest-otp)
+GET {{VeggieLife.API_HostAddress}}/api/v1/auth/dev-latest-otp?email={{MemberEmail}}
+Accept: application/json
+
+### ============================================================================
+### 18. FN-AUTH-12: ĐẶT LẠI MẬT KHẨU BẰNG MÃ OTP (RESET PASSWORD)
+### ============================================================================
+POST {{VeggieLife.API_HostAddress}}/api/v1/auth/reset-password
+Content-Type: application/json
+
+{
+  "email": "{{MemberEmail}}",
+  "otp": "123456",
+  "newPassword": "NewVeggie@2026"
+}
+
+### ============================================================================
+### 19. FN-AUTH-13: ĐỔI MẬT KHẨU (CHANGE PASSWORD)
+### ============================================================================
+PUT {{VeggieLife.API_HostAddress}}/api/v1/auth/password
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{
+  "currentPassword": "Veggie@2026",
+  "newPassword": "NewVeggie@2026"
+}
+
+
 

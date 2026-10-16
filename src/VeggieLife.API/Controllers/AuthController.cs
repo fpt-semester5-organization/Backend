@@ -223,6 +223,58 @@ public class AuthController : BaseApiController
     }
 
     /// <summary>
+    /// FN-AUTH-11: Quên mật khẩu (gửi OTP).
+    /// Gửi mã OTP đặt lại mật khẩu 6 chữ số hiệu lực 5 phút tới Email của tài khoản ACTIVE; luôn trả thông điệp chung.
+    /// </summary>
+    /// <param name="request">Email tài khoản yêu cầu đặt lại mật khẩu.</param>
+    /// <param name="ct">Cancellation Token.</param>
+    /// <returns>HTTP 200 OK với thông điệp chung.</returns>
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken ct)
+    {
+        await _authService.ForgotPasswordAsync(request, ct);
+        return OkResponse<object?>(null, "Nếu email tồn tại, mã OTP đặt lại mật khẩu đã được gửi.");
+    }
+
+    /// <summary>
+    /// FN-AUTH-12: Đặt lại mật khẩu bằng OTP.
+    /// Xác thực OTP đặt lại mật khẩu, cập nhật mật khẩu mới đạt chuẩn, mở khóa đăng nhập và thu hồi toàn bộ phiên hiện có.
+    /// </summary>
+    /// <param name="request">Email, mã OTP 6 số và mật khẩu mới.</param>
+    /// <param name="ct">Cancellation Token.</param>
+    /// <returns>HTTP 200 OK.</returns>
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken ct)
+    {
+        await _authService.ResetPasswordAsync(request, ct);
+        return OkResponse<object?>(null, "Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.");
+    }
+
+    /// <summary>
+    /// FN-AUTH-13: Đổi mật khẩu.
+    /// Người dùng đang đăng nhập đổi mật khẩu sau khi xác nhận mật khẩu hiện tại; các phiên khác bị thu hồi.
+    /// </summary>
+    /// <param name="request">Mật khẩu hiện tại và mật khẩu mới.</param>
+    /// <param name="ct">Cancellation Token.</param>
+    /// <returns>HTTP 200 OK.</returns>
+    [HttpPut("password")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request, CancellationToken ct)
+    {
+        Request.Cookies.TryGetValue("refresh_token", out var refreshToken);
+        if (string.IsNullOrEmpty(refreshToken) && Request.Headers.TryGetValue("X-Refresh-Token", out var headerToken))
+        {
+            refreshToken = headerToken.ToString().Trim();
+        }
+
+        var userId = CurrentUserId ?? 0;
+        await _authService.ChangePasswordAsync(userId, request, refreshToken, ct);
+        return OkResponse<object?>(null, "Đổi mật khẩu thành công.");
+    }
+
+    /// <summary>
     /// Endpoint hỗ trợ kiểm thử tự động trong môi trường Development: Lấy mã OTP vừa sinh.
     /// Không kích hoạt trong môi trường Production.
     /// </summary>
