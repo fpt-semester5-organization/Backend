@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -247,7 +248,7 @@ public class SubscriptionService : ISubscriptionService
             Action = "CHECKOUT_SUBSCRIPTION",
             TargetTable = "PaymentTransactions",
             TargetId = orderCode,
-            NewValue = $"PlanId={plan.PlanId};Amount={plan.Price};Gateway={gateway}",
+            NewValue = JsonSerializer.Serialize(new { planId = plan.PlanId, amount = plan.Price, gateway }),
             Note = $"Khởi tạo đơn nâng cấp VIP {plan.PlanName} qua {gateway}",
             CreatedAt = now
         });
@@ -377,7 +378,7 @@ public class SubscriptionService : ISubscriptionService
                 Action = "PAYMENT_AMOUNT_MISMATCH",
                 TargetTable = "PaymentTransactions",
                 TargetId = transaction.TransactionId.ToString(),
-                NewValue = $"ReceivedAmount={request.Amount};ExpectedAmount={transaction.AmountVnd}",
+                NewValue = JsonSerializer.Serialize(new { receivedAmount = request.Amount, expectedAmount = transaction.AmountVnd }),
                 Note = "Lệch số tiền thanh toán từ Webhook IPN.",
                 CreatedAt = now
             });
@@ -404,7 +405,7 @@ public class SubscriptionService : ISubscriptionService
                 Action = "PAYMENT_FAILED",
                 TargetTable = "PaymentTransactions",
                 TargetId = transaction.TransactionId.ToString(),
-                NewValue = $"ResultCode={request.ResultCode}",
+                NewValue = JsonSerializer.Serialize(new { resultCode = request.ResultCode }),
                 Note = "Thanh toán thất bại từ cổng trung gian.",
                 CreatedAt = now
             });
@@ -452,7 +453,7 @@ public class SubscriptionService : ISubscriptionService
             Action = "PAYMENT_SUCCESS",
             TargetTable = "PaymentTransactions",
             TargetId = transaction.TransactionId.ToString(),
-            NewValue = $"Role=VIP;Status=SUCCESS;StartsAt={startsAt:O};EndsAt={endsAt:O}",
+            NewValue = JsonSerializer.Serialize(new { role = "VIP", status = "SUCCESS", startsAt = startsAt.ToString("O"), endsAt = endsAt.ToString("O") }),
             Note = $"Kích hoạt VIP thành công gói {transaction.Plan.PlanName} qua {gw}.",
             CreatedAt = now
         });
