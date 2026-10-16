@@ -355,16 +355,17 @@ public static class ServiceExtensions
         // Dịch vụ Thực đơn dinh dưỡng & AI Meal Planning (FN-MEAL-01)
         services.Configure<VeggieLife.DAL.External.AiService.AiServiceSettings>(
             configuration.GetSection(VeggieLife.DAL.External.AiService.AiServiceSettings.SectionName));
-        services.AddHttpClient<VeggieLife.DAL.External.AiService.IAiServiceClient, VeggieLife.DAL.External.AiService.AiServiceClient>((sp, client) =>
-        {
-            var config = sp.GetRequiredService<IConfiguration>();
-            var baseUrl = config["AiService:BaseUrl"] ?? "http://localhost:8080";
-            var apiKey = config["AiService:InternalApiKey"] ?? "dev-internal-key";
+        services.AddHttpClient<VeggieLife.DAL.External.AiService.IAiServiceClient, VeggieLife.DAL.External.AiService.AiServiceClient>("AiMealAndFridgeServiceClient")
+            .ConfigureHttpClient((sp, client) =>
+            {
+                var config = sp.GetRequiredService<IConfiguration>();
+                var baseUrl = config["AiService:BaseUrl"] ?? "http://localhost:8080";
+                var apiKey = config["AiService:InternalApiKey"] ?? "dev-internal-key";
 
-            client.BaseAddress = new System.Uri(baseUrl);
-            client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
-            client.Timeout = System.TimeSpan.FromSeconds(4); // Ràng buộc BR-ADM-AI-002: quá 4s chuyển sang Fallback
-        });
+                client.BaseAddress = new System.Uri(baseUrl);
+                client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
+                client.Timeout = System.TimeSpan.FromSeconds(4); // Ràng buộc BR-ADM-AI-002: quá 4s chuyển sang Fallback
+            });
         services.AddScoped<VeggieLife.BLL.Services.MealPlans.IMealPlanService, VeggieLife.BLL.Services.MealPlans.MealPlanService>();
         services.AddScoped<VeggieLife.BLL.Services.ShoppingLists.IShoppingListService, VeggieLife.BLL.Services.ShoppingLists.ShoppingListService>();
         services.AddScoped<VeggieLife.BLL.Services.Fridge.IFridgeService, VeggieLife.BLL.Services.Fridge.FridgeService>();
@@ -393,16 +394,17 @@ public static class ServiceExtensions
 
         // Bộ ngắt mạch AI & Client giao tiếp AI Microservice (/chat/answer) (BR-ADM-AI-002, D118)
         services.AddSingleton<VeggieLife.BLL.Services.AI.IAiCircuitBreaker, VeggieLife.BLL.Services.AI.AiCircuitBreaker>();
-        services.AddHttpClient<VeggieLife.BLL.Services.AI.IAiServiceClient, VeggieLife.BLL.Services.AI.AiServiceClient>((sp, client) =>
-        {
-            var config = sp.GetRequiredService<IConfiguration>();
-            var baseUrl = config["AiService:BaseUrl"] ?? "http://localhost:8080";
-            var apiKey = config["AiService:InternalApiKey"] ?? "dev-internal-key";
+        services.AddHttpClient<VeggieLife.BLL.Services.AI.IAiServiceClient, VeggieLife.BLL.Services.AI.AiServiceClient>("AiChatServiceClient")
+            .ConfigureHttpClient((sp, client) =>
+            {
+                var config = sp.GetRequiredService<IConfiguration>();
+                var baseUrl = config["AiService:BaseUrl"] ?? "http://localhost:8080";
+                var apiKey = config["AiService:InternalApiKey"] ?? "dev-internal-key";
 
-            client.BaseAddress = new System.Uri(baseUrl);
-            client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
-            client.Timeout = System.TimeSpan.FromSeconds(15);
-        });
+                client.BaseAddress = new System.Uri(baseUrl);
+                client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
+                client.Timeout = System.TimeSpan.FromSeconds(15);
+            });
 
         // Dịch vụ Chatbot tư vấn dinh dưỡng (FN-CHAT-01..06)
         services.AddScoped<VeggieLife.BLL.Services.Chat.IChatService, VeggieLife.BLL.Services.Chat.ChatService>();
