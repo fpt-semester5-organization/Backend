@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using VeggieLife.DAL.Entities;
@@ -695,6 +695,10 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysdatetime())")
                 .HasColumnName("Created_At");
+            entity.Property(e => e.ImageUrl)
+                .HasMaxLength(500)
+                .IsUnicode(false)
+                .HasColumnName("Image_Url");
             entity.Property(e => e.IngredientsText).HasColumnName("Ingredients_Text");
             entity.Property(e => e.LastSyncedAt)
                 .HasDefaultValueSql("(sysdatetime())")

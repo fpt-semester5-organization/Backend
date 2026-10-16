@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,10 +12,13 @@ using VeggieLife.BLL.DTOs.Posts.Requests;
 using VeggieLife.BLL.DTOs.Posts.Responses;
 using VeggieLife.BLL.Services.Posts;
 
+using VeggieLife.BLL.DTOs.Community.Responses;
+using VeggieLife.BLL.Services.Community;
+
 namespace VeggieLife.API.Controllers;
 
 /// <summary>
-/// Controller cung cấp các endpoint tìm kiếm, lọc danh sách và đọc bài viết chia sẻ cộng đồng (FN-POST-05, FN-POST-06).
+/// Controller cung cấp các endpoint tìm kiếm, lọc danh sách và đọc bài viết chia sẻ cộng đồng.
 /// Hỗ trợ cả Khách vãng lai (Guest) và Thành viên đã đăng nhập (Member, VIP, Admin).
 /// </summary>
 [ApiController]
@@ -23,14 +26,16 @@ namespace VeggieLife.API.Controllers;
 public class PostsController : BaseApiController
 {
     private readonly IPostService _postService;
+    private readonly ICommunityInteractionService? _communityService;
 
-    public PostsController(IPostService postService)
+    public PostsController(IPostService postService, ICommunityInteractionService? communityService = null)
     {
         _postService = postService;
+        _communityService = communityService;
     }
 
     /// <summary>
-    /// FN-POST-05: Tìm kiếm & xem danh sách bài viết.
+    /// Tìm kiếm & xem danh sách bài viết.
     /// Danh sách bài viết chia sẻ (blog) đã duyệt, lọc theo từ khóa và tác giả, sắp xếp mới nhất/phổ biến, phân trang.
     /// Thành viên xem thêm bài PRIVATE của chính mình.
     /// </summary>
@@ -54,7 +59,7 @@ public class PostsController : BaseApiController
     }
 
     /// <summary>
-    /// FN-POST-06: Xem chi tiết bài viết.
+    /// Xem chi tiết bài viết.
     /// Trả nội dung đầy đủ bài viết, ảnh, video đính kèm và công thức đính kèm (nếu có); tăng View_Count.
     /// </summary>
     /// <param name="id">Mã định danh bài viết (> 0).</param>
@@ -76,7 +81,7 @@ public class PostsController : BaseApiController
     }
 
     /// <summary>
-    /// FN-POST-07: Đăng bài viết mới (lưu nháp hoặc gửi kiểm duyệt AI).
+    /// Đăng bài viết mới (lưu nháp hoặc gửi kiểm duyệt AI).
     /// </summary>
     /// <param name="request">Payload thông tin bài viết.</param>
     /// <param name="ct">CancellationToken.</param>
@@ -100,7 +105,7 @@ public class PostsController : BaseApiController
     }
 
     /// <summary>
-    /// FN-POST-07: Sửa bài viết của mình, gỡ khỏi cộng đồng (chuyển PRIVATE) hoặc gửi duyệt lại.
+    /// Sửa bài viết của mình, gỡ khỏi cộng đồng (chuyển PRIVATE) hoặc gửi duyệt lại.
     /// </summary>
     /// <param name="id">Mã định danh bài viết (> 0).</param>
     /// <param name="request">Payload thông tin cập nhật.</param>
@@ -125,7 +130,7 @@ public class PostsController : BaseApiController
     }
 
     /// <summary>
-    /// FN-POST-07: Xóa mềm bài viết của mình (chuyển sang trạng thái DELETED).
+    /// Xóa mềm bài viết của mình (chuyển sang trạng thái DELETED).
     /// </summary>
     /// <param name="id">Mã định danh bài viết (> 0).</param>
     /// <param name="ct">CancellationToken.</param>
@@ -148,7 +153,36 @@ public class PostsController : BaseApiController
     }
 
     /// <summary>
-    /// Kiểm tra và xác thực quyền thành viên chính thức cho các tác vụ ghi dữ liệu cộng đồng (FN-AUTH-03).
+    /// Thả tim hoặc bỏ tim cho bài viết (mỗi thành viên tối đa 1 tim, thả lần 2 = bỏ tim).
+    /// </summary>
+    /// <param name="id">Mã định danh bài viết (> 0).</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>Trạng thái voted và tổng số vote mới nhất của bài viết.</returns>
+    [HttpPost("{id:int}/votes")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    [ProducesResponseType(typeof(ApiResponse<VoteResponseData>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> CreatePostVote([FromRoute] int id, CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+
+        if (_communityService == null)
+        {
+            throw AppException.Internal(ErrorCodes.ErrInternal, "Dịch vụ tương tác cộng đồng chưa được cấu hình.");
+        }
+
+        var userId = (int)CurrentUserId!.Value;
+        var result = await _communityService.VotePostAsync(id, userId, ct);
+
+        return OkResponse(result, "OK");
+    }
+
+    /// <summary>
+    /// Kiểm tra và xác thực quyền thành viên chính thức cho các tác vụ ghi dữ liệu cộng đồng.
     /// </summary>
     private void EnsureAuthorizedMember()
     {

@@ -17,9 +17,11 @@ using VeggieLife.BLL.Services.Email;
 using VeggieLife.BLL.Services.MasterData;
 using VeggieLife.BLL.Services.Media;
 using VeggieLife.BLL.Services.Payment;
+using VeggieLife.BLL.Services.Products;
 using VeggieLife.BLL.Services.Profile;
 using VeggieLife.DAL.External.Cloudinary;
 using VeggieLife.DAL.External.Email;
+using VeggieLife.DAL.External.OpenFoodFacts;
 
 namespace VeggieLife.API.Extensions;
 
@@ -123,6 +125,7 @@ public static class ServiceExtensions
                                       path.Contains("/violations") ||
                                       path.Contains("/surveys") ||
                                       path.Contains("/chat/sessions") ||
+                                      path.Contains("/reports") ||
                                       (path.Contains("/recipes") && context.HttpContext?.Request.Method != "GET");
 
                     var errorCode = isGuest
@@ -327,6 +330,12 @@ public static class ServiceExtensions
         // Dịch vụ Hồ sơ cá nhân & Danh mục dùng chung
         services.AddScoped<IProfileService, ProfileService>();
         services.AddScoped<IMasterDataService, MasterDataService>();
+
+        // Cấu hình & Dịch vụ tra cứu mã vạch Open Food Facts (FN-BAR-01, FN-BAR-02)
+        services.Configure<OpenFoodFactsSettings>(configuration.GetSection(OpenFoodFactsSettings.SectionName));
+        services.AddHttpClient<IOpenFoodFactsClient, OpenFoodFactsClient>();
+        services.AddScoped<IProductService, ProductService>();
+
         // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
         services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();
 
@@ -335,6 +344,35 @@ public static class ServiceExtensions
 
         // Dịch vụ Video & Phương tiện nấu ăn (FN-POST-08)
         services.AddScoped<VeggieLife.BLL.Services.Videos.IVideoService, VeggieLife.BLL.Services.Videos.VideoService>();
+
+        // Dịch vụ Tương tác cộng đồng & Báo cáo vi phạm (FN-COMM-04, FN-COMM-05)
+        services.AddScoped<VeggieLife.BLL.Services.Community.CommunityInteractionService>();
+        services.AddScoped<VeggieLife.BLL.Services.Community.ICommunityInteractionService>(sp =>
+            sp.GetRequiredService<VeggieLife.BLL.Services.Community.CommunityInteractionService>());
+        services.AddScoped<VeggieLife.BLL.Services.Community.IInteractionService>(sp =>
+            sp.GetRequiredService<VeggieLife.BLL.Services.Community.CommunityInteractionService>());
+
+        // Dịch vụ Thực đơn dinh dưỡng & AI Meal Planning (FN-MEAL-01)
+        services.Configure<VeggieLife.DAL.External.AiService.AiServiceSettings>(
+            configuration.GetSection(VeggieLife.DAL.External.AiService.AiServiceSettings.SectionName));
+        services.AddHttpClient<VeggieLife.DAL.External.AiService.IAiServiceClient, VeggieLife.DAL.External.AiService.AiServiceClient>((sp, client) =>
+        {
+            var config = sp.GetRequiredService<IConfiguration>();
+            var baseUrl = config["AiService:BaseUrl"] ?? "http://localhost:8080";
+            var apiKey = config["AiService:InternalApiKey"] ?? "dev-internal-key";
+
+            client.BaseAddress = new System.Uri(baseUrl);
+            client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
+            client.Timeout = System.TimeSpan.FromSeconds(4); // Ràng buộc BR-ADM-AI-002: quá 4s chuyển sang Fallback
+        });
+        services.AddScoped<VeggieLife.BLL.Services.MealPlans.IMealPlanService, VeggieLife.BLL.Services.MealPlans.MealPlanService>();
+        services.AddScoped<VeggieLife.BLL.Services.ShoppingLists.IShoppingListService, VeggieLife.BLL.Services.ShoppingLists.ShoppingListService>();
+        services.AddScoped<VeggieLife.BLL.Services.Fridge.IFridgeService, VeggieLife.BLL.Services.Fridge.FridgeService>();
+        // Dịch vụ Quán ăn chay & Goong Places API (FN-MAP-01)
+        services.Configure<VeggieLife.DAL.External.Goong.GoongSettings>(
+            configuration.GetSection(VeggieLife.DAL.External.Goong.GoongSettings.SectionName));
+        services.AddHttpClient<VeggieLife.DAL.External.Goong.IGoongPlacesClient, VeggieLife.DAL.External.Goong.GoongPlacesClient>();
+        services.AddScoped<VeggieLife.BLL.Services.Venues.IVenueService, VeggieLife.BLL.Services.Venues.VenueService>();
 
         // Các interface dịch vụ dùng chung khác (Bản mẫu rỗng để các thành viên khác hoàn thiện)
         services.AddScoped<IAiService, AiServiceStub>();

@@ -22,9 +22,9 @@ public interface ISmtpEmailClient
     /// <param name="plainTextBody">Nội dung văn bản thuần dự phòng (plain text) cho các ứng dụng đọc mail không hỗ trợ HTML.</param>
     /// <param name="ct">Mã hủy tác vụ bất đồng bộ.</param>
     Task SendEmailAsync(
-        string toEmail, 
-        string subject, 
-        string htmlBody, 
-        string? plainTextBody = null, 
+        string toEmail,
+        string subject,
+        string htmlBody,
+        string? plainTextBody = null,
         CancellationToken ct = default);
 }

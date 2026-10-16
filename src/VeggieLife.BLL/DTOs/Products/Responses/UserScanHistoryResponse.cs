@@ -10,5 +10,6 @@ namespace VeggieLife.BLL.DTOs.Products.Responses
         public string VeganVerdict { get; set; } = string.Empty;
         public bool IsAllergenTriggered { get; set; }
         public DateTime ScannedAt { get; set; }
+        public string? ImageUrl { get; set; }
     }
 }

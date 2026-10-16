@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace VeggieLife.DAL.Entities;
@@ -14,6 +14,8 @@ public partial class Product
     public string? Brand { get; set; }
 
     public string? IngredientsText { get; set; }
+
+    public string? ImageUrl { get; set; }
 
     public string VeganVerdict { get; set; } = null!;
 

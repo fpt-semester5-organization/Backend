@@ -1049,6 +1049,7 @@ CREATE TABLE dbo.Products (
     Product_Name NVARCHAR(150) NOT NULL,
     Brand NVARCHAR(100) NULL,
     Ingredients_Text NVARCHAR(MAX) NULL,
+    Image_Url VARCHAR(500) NULL,
     Vegan_Verdict VARCHAR(15) NOT NULL,
     Admin_Verified BIT NOT NULL DEFAULT 0,
     Created_At DATETIME2(7) NOT NULL DEFAULT SYSDATETIME(),
@@ -1282,7 +1283,7 @@ BEGIN
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_VeganVenues_Created_At] DEFAULT (SYSDATETIME()),
 
         CONSTRAINT [PK_VeganVenues] PRIMARY KEY CLUSTERED ([Venue_ID] ASC),
-        CONSTRAINT [CK_VeganVenues_Source] CHECK ([External_Source] IN ('HAPPYCOW', 'GOOGLE_PLACES')),
+        CONSTRAINT [CK_VeganVenues_Source] CHECK ([External_Source] IN ('HAPPYCOW', 'GOOGLE_PLACES', 'GOONG')),
         CONSTRAINT [CK_VeganVenues_Rating] CHECK ([Rating] BETWEEN 0.0 AND 5.0)
     );
 

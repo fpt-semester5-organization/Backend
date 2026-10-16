@@ -10,19 +10,38 @@ using VeggieLife.DAL.External.OpenFoodFacts;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Cấu hình DbContext kết nối SQL Server
+// 1. Cấu hình DbContext kết nối SQL Server (Bắt buộc dùng SQL Server để lưu bền vững vào CSDL, không lưu trên RAM)
+var useInMemory = builder.Configuration.GetValue<bool>("Database:UseInMemory");
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+
+if (string.IsNullOrWhiteSpace(connectionString) || connectionString.Contains("YOUR_PASSWORD"))
+{
+    connectionString = "Server=localhost;Database=VeggieLifeDb;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true;";
+}
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+{
+    if (useInMemory)
+    {
+        options.UseInMemoryDatabase("VeggieLifeDb");
+    }
+    else
+    {
+        options.UseSqlServer(connectionString, sqlOptions =>
+        {
+            sqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 3,
+                maxRetryDelay: TimeSpan.FromSeconds(5),
+                errorNumbersToAdd: null);
+        });
+    }
+});
 
 // 2. Cấu hình bộ nhớ đệm phân tán Redis
 builder.Services.AddRedisCaching(builder.Configuration);
 
 // 3. Đăng ký các dịch vụ nghiệp vụ BLL, DAL, Cloudinary CDN & Auth
 builder.Services.AddApplicationServices(builder.Configuration);
-
-// Đăng ký dịch vụ Open Food Facts Client & Product Service
-builder.Services.AddHttpClient<IOpenFoodFactsClient, OpenFoodFactsClient>();
-builder.Services.AddScoped<IProductService, ProductService>();
 
 // 4. Cấu hình Xác thực JWT Bearer & Phân quyền Roles (GUEST, MEMBER, VIP, ADMIN)
 builder.Services.AddJwtAuthentication(builder.Configuration);
@@ -69,6 +88,36 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerWithAuth();
 
 var app = builder.Build();
+
+// Tự động kiểm tra và khởi tạo Database / Seed dữ liệu nếu là database mới (không chạy trong Test Runner)
+if (!AppDomain.CurrentDomain.GetAssemblies().Any(a => a.FullName?.Contains("xunit") == true))
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    if (db.Database.ProviderName?.Contains("SqlServer") == true)
+    {
+        try
+        {
+            // Tự động tạo CSDL VeggieLifeDb và 38 bảng nếu máy mới chưa có
+            db.Database.EnsureCreated();
+            VeggieLife.API.Extensions.DevDataSeeder.SeedIfEmpty(db);
+            logger.LogInformation("CSDL SQL Server (VeggieLifeDb) đã kết nối thành công và sẵn sàng lưu trữ bền vững.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "LỖI KẾT NỐI SQL SERVER: Không thể kết nối tới SQL Server ({ConnectionString}). Vui lòng đảm bảo dịch vụ SQL Server (MSSQLSERVER/SQLEXPRESS) đang chạy trên máy.", connectionString);
+            throw new InvalidOperationException($"[LỖI CSDL]: Không thể kết nối tới SQL Server tại '{connectionString}'. Vui lòng bật dịch vụ SQL Server trên máy để lưu dữ liệu bền vững, không lưu trên RAM.", ex);
+        }
+    }
+    else if (db.Database.ProviderName?.Contains("InMemory") == true)
+    {
+        logger.LogWarning("CẢNH BÁO: Ứng dụng đang chạy ở chế độ IN-MEMORY DATABASE (lưu trên RAM). Mọi dữ liệu sẽ bị mất khi tắt ứng dụng!");
+        VeggieLife.API.Extensions.DevDataSeeder.SeedIfEmpty(db);
+        VeggieLife.API.Extensions.DevInMemoryDataSeeder.Seed(db);
+    }
+}
 
 app.UseCors();
 

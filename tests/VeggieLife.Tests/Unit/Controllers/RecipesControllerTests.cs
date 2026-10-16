@@ -10,6 +10,7 @@ using VeggieLife.API.Controllers;
 using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.Recipes.Requests;
 using VeggieLife.BLL.DTOs.Recipes.Responses;
+using VeggieLife.BLL.DTOs.Venues.Responses;
 using VeggieLife.BLL.Services.Recipes;
 using Xunit;
 
@@ -22,12 +23,16 @@ namespace VeggieLife.Tests.Unit.Controllers;
 public class RecipesControllerTests
 {
     private readonly Mock<IRecipeService> _mockService;
+    private readonly Mock<VeggieLife.BLL.Services.Community.ICommunityInteractionService> _mockCommunityService;
+    private readonly Mock<VeggieLife.BLL.Services.Venues.IVenueService> _mockVenueService;
     private readonly RecipesController _controller;
 
     public RecipesControllerTests()
     {
         _mockService = new Mock<IRecipeService>();
-        _controller = new RecipesController(_mockService.Object);
+        _mockCommunityService = new Mock<VeggieLife.BLL.Services.Community.ICommunityInteractionService>();
+        _mockVenueService = new Mock<VeggieLife.BLL.Services.Venues.IVenueService>();
+        _controller = new RecipesController(_mockService.Object, _mockCommunityService.Object, _mockVenueService.Object);
 
         // Thiết lập HttpContext mặc định
         var httpContext = new DefaultHttpContext();
@@ -151,5 +156,166 @@ public class RecipesControllerTests
         var okResult = result as OkObjectResult;
         okResult.Should().NotBeNull();
         _mockService.Verify(s => s.GetRecipeByIdAsync(512, false, 42, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetRelatedRecipes_AnonymousGuest_CallsServiceWithNullUserId_ReturnsOkEnvelope()
+    {
+        // Arrange
+        var responseData = new RelatedRecipesResponseData
+        {
+            Recipes = new List<RecipeSummaryDto>
+            {
+                new() { RecipeId = 513, Title = "Công thức tương tự" }
+            },
+            Posts = new List<RelatedPostDto>(),
+            Videos = new List<RelatedVideoDto>()
+        };
+
+        _mockService.Setup(s => s.GetRelatedRecipesAsync(512, 6, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var result = await _controller.ListRelatedRecipes(512, 6, CancellationToken.None);
+
+        // Assert
+        var okResult = result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        var envelope = okResult!.Value as ApiResponse<RelatedRecipesResponseData>;
+        envelope.Should().NotBeNull();
+        envelope!.StatusCode.Should().Be(200);
+        envelope.Message.Should().Be("OK");
+        envelope.Data.Should().NotBeNull();
+        envelope.Data!.Recipes.Should().HaveCount(1);
+        envelope.Data.Recipes[0].RecipeId.Should().Be(513);
+        _mockService.Verify(s => s.GetRelatedRecipesAsync(512, 6, null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetRelatedRecipes_AuthenticatedMember_CallsServiceWithUserId_ReturnsOkEnvelope()
+    {
+        // Arrange
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "99"),
+            new(ClaimTypes.Role, "MEMBER")
+        };
+        var identity = new ClaimsIdentity(claims, "TestAuth");
+        _controller.ControllerContext.HttpContext.User = new ClaimsPrincipal(identity);
+
+        var responseData = new RelatedRecipesResponseData
+        {
+            Recipes = new List<RecipeSummaryDto>(),
+            Posts = new List<RelatedPostDto>(),
+            Videos = new List<RelatedVideoDto>()
+        };
+
+        _mockService.Setup(s => s.GetRelatedRecipesAsync(512, 4, 99, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var result = await _controller.ListRelatedRecipes(512, 4, CancellationToken.None);
+
+        // Assert
+        var okResult = result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        _mockService.Verify(s => s.GetRelatedRecipesAsync(512, 4, 99, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateRecipeVote_AuthenticatedMember_ShouldReturnOk200WithVoteData()
+    {
+        // Arrange
+        var user = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, "42"),
+            new Claim(ClaimTypes.Role, "MEMBER")
+        }, "TestAuth"));
+        _controller.ControllerContext.HttpContext.User = user;
+
+        var voteData = new VeggieLife.BLL.DTOs.Community.Responses.VoteResponseData
+        {
+            Voted = true,
+            VoteCount = 43
+        };
+
+        _mockCommunityService
+            .Setup(s => s.VoteRecipeAsync(512, 42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(voteData);
+
+        // Act
+        var result = await _controller.CreateRecipeVote(512, CancellationToken.None);
+
+        // Assert
+        var okResult = result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+
+        var envelope = okResult.Value as ApiResponse<VeggieLife.BLL.DTOs.Community.Responses.VoteResponseData>;
+        envelope.Should().NotBeNull();
+        envelope!.StatusCode.Should().Be(200);
+        envelope.Message.Should().Be("OK");
+        envelope.Data!.Voted.Should().BeTrue();
+        envelope.Data.VoteCount.Should().Be(43);
+    }
+
+    [Fact]
+    public async Task CreateRecipeVote_GuestUser_ShouldThrowForbidden403()
+    {
+        // Arrange: Khách vãng lai
+        var user = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, "guest-uuid-123"),
+            new Claim(ClaimTypes.Role, "GUEST")
+        }, "TestAuth"));
+        _controller.ControllerContext.HttpContext.User = user;
+
+        // Act & Assert
+        var act = () => _controller.CreateRecipeVote(512, CancellationToken.None);
+        var ex = await act.Should().ThrowAsync<VeggieLife.BLL.Common.Exceptions.AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(VeggieLife.BLL.Common.Constants.ErrorCodes.ErrGuestCommunityActionDenied);
+    }
+
+    [Fact]
+    public async Task ListRecipeVenues_ValidRecipe_Returns200OkWithVenues()
+    {
+        // Arrange
+        var sampleVenues = new List<NearbyVenueItemDto>
+        {
+            new()
+            {
+                VenueId = 301,
+                Name = "Ưu Đàm Chay",
+                Address = "34 Hàng Bài, Hoàn Kiếm, Hà Nội",
+                DistanceKm = 0.8,
+                Categories = new List<string> { "Món Cơm & Xôi Chay" },
+                DirectionsUrl = "https://www.google.com/maps/dir/?api=1&destination=21.0227,105.8524"
+            }
+        };
+
+        _mockVenueService.Setup(s => s.ListRecipeVenuesAsync(
+                512,
+                21.0285,
+                105.8542,
+                5,
+                It.IsAny<int?>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(sampleVenues);
+
+        // Act
+        var result = await _controller.ListRecipeVenues(512, 21.0285, 105.8542, 5, CancellationToken.None);
+
+        // Assert
+        var okResult = result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(200);
+
+        var envelope = okResult.Value as ApiResponse<List<NearbyVenueItemDto>>;
+        envelope.Should().NotBeNull();
+        envelope!.Data.Should().HaveCount(1);
+        envelope.Data![0].VenueId.Should().Be(301);
     }
 }
