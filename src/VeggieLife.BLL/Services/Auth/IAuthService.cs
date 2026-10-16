@@ -38,4 +38,19 @@ public interface IAuthService
     /// Đăng xuất khỏi hệ thống: Thu hồi Refresh Token và đưa jti của Access Token vào danh sách đen Redis (FN-AUTH-10).
     /// </summary>
     Task LogoutAsync(long userId, string? userRole, string? jti, System.DateTime? tokenExpiryUtc, string? refreshToken, CancellationToken ct = default);
+
+    /// <summary>
+    /// Quên mật khẩu: gửi mã OTP 6 số qua email của tài khoản ACTIVE (FN-AUTH-11).
+    /// </summary>
+    Task ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Đặt lại mật khẩu bằng mã OTP; mở khóa tài khoản và thu hồi toàn bộ phiên đăng nhập cũ (FN-AUTH-12).
+    /// </summary>
+    Task ResetPasswordAsync(ResetPasswordRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Đổi mật khẩu cho người dùng đang đăng nhập; thu hồi các phiên đăng nhập khác của tài khoản (FN-AUTH-13).
+    /// </summary>
+    Task ChangePasswordAsync(long userId, ChangePasswordRequest request, string? currentRefreshToken = null, CancellationToken ct = default);
 }
