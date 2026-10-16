@@ -45,6 +45,13 @@ public class ProductsControllerTests
         var guestUuid = "guest-uuid-999";
         _controller.HttpContext.Request.Headers["X-Guest-UUID"] = guestUuid;
 
+        var claims = new List<Claim>
+        {
+            new Claim(ClaimTypes.Role, UserRoles.Guest),
+            new Claim("Guest_UUID", guestUuid)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
         var expectedResponse = new BarcodeScanResponse
         {
             Barcode = barcode,
@@ -123,6 +130,12 @@ public class ProductsControllerTests
     {
         // Arrange
         var barcode = "8934567890123";
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.Role, UserRoles.Guest),
+            new Claim("Guest_UUID", "guest-uuid-1")
+        }, "TestAuth"));
+
         _mockProductService.Setup(s => s.ScanBarcodeAsync(
                 barcode,
                 It.IsAny<int?>(),
@@ -138,5 +151,20 @@ public class ProductsControllerTests
         var ex = await act.Should().ThrowAsync<AppException>();
         ex.Which.StatusCode.Should().Be(403);
         ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrQuotaBarcodeExceeded);
+    }
+
+    [Fact]
+    public async Task ScanBarcode_Unauthenticated_ThrowsUnauthorizedException()
+    {
+        // Arrange - Người dùng chưa đăng nhập, không có token
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity());
+
+        // Act
+        Func<Task> act = async () => await _controller.ScanBarcode("8934567890123");
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(401);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrAuthInvalidToken);
     }
 }

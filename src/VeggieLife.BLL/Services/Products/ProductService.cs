@@ -94,8 +94,12 @@ public class ProductService : IProductService
                 .ThenInclude(pa => pa.Allergen)
             .FirstOrDefaultAsync(p => p.Barcode == cleanBarcode, ct);
 
-        // Kiểm tra tính mới của dữ liệu: có và LastSyncedAt trong vòng 30 ngày (FN-BAR-01 Logic 3)
-        bool isFresh = product != null && product.LastSyncedAt >= DateTime.UtcNow.AddDays(-30);
+        // Kiểm tra tính mới của dữ liệu: có và LastSyncedAt trong vòng 30 ngày (FN-BAR-01 Logic 3).
+        // Nếu sản phẩm trong CSDL chưa có ảnh (ImageUrl null/rỗng) và chưa được Admin kiểm định,
+        // thì cần truy vấn Open Food Facts để lấy ảnh sản phẩm phục vụ hiển thị.
+        bool isFresh = product != null 
+            && product.LastSyncedAt >= DateTime.UtcNow.AddDays(-30)
+            && (product.AdminVerified || !string.IsNullOrWhiteSpace(product.ImageUrl));
 
         OpenFoodFactsProductDto? offProduct = null;
         if (!isFresh)
@@ -134,7 +138,7 @@ public class ProductService : IProductService
                             ? $"Sản phẩm #{cleanBarcode}"
                             : offProduct.ProductName,
                         Brand = offProduct.Brand,
-                        ImageUrl = offProduct.ImageUrl,
+                        ImageUrl = !string.IsNullOrWhiteSpace(offProduct.ImageUrl) ? offProduct.ImageUrl : null,
                         IngredientsText = offProduct.IngredientsText,
                         VeganVerdict = offProduct.VeganVerdict,
                         AdminVerified = false,
@@ -148,7 +152,10 @@ public class ProductService : IProductService
                 {
                     product.ProductName = string.IsNullOrWhiteSpace(offProduct.ProductName) ? product.ProductName : offProduct.ProductName;
                     product.Brand = offProduct.Brand ?? product.Brand;
-                    product.ImageUrl = offProduct.ImageUrl ?? product.ImageUrl;
+                    if (!string.IsNullOrWhiteSpace(offProduct.ImageUrl))
+                    {
+                        product.ImageUrl = offProduct.ImageUrl;
+                    }
                     product.IngredientsText = offProduct.IngredientsText ?? product.IngredientsText;
                     product.VeganVerdict = offProduct.VeganVerdict;
                     product.LastSyncedAt = DateTime.UtcNow;

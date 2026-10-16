@@ -420,4 +420,55 @@ public class ProductServiceTests : IDisposable
         savedProduct.Should().NotBeNull();
         savedProduct!.ImageUrl.Should().Be(expectedImageUrl);
     }
+
+    [Fact]
+    public async Task ScanBarcode_ProductInDbWithoutImage_QueriesOffAndBackfillsImage()
+    {
+        // Arrange - Sản phẩm đã có trong DB nhưng ImageUrl là null và chưa AdminVerified
+        var barcode = "8931234567890";
+        var expectedImageUrl = "https://images.openfoodfacts.org/images/products/893/123/456/7890/front_vi.400.jpg";
+
+        _db.Products.Add(new Product
+        {
+            Barcode = barcode,
+            ProductName = "Bánh quy thuần chay",
+            Brand = "VeggieBrand",
+            ImageUrl = null, // Chưa có ảnh
+            IngredientsText = "Bột mì, dầu thực vật, đường",
+            VeganVerdict = "VEGAN",
+            AdminVerified = false,
+            CreatedAt = DateTime.UtcNow.AddDays(-2),
+            LastSyncedAt = DateTime.UtcNow.AddDays(-1)
+        });
+        await _db.SaveChangesAsync();
+
+        _mockOffClient.Setup(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenFoodFactsProductDto
+            {
+                Barcode = barcode,
+                ProductName = "Bánh quy thuần chay cao cấp",
+                Brand = "VeggieBrand",
+                ImageUrl = expectedImageUrl,
+                IngredientsText = "Bột mì, dầu thực vật, đường",
+                VeganVerdict = "VEGAN",
+                VerdictText = "Thuần chay"
+            });
+
+        _mockRedis.Setup(r => r.GetAsync<int?>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+        _mockRedis.Setup(r => r.IncrementAsync(It.IsAny<string>(), 1, It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        // Act
+        var result = await _service.ScanBarcodeAsync(barcode, null, "guest-1");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.ImageUrl.Should().Be(expectedImageUrl);
+        _mockOffClient.Verify(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()), Times.Once);
+
+        var updatedProduct = await _db.Products.FirstOrDefaultAsync(p => p.Barcode == barcode);
+        updatedProduct.Should().NotBeNull();
+        updatedProduct!.ImageUrl.Should().Be(expectedImageUrl);
+    }
 }
