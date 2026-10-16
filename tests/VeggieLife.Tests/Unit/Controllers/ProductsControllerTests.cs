@@ -115,7 +115,7 @@ public class ProductsControllerTests
         // Assert
         var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
         var apiResp = okResult.Value.Should().BeOfType<ApiResponse<BarcodeScanResponse>>().Subject;
-        apiResp.Data.ProductName.Should().Be("Bánh quy yến mạch");
+        apiResp.Data!.ProductName.Should().Be("Bánh quy yến mạch");
     }
 
     [Fact]

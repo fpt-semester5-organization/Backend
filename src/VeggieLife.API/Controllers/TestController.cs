@@ -1,7 +1,9 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.Services.AI;
@@ -16,9 +18,12 @@ namespace VeggieLife.API.Controllers;
 
 /// <summary>
 /// Controller kiểm thử các thành phần khung nền tảng: Chuẩn phản hồi, Mã lỗi, Phân quyền, JWT, Redis, Health & Interface Stubs.
+/// Chỉ kích hoạt trong môi trường Development nội bộ; ẩn khỏi tài liệu Swagger công khai.
 /// </summary>
+[ApiExplorerSettings(IgnoreApi = true)]
 public class TestController : BaseApiController
 {
+    private readonly IWebHostEnvironment _env;
     private readonly IJwtTokenService _jwtTokenService;
     private readonly IRedisService _redisService;
     private readonly IAiService _aiService;
@@ -28,6 +33,7 @@ public class TestController : BaseApiController
     private readonly IPaymentGatewayService _paymentGatewayService;
 
     public TestController(
+        IWebHostEnvironment env,
         IJwtTokenService jwtTokenService,
         IRedisService redisService,
         IAiService aiService,
@@ -36,6 +42,7 @@ public class TestController : BaseApiController
         IMediaService mediaService,
         IPaymentGatewayService paymentGatewayService)
     {
+        _env = env;
         _jwtTokenService = jwtTokenService;
         _redisService = redisService;
         _aiService = aiService;
