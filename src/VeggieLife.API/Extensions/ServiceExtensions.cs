@@ -352,6 +352,9 @@ public static class ServiceExtensions
         services.AddScoped<VeggieLife.BLL.Services.Community.IInteractionService>(sp =>
             sp.GetRequiredService<VeggieLife.BLL.Services.Community.CommunityInteractionService>());
 
+        // Dịch vụ Bình luận đa tầng (FN-COMM-01, FN-COMM-02, FN-COMM-03)
+        services.AddScoped<VeggieLife.BLL.Services.Community.ICommentService, VeggieLife.BLL.Services.Community.CommentService>();
+
         // Dịch vụ Thực đơn dinh dưỡng & AI Meal Planning (FN-MEAL-01)
         services.Configure<VeggieLife.DAL.External.AiService.AiServiceSettings>(
             configuration.GetSection(VeggieLife.DAL.External.AiService.AiServiceSettings.SectionName));

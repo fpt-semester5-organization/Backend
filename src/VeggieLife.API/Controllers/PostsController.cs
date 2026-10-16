@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,6 +12,7 @@ using VeggieLife.BLL.DTOs.Posts.Requests;
 using VeggieLife.BLL.DTOs.Posts.Responses;
 using VeggieLife.BLL.Services.Posts;
 
+using VeggieLife.BLL.DTOs.Community.Requests;
 using VeggieLife.BLL.DTOs.Community.Responses;
 using VeggieLife.BLL.Services.Community;
 
@@ -27,11 +28,16 @@ public class PostsController : BaseApiController
 {
     private readonly IPostService _postService;
     private readonly ICommunityInteractionService? _communityService;
+    private readonly ICommentService? _commentService;
 
-    public PostsController(IPostService postService, ICommunityInteractionService? communityService = null)
+    public PostsController(
+        IPostService postService,
+        ICommunityInteractionService? communityService = null,
+        ICommentService? commentService = null)
     {
         _postService = postService;
         _communityService = communityService;
+        _commentService = commentService;
     }
 
     /// <summary>
@@ -179,6 +185,73 @@ public class PostsController : BaseApiController
         var result = await _communityService.VotePostAsync(id, userId, ct);
 
         return OkResponse(result, "OK");
+    }
+
+    /// <summary>
+    /// FN-COMM-01: Xem bình luận của bài viết.
+    /// Danh sách bình luận dạng cây (tối đa 2 cấp hiển thị) của bài viết; chỉ bình luận ACTIVE và chưa xóa mềm.
+    /// Khách chỉ đọc.
+    /// </summary>
+    /// <param name="id">Mã bài viết (> 0).</param>
+    /// <param name="page">Số trang (>= 1, mặc định 1).</param>
+    /// <param name="size">Kích thước trang (1–50, mặc định 20).</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>Danh sách bình luận dạng cây kèm metadata phân trang.</returns>
+    [HttpGet("{id:int}/comments")]
+    [AllowAnonymous]
+    [Tags("INT")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<CommentDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> ListPostComments(
+        [FromRoute] int id,
+        [FromQuery] int page = 1,
+        [FromQuery] int size = 20,
+        CancellationToken ct = default)
+    {
+        if (_commentService == null)
+        {
+            throw AppException.Internal(ErrorCodes.ErrInternal, "Dịch vụ bình luận chưa được cấu hình.");
+        }
+
+        var (items, meta) = await _commentService.ListPostCommentsAsync(id, page, size, ct);
+        return PagedResponse(items, meta, "OK");
+    }
+
+    /// <summary>
+    /// FN-COMM-02: Bình luận hoặc trả lời bình luận trên bài viết.
+    /// Thành viên bình luận hoặc trả lời một bình luận trên bài viết đã duyệt; bình luận được AI quét trước khi hiển thị.
+    /// </summary>
+    /// <param name="id">Mã bài viết (> 0).</param>
+    /// <param name="request">Payload nội dung bình luận (2–500 ký tự) và mã bình luận cha (nếu có).</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>Dữ liệu bình luận vừa tạo.</returns>
+    [HttpPost("{id:int}/comments")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    [Tags("INT")]
+    [ProducesResponseType(typeof(ApiResponse<CommentDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> CreatePostComment(
+        [FromRoute] int id,
+        [FromBody] CreateCommentRequest request,
+        CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+
+        if (_commentService == null)
+        {
+            throw AppException.Internal(ErrorCodes.ErrInternal, "Dịch vụ bình luận chưa được cấu hình.");
+        }
+
+        var userId = (int)CurrentUserId!.Value;
+        var result = await _commentService.CreatePostCommentAsync(id, request, userId, ct);
+
+        return CreatedResponse(result, "Đã bình luận.");
     }
 
     /// <summary>
