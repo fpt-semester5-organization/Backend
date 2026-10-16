@@ -173,10 +173,20 @@ Accept: application/json
 
 ### ============================================================================
 ### 15. FN-BAR-01: TRA CỨU SẢN PHẨM THEO MÃ VẠCH (BARCODE LOOKUP)
+### Yêu cầu xác thực Bearer token (GUEST, MEMBER, VIP) - Không cho phép truy cập công khai
 ### ============================================================================
-### Quét mã vạch bởi Khách vãng lai (Giới hạn tối đa 03 lần/ngày - BR-GUEST-07)
-GET {{VeggieLife.API_HostAddress}}/api/v1/products/barcode/8934567890123
-X-Guest-UUID: 00000000-0000-0000-0000-000000000001
+### Kiểm tra bảo mật: Không truyền token (Mong đợi: 401 Unauthorized - ERR_AUTH_INVALID_TOKEN)
+GET {{VeggieLife.API_HostAddress}}/api/v1/products/barcode/8934563138165
+Accept: application/json
+
+### Quét mã vạch thực tế từ Open Food Facts có ảnh đại diện (Hảo Hảo Mì Tôm Chua Cay)
+GET {{VeggieLife.API_HostAddress}}/api/v1/products/barcode/8934563138165
+Authorization: Bearer {{memberToken}}
+Accept: application/json
+
+### Quét mã vạch thực tế từ Open Food Facts có ảnh đại diện (Nutella)
+GET {{VeggieLife.API_HostAddress}}/api/v1/products/barcode/3017620422003
+Authorization: Bearer {{memberToken}}
 Accept: application/json
 
 ### Quét mã vạch bởi Thành viên (Kèm cảnh báo dị ứng cá nhân)

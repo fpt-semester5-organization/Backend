@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.EntityFrameworkCore;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
@@ -15,8 +16,33 @@ public static class DevDataSeeder
 {
     private const string DefaultPasswordHash = "$2a$11$GBRajsAbFfn4G4UI7bhu.O8MGs4mXfn/clcozGAZ0npIHYrlShxwO"; // Veggie@2026
 
+    /// <summary>
+    /// Vá các cột thiếu trong CSDL vật lý (nếu có) để tránh lỗi Invalid column name khi chạy với CSDL cũ chưa cập nhật script mới.
+    /// </summary>
+    public static void ApplySchemaPatches(AppDbContext db)
+    {
+        if (db.Database.ProviderName?.Contains("SqlServer") == true)
+        {
+            try
+            {
+                db.Database.ExecuteSqlRaw(@"
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Products' AND COLUMN_NAME = 'Image_Url')
+                    BEGIN
+                        ALTER TABLE dbo.Products ADD Image_Url VARCHAR(500) NULL;
+                    END
+                ");
+            }
+            catch
+            {
+                // Bỏ qua nếu không có quyền DDL hoặc cột đã tồn tại
+            }
+        }
+    }
+
     public static void SeedIfEmpty(AppDbContext db)
     {
+        ApplySchemaPatches(db);
+
         // 1. Nạp Trường phái ăn chay (DietarySchools)
         if (!db.DietarySchools.Any())
         {
