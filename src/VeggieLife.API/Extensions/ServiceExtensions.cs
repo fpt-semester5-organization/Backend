@@ -369,6 +369,9 @@ public static class ServiceExtensions
         // Dịch vụ Chatbot tư vấn dinh dưỡng (FN-CHAT-01..06)
         services.AddScoped<VeggieLife.BLL.Services.Chat.IChatService, VeggieLife.BLL.Services.Chat.ChatService>();
 
+        // Dịch vụ Đăng ký gói VIP & Thanh toán (FN-SUB-01..04)
+        services.AddScoped<VeggieLife.BLL.Services.Subscriptions.ISubscriptionService, VeggieLife.BLL.Services.Subscriptions.SubscriptionService>();
+
         return services;
     }
 

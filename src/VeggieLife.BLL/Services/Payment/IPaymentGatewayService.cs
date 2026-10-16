@@ -42,4 +42,14 @@ public interface IPaymentGatewayService
     /// Xác thực chữ ký số HMAC-SHA256 trên webhook IPN từ cổng thanh toán.
     /// </summary>
     bool VerifySignature(IDictionary<string, string> requestData, string secureHash);
+
+    /// <summary>
+    /// Xác thực chữ ký số HMAC-SHA256 theo từng cổng thanh toán cụ thể (MoMo, VietQR).
+    /// </summary>
+    bool VerifySignature(string gateway, IDictionary<string, string> requestData, string secureHash);
+
+    /// <summary>
+    /// Tạo chữ ký số HMAC-SHA256 từ dữ liệu yêu cầu IPN theo khóa bí mật của cổng.
+    /// </summary>
+    string CreateSignature(string gateway, IDictionary<string, string> requestData);
 }
