@@ -35,7 +35,12 @@ public static class PasswordValidator
             return (false, "Mật khẩu phải chứa ít nhất 01 chữ số (0-9).");
         }
 
-        if (!password.Any(ch => !char.IsLetterOrDigit(ch)))
+        if (password.Any(char.IsWhiteSpace))
+        {
+            return (false, "Mật khẩu không được chứa khoảng trắng.");
+        }
+
+        if (!password.Any(ch => !char.IsLetterOrDigit(ch) && !char.IsWhiteSpace(ch)))
         {
             return (false, "Mật khẩu phải chứa ít nhất 01 ký tự đặc biệt (ví dụ: !@#$%^&*...).");
         }

@@ -58,6 +58,13 @@ public class PasswordValidatorTests
     [InlineData("VeggieLife2026", false, "Mật khẩu phải chứa ít nhất 01 ký tự đặc biệt (ví dụ: !@#$%^&*...).")]
     [InlineData("Password12345", false, "Mật khẩu phải chứa ít nhất 01 ký tự đặc biệt (ví dụ: !@#$%^&*...).")]
     [InlineData("Abcdefgh12", false, "Mật khẩu phải chứa ít nhất 01 ký tự đặc biệt (ví dụ: !@#$%^&*...).")]
+
+    // --- 8. Ca kiểm thử CHỨA KHOẢNG TRẮNG (Whitespace Disallowed) ---
+    [InlineData("Veggie 2026", false, "Mật khẩu không được chứa khoảng trắng.")]
+    [InlineData("Veggie @2026", false, "Mật khẩu không được chứa khoảng trắng.")]
+    [InlineData(" Veggie@2026", false, "Mật khẩu không được chứa khoảng trắng.")]
+    [InlineData("Veggie@2026 ", false, "Mật khẩu không được chứa khoảng trắng.")]
+    [InlineData("Veggie\t@2026", false, "Mật khẩu không được chứa khoảng trắng.")]
     public void Validate_BR_AUTH_001_PasswordPolicy_Matrix(string? password, bool expectedIsValid, string? expectedErrorPart)
     {
         // ACT
