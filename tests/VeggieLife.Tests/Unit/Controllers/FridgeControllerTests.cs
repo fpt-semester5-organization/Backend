@@ -93,7 +93,7 @@ public class FridgeControllerTests
         response.Should().NotBeNull();
         response!.StatusCode.Should().Be(StatusCodes.Status200OK);
         response.Message.Should().Be("Đã nhận diện nguyên liệu.");
-        response.Data.Saved.Should().BeTrue();
+        response.Data!.Saved.Should().BeTrue();
         response.Data.Detected.Should().HaveCount(1);
         response.Data.Detected[0].Name.Should().Be("Nấm rơm");
     }
@@ -148,8 +148,8 @@ public class FridgeControllerTests
 
         var response = okResult.Value as ApiResponse<CreateFridgeDetectionResponseData>;
         response.Should().NotBeNull();
-        response!.Data.Saved.Should().BeFalse();
-        response.Data.Quota.Limit.Should().Be(3);
+        response!.Data!.Saved.Should().BeFalse();
+        response.Data.Quota!.Limit.Should().Be(3);
     }
 
     [Fact]
@@ -271,7 +271,7 @@ public class FridgeControllerTests
         var response = statusResult.Value as ApiResponse<FridgeItemDto>;
         response.Should().NotBeNull();
         response!.Message.Should().Be("Đã thêm.");
-        response.Data.InventoryId.Should().Be(55);
+        response.Data!.InventoryId.Should().Be(55);
     }
 
     [Fact]
@@ -309,7 +309,7 @@ public class FridgeControllerTests
         var response = okResult.Value as ApiResponse<FridgeItemDto>;
         response.Should().NotBeNull();
         response!.Message.Should().Be("Đã cập nhật.");
-        response.Data.FreshnessStatus.Should().Be("NON-FRESH");
+        response.Data!.FreshnessStatus.Should().Be("NON-FRESH");
     }
 
     [Fact]
