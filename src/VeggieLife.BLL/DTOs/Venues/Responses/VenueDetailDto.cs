@@ -12,7 +12,13 @@ public class VenueDetailDto
     public int VenueId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Address { get; set; } = string.Empty;
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
+    public double Lat => Latitude;
+    public double Lng => Longitude;
     public double? DistanceKm { get; set; }
+    public decimal Rating { get; set; }
+    public bool IsFullyVegan { get; set; }
     public string? ThumbnailUrl { get; set; }
     public List<string> Categories { get; set; } = new();
     public string DirectionsUrl { get; set; } = string.Empty;
