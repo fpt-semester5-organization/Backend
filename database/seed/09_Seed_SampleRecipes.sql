@@ -38,7 +38,7 @@ VALUES (
     N'Món canh thanh đạm bổ dưỡng mát lành giải nhiệt cơ thể.', 
     N'["Bước 1: Rửa sạch nấm rơm và cắt miếng vừa ăn, cắt đậu hũ non thành khối vuông.","Bước 2: Nấu sôi 800ml nước, cho nấm rơm vào đun trong 5 phút.","Bước 3: Cho đậu hũ non và rong biển vào nấu thêm 3 phút, nêm nếm vừa ăn rồi tắt bếp."]', 
     10, 25, 2, 310.0, 'EASY', 1, 
-    'https://res.cloudinary.com/veggielife/r/101.webp', 
+    'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=800&q=80', 
     'APPROVED_ACTIVE', 150, 'USER', DATEADD(DAY, -5, SYSDATETIME())
 );
 
@@ -50,7 +50,7 @@ VALUES (
     N'Nấm kho sánh quyện đậm đà đưa cơm chuẩn vị chay Phật giáo.', 
     N'["Bước 1: Sơ chế nấm hương và nấm đùi gà, ngâm nước muối loãng 10 phút.","Bước 2: Ướp nấm với nước tương, tiêu hạt và đường thốt nốt trong 15 phút.","Bước 3: Kho trên lửa nhỏ trong 20 phút cho nước sốt sánh lại và thấm đều."]', 
     15, 35, 4, 240.0, 'MEDIUM', 1, 
-    'https://res.cloudinary.com/veggielife/r/102.webp', 
+    'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80', 
     'APPROVED_ACTIVE', 280, 'USER', DATEADD(DAY, -4, SYSDATETIME())
 );
 
@@ -62,7 +62,7 @@ VALUES (
     N'Món mì xào giòn thơm kèm video hướng dẫn từng bước.', 
     N'["Bước 1: Chần sơ mì qua nước sôi rồi để ráo.","Bước 2: Xào chín nấm kim châm và đậu hũ chiên.","Bước 3: Cho mì vào đảo đều lửa lớn trong 3 phút, rưới nước sốt xào."]', 
     10, 15, 2, 350.0, 'EASY', 0, 
-    'https://res.cloudinary.com/veggielife/r/103.webp', 
+    'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=800&q=80', 
     'APPROVED_ACTIVE', 95, 'USER', DATEADD(DAY, -3, SYSDATETIME())
 );
 
@@ -74,7 +74,7 @@ VALUES (
     N'Súp thơm mùi bơ sữa và ngọt thanh tự nhiên từ bắp ngọt.', 
     N'["Bước 1: Tách hạt ngô ngọt và rửa sạch.","Bước 2: Xào thơm ngô với bơ lạt, xay nhuyễn 1/2 lượng ngô.","Bước 3: Nấu sôi hỗn hợp súp và khuấy đều tay đến khi sánh mịn."]', 
     10, 20, 3, 280.0, 'EASY', 1, 
-    'https://res.cloudinary.com/veggielife/r/104.webp', 
+    'https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80', 
     'APPROVED_ACTIVE', 120, 'USER', DATEADD(DAY, -2, SYSDATETIME())
 );
 
@@ -129,7 +129,7 @@ DECLARE @Post104 INT = (SELECT Post_ID FROM dbo.Posts WHERE Recipe_ID = 104);
 
 -- 6. Nạp Video & VideoTranscript cho công thức 103
 INSERT INTO dbo.Videos (Post_ID, Title, Video_Url, Thumbnail_Url, Duration_Seconds, View_Count, Status, Created_At)
-VALUES (@Post103, N'Video làm Mì xào nấm rau củ', 'https://video.veggielife.vn/r103.mp4', 'https://res.cloudinary.com/veggielife/r/103_thumb.webp', 120, 95, 'READY', DATEADD(DAY, -3, SYSDATETIME()));
+VALUES (@Post103, N'Video làm Mì xào nấm rau củ', 'https://res.cloudinary.com/demo/video/upload/dog.mp4', 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=800&q=80', 120, 95, 'READY', DATEADD(DAY, -3, SYSDATETIME()));
 
 DECLARE @Video103 INT = SCOPE_IDENTITY();
 
