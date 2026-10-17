@@ -53,10 +53,23 @@ public class UsersController : BaseApiController
     }
 
     /// <summary>
+    /// FN-PROF-04: Lấy thông tin hồ sơ sức khỏe của người dùng hiện tại.
+    /// </summary>
+    [HttpGet("me/health-profile")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    public async Task<IActionResult> GetCurrentUserHealthProfile(CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+        var user = await _profileService.GetCurrentUserAsync((int)CurrentUserId!.Value, ct);
+        return OkResponse(user.Health, "Lấy hồ sơ sức khỏe thành công.");
+    }
+
+    /// <summary>
     /// FN-PROF-04: Thiết lập / cập nhật hồ sơ sức khỏe & dinh dưỡng.
     /// Tự tính toán chỉ số BMI/BMR/TDEE/Calo mục tiêu và ghi nhận lịch sử cân nặng.
     /// </summary>
     [HttpPut("me/health-profile")]
+    [HttpPost("me/health-profile")]
     [Authorize(Policy = PolicyNames.RequireMember)]
     public async Task<IActionResult> UpdateCurrentUserHealthProfile([FromBody] UpdateCurrentUserHealthProfileRequest request, CancellationToken ct)
     {
@@ -66,9 +79,25 @@ public class UsersController : BaseApiController
     }
 
     /// <summary>
+    /// FN-PROF-05: Lấy danh sách chất dị ứng của người dùng hiện tại.
+    /// </summary>
+    [HttpGet("me/allergies")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    public async Task<IActionResult> GetCurrentUserAllergies(CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+        var user = await _profileService.GetCurrentUserAsync((int)CurrentUserId!.Value, ct);
+        return OkResponse(new ReplaceCurrentUserAllergiesResponse
+        {
+            Allergens = user.Allergens
+        }, "Lấy danh sách dị ứng thành công.");
+    }
+
+    /// <summary>
     /// FN-PROF-05: Khai báo thay thế toàn bộ danh sách chất dị ứng của người dùng.
     /// </summary>
     [HttpPut("me/allergies")]
+    [HttpPost("me/allergies")]
     [Authorize(Policy = PolicyNames.RequireMember)]
     public async Task<IActionResult> ReplaceCurrentUserAllergies([FromBody] ReplaceCurrentUserAllergiesRequest request, CancellationToken ct)
     {
