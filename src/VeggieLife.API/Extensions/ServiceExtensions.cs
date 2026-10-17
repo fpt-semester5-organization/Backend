@@ -21,6 +21,7 @@ using VeggieLife.BLL.Services.Products;
 using VeggieLife.BLL.Services.Profile;
 using VeggieLife.DAL.External.Cloudinary;
 using VeggieLife.DAL.External.Email;
+using VeggieLife.DAL.External.Google;
 using VeggieLife.DAL.External.OpenFoodFacts;
 
 namespace VeggieLife.API.Extensions;
@@ -307,8 +308,10 @@ public static class ServiceExtensions
     /// </summary>
     public static IServiceCollection AddApplicationServices(this IServiceCollection services, IConfiguration configuration)
     {
-        // Dịch vụ JWT, Auth & Cache
+        // Dịch vụ JWT, Auth, Google OAuth & Cache
         services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.Configure<GoogleAuthSettings>(configuration.GetSection(GoogleAuthSettings.SectionName));
+        services.AddScoped<IGoogleAuthClient, GoogleAuthClient>();
         services.AddScoped<IAuthService, AuthService>();
 
         // Cấu hình & Dịch vụ Khách vãng lai (FN-AUTH-01, FN-AUTH-02, BR-GUEST-SEC-01)

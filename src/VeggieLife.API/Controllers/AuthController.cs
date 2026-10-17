@@ -112,6 +112,42 @@ public class AuthController : BaseApiController
     }
 
     /// <summary>
+    /// FN-AUTH-07: Đăng nhập / đăng ký bằng Google OAuth.
+    /// Xác thực Google ID Token; tạo tài khoản ACTIVE mới (bỏ qua OTP), đăng nhập tài khoản đã liên kết,
+    /// hoặc liên kết Google vào tài khoản mật khẩu cùng Email sau khi người dùng xác nhận mật khẩu hiện tại (BR-USR-AUTH-02).
+    /// </summary>
+    /// <param name="request">Google ID Token và mật khẩu hiện tại (nếu cần xác nhận liên kết).</param>
+    /// <param name="ct">Cancellation Token.</param>
+    /// <returns>HTTP 200 OK kèm Access Token và thông tin tài khoản.</returns>
+    [HttpPost("google")]
+    [AllowAnonymous]
+    public async Task<IActionResult> LoginWithGoogle([FromBody] LoginWithGoogleRequest request, CancellationToken ct)
+    {
+        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = Request.Headers.UserAgent.ToString();
+
+        // Nhận diện GuestUuid từ request, cookie hoặc header nếu có để hợp nhất ngữ cảnh (BR-GUEST-AUTH-01)
+        if (string.IsNullOrEmpty(request.GuestUuid))
+        {
+            if (Request.Cookies.TryGetValue("guest_uuid", out var cookieGuestUuid))
+            {
+                request.GuestUuid = cookieGuestUuid;
+            }
+            else if (Request.Headers.TryGetValue("X-Guest-UUID", out var headerGuestUuid))
+            {
+                request.GuestUuid = headerGuestUuid.ToString().Trim();
+            }
+        }
+
+        var result = await _authService.LoginWithGoogleAsync(request, clientIp, userAgent, ct);
+
+        // Thiết lập Cookie HttpOnly cho Refresh Token (BR-AUTH-004)
+        SetRefreshTokenCookie(result.RefreshToken);
+
+        return OkResponse(result, "Đăng nhập Google thành công.");
+    }
+
+    /// <summary>
     /// FN-AUTH-08: Đăng nhập bằng Email và Mật khẩu.
     /// Khóa đăng nhập 15 phút sau 5 lần sai liên tiếp, cấp cặp Token đăng nhập (Access Token 15 phút, Refresh Token 7 ngày).
     /// </summary>
