@@ -10,7 +10,7 @@ public class AiFridgeDetectionResult
     public bool Success { get; set; }
     public List<AiDetectedItemDto> Items { get; set; } = new();
     public int TokensConsumed { get; set; } = 250;
-    public string? ModelVersion { get; set; } = "gemini-2.5-flash-vision";
+    public string? ModelVersion { get; set; } = "gemini-3.8-flash";
     public int ExecutionTimeMs { get; set; }
 }
 

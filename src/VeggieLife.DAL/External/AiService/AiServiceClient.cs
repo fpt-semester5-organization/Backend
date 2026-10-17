@@ -141,7 +141,8 @@ public class AiServiceClient : IAiServiceClient
 
         try
         {
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+            var timeoutSeconds = _settings.TimeoutSeconds > 0 ? _settings.TimeoutSeconds : 30;
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
             using var content = new MultipartFormDataContent();
@@ -181,7 +182,7 @@ public class AiServiceClient : IAiServiceClient
         catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
         {
             sw.Stop();
-            _logger.LogWarning(ex, "[AiServiceClient] Gọi ai-service /fridge/detect bị TIMEOUT quá 4 giây ({ElapsedMs} ms).", sw.ElapsedMilliseconds);
+            _logger.LogWarning(ex, "[AiServiceClient] Gọi ai-service /vision/detect-ingredients bị TIMEOUT quá thời gian cho phép ({ElapsedMs} ms).", sw.ElapsedMilliseconds);
             RecordFailure();
             return null;
         }
