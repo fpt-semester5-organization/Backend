@@ -1,0 +1,61 @@
+## Antigravity AI Customizations (local skills & rules)
+.agents/
+
+## Local Project Documentation (Specs, BRs, Data Models, Decision Log)
+project-docs/
+local-docs/
+
+## Build results
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.userprefs
+*.userosscache
+*.sln.docstates
+*.suo
+*.slnx
+
+## JetBrains Rider / Resharper
+.idea/
+*.rsuser
+
+## Sensitive & Local Environment files
+appsettings.json
+appsettings.*.json
+appsettings.Development.json
+appsettings.Local.json
+*.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.cer
+!appsettings.Example.json
+!.env.example
+
+## OS and Office temp files
+.DS_Store
+Thumbs.db
+~$*
+
+## Scratch and temporary local test scripts
+scratch/
+
+## Figma tools & local generators
+figma-slide-generator/
+figma/
+*figma*
+
+## SRS Review & team checking folders
+Check-SRS/
+check-srs/
+*Check-SRS*
+*check-srs*
+
+

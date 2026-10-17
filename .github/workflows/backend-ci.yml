@@ -1,0 +1,46 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [ "develop", "main" ]
+  pull_request:
+    branches: [ "develop", "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+        
+    - name: Restore dependencies
+      run: dotnet restore VeggieLife.sln
+      
+    - name: Build
+      run: dotnet build VeggieLife.sln --no-restore
+      
+    - name: Setup Test Configuration
+      run: cp src/VeggieLife.API/appsettings.Example.json src/VeggieLife.API/appsettings.json
+
+    - name: Run Tests
+      env:
+        ConnectionStrings__DefaultConnection: "Server=(localdb)\\MSSQLLocalDB;Database=VeggieLifeDb;Trusted_Connection=True;TrustServerCertificate=True;"
+        ConnectionStrings__Redis: "localhost:6379,abortConnect=false"
+        Jwt__SecretKey: "VeggieLifeSecretKeyForDevelopmentMustBe32CharsLong!"
+        Jwt__Issuer: "VeggieLife.API"
+        Jwt__Audience: "VeggieLife.Client"
+        Jwt__AccessTokenExpiryMinutes: "120"
+        GuestSecurity__RateLimitPerMinute: "10"
+        GuestSecurity__BanDurationMinutes: "10"
+        GuestSecurity__EnforceVietnamOnly: "false"
+        GuestSecurity__AllowedCountryCodes__0: "VN"
+        Smtp__ActiveProvider: "Resend"
+        Smtp__Resend__Password: "re_dummy_test_key"
+        Smtp__Resend__From: "onboarding@resend.dev"
+        Smtp__Resend__DisplayName: "VeggieLife"
+      run: dotnet test tests/VeggieLife.Tests/VeggieLife.Tests.csproj --no-build --verbosity normal
