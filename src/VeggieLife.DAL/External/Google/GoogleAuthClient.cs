@@ -31,6 +31,35 @@ public class GoogleAuthClient : IGoogleAuthClient
             return null;
         }
 
+        // Hỗ trợ kiểm thử môi trường phát triển (Dev Mock Token)
+        if (_settings.AllowDevMockTokens &&
+            (idToken.Equals("dev-google-token", StringComparison.OrdinalIgnoreCase) ||
+             idToken.StartsWith("dev:", StringComparison.OrdinalIgnoreCase)))
+        {
+            var mockEmail = idToken.StartsWith("dev:", StringComparison.OrdinalIgnoreCase)
+                ? idToken[4..].Trim()
+                : "an.nguyen@gmail.com";
+
+            if (string.IsNullOrWhiteSpace(mockEmail))
+            {
+                mockEmail = "an.nguyen@gmail.com";
+            }
+
+            var mockSub = "google_mock_sub_" + Math.Abs(mockEmail.GetHashCode());
+            var mockName = mockEmail.Split('@')[0];
+
+            _logger.LogInformation("DEVELOPMENT MOCK: Xác thực thành công Dev Mock Google Token cho {Email}.", mockEmail);
+
+            return new GoogleTokenPayload
+            {
+                Subject = mockSub,
+                Email = mockEmail,
+                EmailVerified = true,
+                Name = mockName,
+                Picture = "https://lh3.googleusercontent.com/a/default-user"
+            };
+        }
+
         try
         {
             var validationSettings = new GoogleJsonWebSignature.ValidationSettings();

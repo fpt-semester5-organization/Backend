@@ -43,4 +43,55 @@ public class GoogleAuthClientTests
 
         Assert.Null(result);
     }
+
+    [Fact]
+    public async Task ValidateIdTokenAsync_WhenDevGoogleToken_ReturnsValidMockPayload()
+    {
+        var settings = Options.Create(new GoogleAuthSettings
+        {
+            AllowDevMockTokens = true
+        });
+
+        var client = new GoogleAuthClient(settings, NullLogger<GoogleAuthClient>.Instance);
+
+        var result = await client.ValidateIdTokenAsync("dev-google-token");
+
+        Assert.NotNull(result);
+        Assert.Equal("an.nguyen@gmail.com", result.Email);
+        Assert.True(result.EmailVerified);
+        Assert.NotEmpty(result.Subject);
+    }
+
+    [Fact]
+    public async Task ValidateIdTokenAsync_WhenDevCustomEmail_ReturnsCustomEmailPayload()
+    {
+        var settings = Options.Create(new GoogleAuthSettings
+        {
+            AllowDevMockTokens = true
+        });
+
+        var client = new GoogleAuthClient(settings, NullLogger<GoogleAuthClient>.Instance);
+
+        var result = await client.ValidateIdTokenAsync("dev:custom.tester@gmail.com");
+
+        Assert.NotNull(result);
+        Assert.Equal("custom.tester@gmail.com", result.Email);
+        Assert.True(result.EmailVerified);
+        Assert.Equal("custom.tester", result.Name);
+    }
+
+    [Fact]
+    public async Task ValidateIdTokenAsync_WhenAllowDevMockTokensFalse_DoesNotReturnMock()
+    {
+        var settings = Options.Create(new GoogleAuthSettings
+        {
+            AllowDevMockTokens = false
+        });
+
+        var client = new GoogleAuthClient(settings, NullLogger<GoogleAuthClient>.Instance);
+
+        var result = await client.ValidateIdTokenAsync("dev-google-token");
+
+        Assert.Null(result);
+    }
 }
