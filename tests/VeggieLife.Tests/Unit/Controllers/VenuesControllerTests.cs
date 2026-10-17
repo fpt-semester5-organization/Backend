@@ -56,7 +56,11 @@ public class VenuesControllerTests
                 VenueId = 301,
                 Name = "Ưu Đàm Chay",
                 Address = "34 Hàng Bài, Hà Nội",
+                Latitude = 21.0227,
+                Longitude = 105.8524,
                 DistanceKm = 0.7,
+                Rating = 4.8m,
+                IsFullyVegan = true,
                 DirectionsUrl = "https://www.google.com/maps/dir/?api=1&destination=21.0227,105.8524"
             }
         };
@@ -83,6 +87,10 @@ public class VenuesControllerTests
         apiResponse!.Message.Should().Be("Tìm thấy quán chay quanh bạn.");
         apiResponse.Data.Should().HaveCount(1);
         apiResponse.Data![0].Name.Should().Be("Ưu Đàm Chay");
+        apiResponse.Data[0].Latitude.Should().Be(21.0227);
+        apiResponse.Data[0].Longitude.Should().Be(105.8524);
+        apiResponse.Data[0].Rating.Should().Be(4.8m);
+        apiResponse.Data[0].IsFullyVegan.Should().BeTrue();
         apiResponse.Meta.Should().NotBeNull();
     }
 
@@ -172,6 +180,10 @@ public class VenuesControllerTests
             VenueId = venueId,
             Name = "Cơm Chay Tâm An",
             Address = "12 Lê Lợi, Quận 1, TP.HCM",
+            Latitude = 10.7729,
+            Longitude = 106.6983,
+            Rating = 4.6m,
+            IsFullyVegan = true,
             Categories = new List<string> { "Cơm chay" },
             DirectionsUrl = "https://www.google.com/maps/dir/?api=1&destination=10.7729,106.6983",
             Source = "HAPPYCOW"
@@ -193,5 +205,9 @@ public class VenuesControllerTests
         apiResponse!.Data.Should().NotBeNull();
         apiResponse.Data!.VenueId.Should().Be(venueId);
         apiResponse.Data.Name.Should().Be("Cơm Chay Tâm An");
+        apiResponse.Data.Latitude.Should().Be(10.7729);
+        apiResponse.Data.Longitude.Should().Be(106.6983);
+        apiResponse.Data.Rating.Should().Be(4.6m);
+        apiResponse.Data.IsFullyVegan.Should().BeTrue();
     }
 }
