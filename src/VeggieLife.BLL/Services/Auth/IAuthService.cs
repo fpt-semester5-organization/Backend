@@ -53,4 +53,11 @@ public interface IAuthService
     /// Đổi mật khẩu cho người dùng đang đăng nhập; thu hồi các phiên đăng nhập khác của tài khoản (FN-AUTH-13).
     /// </summary>
     Task ChangePasswordAsync(long userId, ChangePasswordRequest request, string? currentRefreshToken = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Đăng nhập hoặc đăng ký nhanh bằng Google OAuth ID Token (FN-AUTH-07).
+    /// Hỗ trợ tự động tạo tài khoản ACTIVE, liên kết tài khoản mật khẩu hiện có (BR-USR-AUTH-02), cấp cặp token (BR-AUTH-004), hợp nhất khách (BR-GUEST-AUTH-01).
+    /// </summary>
+    Task<LoginWithGoogleResponse> LoginWithGoogleAsync(LoginWithGoogleRequest request, string? clientIp = null, string? userAgent = null, CancellationToken ct = default);
 }
+

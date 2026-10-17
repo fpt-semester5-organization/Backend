@@ -29,6 +29,7 @@ public class AuthService : IAuthService
     private readonly IEmailService _emailService;
     private readonly IJwtTokenService _jwtTokenService;
     private readonly ILogger<AuthService> _logger;
+    private readonly VeggieLife.DAL.External.Google.IGoogleAuthClient? _googleAuthClient;
 
     private const int OtpExpirySeconds = 300; // 5 phút
     private const int LockoutMinutes = 15; // 15 phút khóa khi sai 5 lần
@@ -39,13 +40,15 @@ public class AuthService : IAuthService
         IRedisService redisService,
         IEmailService emailService,
         IJwtTokenService jwtTokenService,
-        ILogger<AuthService> logger)
+        ILogger<AuthService> logger,
+        VeggieLife.DAL.External.Google.IGoogleAuthClient? googleAuthClient = null)
     {
         _dbContext = dbContext;
         _redisService = redisService;
         _emailService = emailService;
         _jwtTokenService = jwtTokenService;
         _logger = logger;
+        _googleAuthClient = googleAuthClient;
     }
 
     public async Task<RegisterResponse> RegisterAsync(RegisterRequest request, CancellationToken ct = default)
@@ -1178,6 +1181,381 @@ public class AuthService : IAuthService
         await _dbContext.SaveChangesAsync(ct);
 
         _logger.LogInformation("Người dùng UserId {UserId} ({Email}) đã đổi mật khẩu thành công.", user.UserId, user.Email);
+    }
+
+    /// <summary>
+    /// FN-AUTH-07: Đăng nhập hoặc đăng ký nhanh bằng Google OAuth ID Token.
+    /// Xác thực Google ID Token; tạo tài khoản ACTIVE mới (bỏ qua OTP), đăng nhập tài khoản đã liên kết,
+    /// hoặc liên kết Google vào tài khoản mật khẩu cùng Email sau khi người dùng xác nhận mật khẩu hiện tại (BR-USR-AUTH-02).
+    /// </summary>
+    public async Task<LoginWithGoogleResponse> LoginWithGoogleAsync(
+        LoginWithGoogleRequest request,
+        string? clientIp = null,
+        string? userAgent = null,
+        CancellationToken ct = default)
+    {
+        // 1. Kiểm tra dữ liệu đầu vào bắt buộc
+        if (request == null || string.IsNullOrWhiteSpace(request.IdToken))
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Dữ liệu đầu vào sai định dạng hoặc thiếu trường bắt buộc.");
+        }
+
+        // 2. Xác minh chữ ký Google, aud, exp, email_verified qua client Google
+        if (_googleAuthClient == null)
+        {
+            _logger.LogError("IGoogleAuthClient chưa được cấu hình hoặc tiêm phụ thuộc trong AuthService.");
+            throw AppException.Internal(
+                ErrorCodes.ErrInternal,
+                "Dịch vụ xác thực Google chưa sẵn sàng.");
+        }
+
+        VeggieLife.DAL.External.Google.GoogleTokenPayload? payload;
+        try
+        {
+            payload = await _googleAuthClient.ValidateIdTokenAsync(request.IdToken.Trim(), ct);
+        }
+        catch (AppException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi xảy ra trong quá trình xác thực Google ID Token.");
+            throw AppException.Unauthorized(
+                ErrorCodes.ErrAuthOauthFailed,
+                "ID Token không hợp lệ.");
+        }
+
+        if (payload == null ||
+            string.IsNullOrWhiteSpace(payload.Subject) ||
+            string.IsNullOrWhiteSpace(payload.Email) ||
+            !payload.EmailVerified)
+        {
+            throw AppException.Unauthorized(
+                ErrorCodes.ErrAuthOauthFailed,
+                "ID Token không hợp lệ.");
+        }
+
+        var normalizedEmail = payload.Email.Trim().ToLowerInvariant();
+        bool isNewAccount = false;
+        User? user;
+
+        try
+        {
+            // 3. Tìm Users theo Google_ID; có thì sang bước đăng nhập
+            user = await _dbContext.Users
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.GoogleId == payload.Subject, ct);
+
+            if (user == null)
+            {
+                // Tìm kiếm tài khoản theo Email
+                var existingUserByEmail = await _dbContext.Users
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(u => u.Email == normalizedEmail, ct);
+
+                if (existingUserByEmail == null)
+                {
+                    // Email chưa tồn tại: INSERT Users (Account_Status = ACTIVE, Google_ID, Password_Hash = NULL)
+                    var displayName = !string.IsNullOrWhiteSpace(payload.Name)
+                        ? payload.Name.Trim()
+                        : normalizedEmail.Split('@')[0];
+
+                    user = new User
+                    {
+                        FullName = displayName,
+                        Email = normalizedEmail,
+                        GoogleId = payload.Subject,
+                        PasswordHash = null,
+                        AvatarUrl = payload.Picture,
+                        Role = UserRoles.Member,
+                        AccountStatus = AccountStatuses.Active,
+                        FailedLoginCount = 0,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    _dbContext.Users.Add(user);
+                    await _dbContext.SaveChangesAsync(ct);
+
+                    isNewAccount = true;
+
+                    // Ghi AuditLogs (Actor_Role = MEMBER, Action = USER_REGISTERED)
+                    _dbContext.AuditLogs.Add(new AuditLog
+                    {
+                        ActorUserId = user.UserId,
+                        ActorRole = user.Role,
+                        Action = "USER_REGISTERED",
+                        TargetTable = "Users",
+                        TargetId = user.UserId.ToString(),
+                        CreatedAt = DateTime.UtcNow,
+                        Note = "Đăng ký tài khoản mới qua Google OAuth (bỏ qua OTP, trạng thái ACTIVE)."
+                    });
+
+                    await _dbContext.SaveChangesAsync(ct);
+                }
+                else
+                {
+                    // Email đã tồn tại: Kiểm tra nếu đã liên kết Google_ID khác
+                    if (!string.IsNullOrEmpty(existingUserByEmail.GoogleId) &&
+                        existingUserByEmail.GoogleId != payload.Subject)
+                    {
+                        throw AppException.Conflict(
+                            ErrorCodes.ErrAuthAccountLinkRequired,
+                            "Email này đã được liên kết với một tài khoản Google khác.");
+                    }
+
+                    // Email đã có tài khoản mật khẩu: thiếu currentPassword thì trả 409 yêu cầu liên kết (BR-USR-AUTH-02)
+                    if (!string.IsNullOrEmpty(existingUserByEmail.PasswordHash))
+                    {
+                        if (string.IsNullOrWhiteSpace(request.CurrentPassword))
+                        {
+                            throw AppException.Conflict(
+                                ErrorCodes.ErrAuthAccountLinkRequired,
+                                "Email đã có tài khoản mật khẩu; cần currentPassword.",
+                                new { email = normalizedEmail });
+                        }
+
+                        // Đúng mật khẩu thì UPDATE Users.Google_ID (BR-USR-AUTH-02)
+                        bool isPasswordValid = false;
+                        try
+                        {
+                            isPasswordValid = BCrypt.Net.BCrypt.Verify(request.CurrentPassword, existingUserByEmail.PasswordHash);
+                        }
+                        catch
+                        {
+                            isPasswordValid = false;
+                        }
+
+                        if (!isPasswordValid)
+                        {
+                            throw AppException.Unauthorized(
+                                ErrorCodes.ErrAuthInvalidCredentials,
+                                "Mật khẩu xác nhận liên kết sai.");
+                        }
+
+                        existingUserByEmail.GoogleId = payload.Subject;
+                        if (existingUserByEmail.AccountStatus == AccountStatuses.PendingActivation)
+                        {
+                            existingUserByEmail.AccountStatus = AccountStatuses.Active;
+                        }
+                        if (string.IsNullOrEmpty(existingUserByEmail.AvatarUrl) && !string.IsNullOrEmpty(payload.Picture))
+                        {
+                            existingUserByEmail.AvatarUrl = payload.Picture;
+                        }
+                        existingUserByEmail.UpdatedAt = DateTime.UtcNow;
+
+                        _dbContext.AuditLogs.Add(new AuditLog
+                        {
+                            ActorUserId = existingUserByEmail.UserId,
+                            ActorRole = existingUserByEmail.Role,
+                            Action = "ACCOUNT_LINKED",
+                            TargetTable = "Users",
+                            TargetId = existingUserByEmail.UserId.ToString(),
+                            CreatedAt = DateTime.UtcNow,
+                            Note = "Liên kết Google OAuth vào tài khoản mật khẩu thành công (BR-USR-AUTH-02)."
+                        });
+
+                        await _dbContext.SaveChangesAsync(ct);
+                        user = existingUserByEmail;
+                        isNewAccount = false;
+                    }
+                    else
+                    {
+                        // Tài khoản chưa có PasswordHash -> cập nhật Google_ID trực tiếp
+                        existingUserByEmail.GoogleId = payload.Subject;
+                        if (existingUserByEmail.AccountStatus == AccountStatuses.PendingActivation)
+                        {
+                            existingUserByEmail.AccountStatus = AccountStatuses.Active;
+                        }
+                        if (string.IsNullOrEmpty(existingUserByEmail.AvatarUrl) && !string.IsNullOrEmpty(payload.Picture))
+                        {
+                            existingUserByEmail.AvatarUrl = payload.Picture;
+                        }
+                        existingUserByEmail.UpdatedAt = DateTime.UtcNow;
+
+                        await _dbContext.SaveChangesAsync(ct);
+                        user = existingUserByEmail;
+                        isNewAccount = false;
+                    }
+                }
+            }
+        }
+        catch (AppException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi kết nối cơ sở dữ liệu khi xác thực Google OAuth: {Message}", ex.Message);
+            throw AppException.Internal(
+                ErrorCodes.ErrSysDatabaseUnavailable,
+                "Không kết nối được SQL Server.",
+                ex.Message);
+        }
+
+        // 4. Account_Status SUSPENDED / BANNED thì từ chối (BR-ADM-USR-002)
+        if (user.AccountStatus == AccountStatuses.Suspended || user.AccountStatus == AccountStatuses.Banned)
+        {
+            throw AppException.Forbidden(
+                ErrorCodes.ErrAuthAccountBanned,
+                "Tài khoản bị đình chỉ/cấm.");
+        }
+
+        if (user.AccountStatus == AccountStatuses.SoftDeleted)
+        {
+            var gracePeriodDays = 30;
+            var deletedDate = user.UpdatedAt ?? user.CreatedAt;
+            var daysSinceDeleted = (DateTime.UtcNow - deletedDate).TotalDays;
+
+            if (daysSinceDeleted > gracePeriodDays)
+            {
+                throw AppException.Forbidden(
+                    ErrorCodes.ErrAuthAccountBanned,
+                    "Tài khoản bị đình chỉ/cấm.");
+            }
+
+            user.AccountStatus = AccountStatuses.Active;
+            user.UpdatedAt = DateTime.UtcNow;
+            _logger.LogInformation("Tài khoản {Email} đã khôi phục thành công từ SOFT_DELETED qua Google OAuth.", normalizedEmail);
+        }
+        else if (user.AccountStatus != AccountStatuses.Active)
+        {
+            throw AppException.Forbidden(
+                ErrorCodes.ErrAuthAccountBanned,
+                "Tài khoản bị đình chỉ/cấm.");
+        }
+
+        // Đặt lại số lần sai & thời gian đăng nhập
+        user.FailedLoginCount = 0;
+        user.LockedUntil = null;
+        user.LastLoginAt = DateTime.UtcNow;
+
+        // 5. Hợp nhất ngữ cảnh Khách nếu có GuestUuid (BR-GUEST-AUTH-01)
+        if (!string.IsNullOrWhiteSpace(request.GuestUuid))
+        {
+            try
+            {
+                var guestSessions = await _dbContext.ChatSessions
+                    .Where(cs => cs.GuestUuid == request.GuestUuid && cs.UserId == null)
+                    .ToListAsync(ct);
+
+                foreach (var session in guestSessions)
+                {
+                    session.UserId = user.UserId;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Lỗi hợp nhất ngữ cảnh khách vãng lai cho user {UserId}.", user.UserId);
+            }
+        }
+
+        // 6. Cấp token (BR-AUTH-004) Access Token mang claim sub, role (MEMBER | VIP | ADMIN, lấy từ Users.Role)
+        // và isVip (true khi còn PaymentTransactions SUCCESS có Ends_At > hiện tại) (D104);
+        bool isVip = false;
+        try
+        {
+            isVip = user.Role == UserRoles.Vip || await _dbContext.PaymentTransactions
+                .AnyAsync(pt => pt.UserId == user.UserId && pt.TransactionStatus == "SUCCESS" && pt.EndsAt > DateTime.UtcNow, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi kiểm tra trạng thái VIP của user {UserId}.", user.UserId);
+        }
+
+        var tokenResult = _jwtTokenService.GenerateUserToken(user, isVip);
+        var tokenHash = ComputeSha256(tokenResult.RefreshToken);
+
+        var refreshSession = new RefreshTokenSession
+        {
+            UserId = user.UserId,
+            TokenHash = tokenHash,
+            IsRevoked = false,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddDays(7),
+            ClientIp = clientIp,
+            UserAgent = userAgent
+        };
+
+        try
+        {
+            await _redisService.SetAsync($"refresh:{tokenHash}", refreshSession, TimeSpan.FromDays(7), ct);
+
+            var userSessionsKey = $"user_sessions:{user.UserId}";
+            var sessions = await _redisService.GetAsync<List<string>>(userSessionsKey, ct) ?? new List<string>();
+            if (!sessions.Contains(tokenHash))
+            {
+                sessions.Add(tokenHash);
+            }
+            await _redisService.SetAsync(userSessionsKey, sessions, TimeSpan.FromDays(7), ct);
+        }
+        catch (AppException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi khi lưu trữ phiên refresh token trên Redis cho user {UserId}.", user.UserId);
+        }
+
+        // Ghi AuditLogs đăng nhập
+        try
+        {
+            _dbContext.AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = user.UserId,
+                ActorRole = user.Role,
+                Action = "LOGIN",
+                TargetTable = "Users",
+                TargetId = user.UserId.ToString(),
+                CreatedAt = DateTime.UtcNow,
+                Note = isNewAccount
+                    ? "Đăng nhập lần đầu sau khi tạo tài khoản bằng Google OAuth."
+                    : "Đăng nhập thành công bằng Google OAuth."
+            });
+
+            await _dbContext.SaveChangesAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi ghi nhận AuditLog khi đăng nhập Google cho user {UserId}.", user.UserId);
+        }
+
+        // Kiểm tra hoàn thiện hồ sơ dinh dưỡng ban đầu
+        var isProfileCompleted = false;
+        try
+        {
+            isProfileCompleted = await _dbContext.HealthProfiles
+                .AnyAsync(hp => hp.UserId == user.UserId, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi kiểm tra hồ sơ sức khỏe cho user {UserId}.", user.UserId);
+        }
+
+        _logger.LogInformation("Người dùng {Email} (UserId: {UserId}, isNewAccount: {IsNewAccount}) đăng nhập Google thành công.",
+            normalizedEmail, user.UserId, isNewAccount);
+
+        return new LoginWithGoogleResponse
+        {
+            TokenType = "Bearer",
+            AccessToken = tokenResult.AccessToken,
+            RefreshToken = tokenResult.RefreshToken,
+            ExpiresIn = tokenResult.ExpiresInSeconds,
+            User = new AuthUserDto
+            {
+                UserId = user.UserId,
+                Email = user.Email,
+                FullName = user.FullName,
+                Role = user.Role,
+                IsVip = isVip,
+                AccountStatus = user.AccountStatus,
+                IsProfileCompleted = isProfileCompleted
+            },
+            IsNewAccount = isNewAccount
+        };
     }
 
     private static string ComputeSha256(string raw)
