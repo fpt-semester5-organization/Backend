@@ -543,8 +543,10 @@ public class MealPlanServiceTests : IDisposable
         // ARRANGE
         var userId = 504;
         _db.Users.Add(new User { UserId = userId, Email = "user504@test.com", FullName = "User 504", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
-        var oldActivePlan = CreateTestMealPlan(5041, userId, "ACTIVE", "2026-10-19");
-        var draftPlan = CreateTestMealPlan(5042, userId, "DRAFT", "2026-10-19");
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var currentMonday = today.AddDays(-(int)(today.DayOfWeek == DayOfWeek.Sunday ? 6 : (int)today.DayOfWeek - 1));
+        var oldActivePlan = CreateTestMealPlan(5041, userId, "ACTIVE", currentMonday.ToString("yyyy-MM-dd"));
+        var draftPlan = CreateTestMealPlan(5042, userId, "DRAFT", currentMonday.ToString("yyyy-MM-dd"));
 
         // ACT
         var result = await _service.ActivateMealPlanAsync(5042, userId, UserRoles.Member);
@@ -577,6 +579,70 @@ public class MealPlanServiceTests : IDisposable
         var ex = await act.Should().ThrowAsync<AppException>();
         ex.Which.StatusCode.Should().Be(409);
         ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrMealPlanNotDraft);
+    }
+
+    [Fact]
+    public async Task ActivateMealPlanAsync_WhenUserHasActivePlanInOngoingWeek_ShouldThrowConflict()
+    {
+        // ARRANGE: Tuần 1 đang ACTIVE và đang trong tuần hiện tại
+        var userId = 5048;
+        _db.Users.Add(new User { UserId = userId, Email = "user5048@test.com", FullName = "User 5048", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var currentMonday = today.AddDays(-(int)(today.DayOfWeek == DayOfWeek.Sunday ? 6 : (int)today.DayOfWeek - 1));
+        var nextMonday = currentMonday.AddDays(7);
+
+        // Tuần 1 đang ACTIVE
+        CreateTestMealPlan(50481, userId, "ACTIVE", currentMonday.ToString("yyyy-MM-dd"));
+        // Tuần 2 ở dạng DRAFT
+        CreateTestMealPlan(50482, userId, "DRAFT", nextMonday.ToString("yyyy-MM-dd"));
+
+        // ACT & ASSERT: Không thể kích hoạt tuần 2 khi tuần 1 đang diễn ra
+        var act = () => _service.ActivateMealPlanAsync(50482, userId, UserRoles.Member);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(409);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrMealPlanNotDraft);
+    }
+
+    [Fact]
+    public async Task ActivateMealPlanAsync_FutureWeekPlan_ShouldThrowConflict_WhenNotYetStarted()
+    {
+        // ARRANGE: Thực đơn tuần tương lai chưa tới thời gian áp dụng
+        var userId = 5049;
+        _db.Users.Add(new User { UserId = userId, Email = "user5049@test.com", FullName = "User 5049", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var futureMonday = today.AddDays(7);
+        CreateTestMealPlan(50491, userId, "DRAFT", futureMonday.ToString("yyyy-MM-dd"));
+
+        // ACT & ASSERT: Báo lỗi 409
+        var act = () => _service.ActivateMealPlanAsync(50491, userId, UserRoles.Member);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(409);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrMealPlanNotDraft);
+        ex.Which.Message.Should().Contain("Chưa đến thời gian áp dụng");
+    }
+
+    [Fact]
+    public async Task ActivateMealPlanAsync_WhenPreviousPlanExpired_ShouldArchiveOldPlanAndActivateCurrentPlan()
+    {
+        // ARRANGE: Tuần cũ đã hết hạn trong quá khứ, tuần hiện tại kích hoạt thành công và lưu tuần cũ thành ARCHIVED
+        var userId = 5050;
+        _db.Users.Add(new User { UserId = userId, Email = "user5050@test.com", FullName = "User 5050", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var currentMonday = today.AddDays(-(int)(today.DayOfWeek == DayOfWeek.Sunday ? 6 : (int)today.DayOfWeek - 1));
+        var pastMonday = currentMonday.AddDays(-7);
+
+        // Tuần cũ trong quá khứ
+        CreateTestMealPlan(50501, userId, "ACTIVE", pastMonday.ToString("yyyy-MM-dd"));
+        // Tuần hiện tại
+        CreateTestMealPlan(50502, userId, "DRAFT", currentMonday.ToString("yyyy-MM-dd"));
+
+        // ACT
+        var result = await _service.ActivateMealPlanAsync(50502, userId, UserRoles.Member);
+
+        // ASSERT
+        result.PlanStatus.Should().Be("ACTIVE");
+        var refreshedOld = await _db.MealPlans.FindAsync(50501);
+        refreshedOld!.PlanStatus.Should().Be("ARCHIVED");
     }
 
     // =========================================================================
