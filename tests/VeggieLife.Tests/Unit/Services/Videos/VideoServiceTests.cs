@@ -490,4 +490,220 @@ public class VideoServiceTests : IDisposable
         var video = await _context.Videos.FirstOrDefaultAsync(v => v.VideoId == result.VideoId);
         video!.PostId.Should().Be(createdPost.PostId);
     }
+
+    [Fact]
+    public async Task GetVideoTranscriptAsync_InvalidId_ThrowsBadRequest()
+    {
+        // Act
+        var act = () => _videoService.GetVideoTranscriptAsync(0, false, null, null);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+    }
+
+    [Fact]
+    public async Task GetVideoTranscriptAsync_GuestQuotaExceeded_ThrowsForbidden()
+    {
+        // Arrange
+        _mockRedisService.Setup(r => r.TryConsumeQuotaAsync("guest_quota:ai:guest-1", 3, It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Allowed: false, Current: 3, Remaining: 0));
+
+        // Act
+        var act = () => _videoService.GetVideoTranscriptAsync(1, true, "guest-1", null);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrQuotaAiExceeded);
+    }
+
+    [Fact]
+    public async Task GetVideoTranscriptAsync_VideoNotFound_ThrowsNotFound()
+    {
+        // Act
+        var act = () => _videoService.GetVideoTranscriptAsync(999, false, null, 1);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrContentNotFound);
+    }
+
+    [Fact]
+    public async Task GetVideoTranscriptAsync_TranscriptNotReady_ThrowsNotFound()
+    {
+        // Arrange
+        var user = new User { UserId = 20, Email = "u20@veggie.vn", FullName = "U20", Role = "MEMBER", AccountStatus = "ACTIVE" };
+        var post = new Post { PostId = 20, UserId = 20, Title = "P20", Content = "C20", ModerationStatus = "APPROVED_ACTIVE", Visibility = "PUBLIC" };
+        var video = new Video { VideoId = 20, PostId = 20, Title = "Video 20", VideoUrl = "https://demo.mp4", Status = "PROCESSING" };
+        _context.Users.Add(user);
+        _context.Posts.Add(post);
+        _context.Videos.Add(video);
+        await _context.SaveChangesAsync();
+
+        // Act
+        var act = () => _videoService.GetVideoTranscriptAsync(20, false, null, 20);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrTranscriptNotReady);
+    }
+
+    [Fact]
+    public async Task GetVideoTranscriptAsync_ValidReadyVideo_ReturnsTranscriptAndExtractedRecipe()
+    {
+        // Arrange
+        var user = new User { UserId = 30, Email = "u30@veggie.vn", FullName = "U30", Role = "MEMBER", AccountStatus = "ACTIVE" };
+        var post = new Post { PostId = 30, UserId = 30, Title = "P30", Content = "C30", ModerationStatus = "APPROVED_ACTIVE", Visibility = "PUBLIC" };
+        var video = new Video { VideoId = 30, PostId = 30, Title = "Video 30", VideoUrl = "https://demo30.mp4", Status = "READY" };
+        var transcript = new VideoTranscript
+        {
+            TranscriptId = 30,
+            VideoId = 30,
+            RawTranscript = "Bước 1: Nấu canh cà chua đậu hũ.",
+            ExtractedRecipeJson = "{\"title\":\"Canh cà chua đậu hũ\",\"ingredients\":[\"2 quả cà chua\",\"1 bìa đậu\"],\"steps\":[\"Cắt nhỏ\",\"Nấu 10p\"]}",
+            Status = "READY"
+        };
+        _context.Users.Add(user);
+        _context.Posts.Add(post);
+        _context.Videos.Add(video);
+        _context.VideoTranscripts.Add(transcript);
+        await _context.SaveChangesAsync();
+
+        // Act
+        var result = await _videoService.GetVideoTranscriptAsync(30, false, null, 30);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.VideoId.Should().Be(30);
+        result.RawTranscript.Should().Be("Bước 1: Nấu canh cà chua đậu hũ.");
+        result.ExtractedRecipe.Should().NotBeNull();
+        result.ExtractedRecipe!.Title.Should().Be("Canh cà chua đậu hũ");
+        result.ExtractedRecipe.Ingredients.Should().HaveCount(2);
+        result.ExtractedRecipe.Steps.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task ExtractRecipeAsync_InvalidVideoId_ThrowsBadRequest()
+    {
+        // Act
+        var act = () => _videoService.ExtractRecipeAsync(0, 1);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+    }
+
+    [Fact]
+    public async Task ExtractRecipeAsync_VideoNotFound_ThrowsNotFound()
+    {
+        // Act
+        var act = () => _videoService.ExtractRecipeAsync(999, 1);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrContentNotFound);
+    }
+
+    [Fact]
+    public async Task ExtractRecipeAsync_NotOwner_ThrowsForbidden()
+    {
+        // Arrange
+        var user = new User { UserId = 40, Email = "u40@veggie.vn", FullName = "U40", Role = "MEMBER", AccountStatus = "ACTIVE" };
+        var post = new Post { PostId = 40, UserId = 40, Title = "P40", Content = "C40", ModerationStatus = "APPROVED_ACTIVE", Visibility = "PUBLIC" };
+        var video = new Video { VideoId = 40, PostId = 40, Title = "Video 40", VideoUrl = "https://demo40.mp4", Status = "READY", DurationSeconds = 60 };
+        _context.Users.Add(user);
+        _context.Posts.Add(post);
+        _context.Videos.Add(video);
+        await _context.SaveChangesAsync();
+
+        // Act: User 99 tries to extract video owned by User 40
+        var act = () => _videoService.ExtractRecipeAsync(40, 99);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrContentNotOwner);
+    }
+
+    [Theory]
+    [InlineData(5)] // Less than 10s
+    [InlineData(301)] // Greater than 300s
+    public async Task ExtractRecipeAsync_InvalidDuration_ThrowsUnprocessableEntity(int duration)
+    {
+        // Arrange
+        var user = new User { UserId = 50 + duration, Email = $"u{duration}@veggie.vn", FullName = "U", Role = "MEMBER", AccountStatus = "ACTIVE" };
+        var post = new Post { PostId = 50 + duration, UserId = user.UserId, Title = "P", Content = "C", ModerationStatus = "APPROVED_ACTIVE", Visibility = "PUBLIC" };
+        var video = new Video { VideoId = 50 + duration, PostId = post.PostId, Title = $"Video {duration}", VideoUrl = "https://demo.mp4", Status = "READY", DurationSeconds = duration };
+        _context.Users.Add(user);
+        _context.Posts.Add(post);
+        _context.Videos.Add(video);
+        await _context.SaveChangesAsync();
+
+        // Act
+        var act = () => _videoService.ExtractRecipeAsync(video.VideoId, user.UserId);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(422);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrSttDurationInvalid);
+    }
+
+    [Fact]
+    public async Task ExtractRecipeAsync_AlreadyDoneOrProcessing_ThrowsConflict()
+    {
+        // Arrange
+        var user = new User { UserId = 60, Email = "u60@veggie.vn", FullName = "U60", Role = "MEMBER", AccountStatus = "ACTIVE" };
+        var post = new Post { PostId = 60, UserId = 60, Title = "P60", Content = "C60", ModerationStatus = "APPROVED_ACTIVE", Visibility = "PUBLIC" };
+        var video = new Video { VideoId = 60, PostId = 60, Title = "Video 60", VideoUrl = "https://demo60.mp4", Status = "READY", DurationSeconds = 90 };
+        var transcript = new VideoTranscript { TranscriptId = 60, VideoId = 60, Status = "READY", RawTranscript = "done" };
+        _context.Users.Add(user);
+        _context.Posts.Add(post);
+        _context.Videos.Add(video);
+        _context.VideoTranscripts.Add(transcript);
+        await _context.SaveChangesAsync();
+
+        // Act
+        var act = () => _videoService.ExtractRecipeAsync(60, 60);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(409);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrSttAlreadyDone);
+    }
+
+    [Fact]
+    public async Task ExtractRecipeAsync_Success_EnqueuesToRedisAndReturnsPending()
+    {
+        // Arrange
+        var user = new User { UserId = 70, Email = "u70@veggie.vn", FullName = "U70", Role = "MEMBER", AccountStatus = "ACTIVE" };
+        var post = new Post { PostId = 70, UserId = 70, Title = "P70", Content = "C70", ModerationStatus = "APPROVED_ACTIVE", Visibility = "PUBLIC" };
+        var video = new Video { VideoId = 70, PostId = 70, Title = "Video 70", VideoUrl = "https://demo70.mp4", Status = "READY", DurationSeconds = 120 };
+        _context.Users.Add(user);
+        _context.Posts.Add(post);
+        _context.Videos.Add(video);
+        await _context.SaveChangesAsync();
+
+        // Act
+        var result = await _videoService.ExtractRecipeAsync(70, 70);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.VideoId.Should().Be(70);
+        result.TranscriptStatus.Should().Be("PENDING");
+
+        var updatedVideo = await _context.Videos.FindAsync(70);
+        updatedVideo!.Status.Should().Be("PROCESSING");
+
+        var createdTranscript = await _context.VideoTranscripts.FirstOrDefaultAsync(t => t.VideoId == 70);
+        createdTranscript.Should().NotBeNull();
+        createdTranscript!.Status.Should().Be("PENDING");
+
+        _mockRedisService.Verify(r => r.EnqueueAsync("stt_queue", It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

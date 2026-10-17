@@ -180,6 +180,11 @@ public class RecipeService : IRecipeService
             {
                 RecipeId = r.RecipeId,
                 Type = r.Posts.Any(p => p.Videos.Any(v => v.Status == "READY")) ? "VIDEO" : "RECIPE",
+                VideoId = r.Posts.SelectMany(p => p.Videos)
+                    .Where(v => v.Status == "READY")
+                    .Select(v => (int?)v.VideoId)
+                    .FirstOrDefault()
+                    ?? r.VideoTranscripts.Select(vt => (int?)vt.VideoId).FirstOrDefault(),
                 Title = r.Title,
                 ImageUrl = r.ImageUrl,
                 DietarySchool = r.DietarySchool.SchoolCode,
@@ -445,6 +450,11 @@ public class RecipeService : IRecipeService
             {
                 RecipeId = x.Recipe.RecipeId,
                 Type = x.Recipe.Posts.Any(p => p.Videos.Any(v => v.Status == "READY")) ? "VIDEO" : "RECIPE",
+                VideoId = x.Recipe.Posts.SelectMany(p => p.Videos)
+                    .Where(v => v.Status == "READY")
+                    .Select(v => (int?)v.VideoId)
+                    .FirstOrDefault()
+                    ?? x.Recipe.VideoTranscripts.Select(vt => (int?)vt.VideoId).FirstOrDefault(),
                 Title = x.Recipe.Title,
                 ImageUrl = x.Recipe.ImageUrl,
                 DietarySchool = x.Recipe.DietarySchool.SchoolCode,

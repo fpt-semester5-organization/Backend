@@ -26,6 +26,7 @@ public class VideosControllerTests
     public VideosControllerTests()
     {
         _controller = new VideosController(_mockVideoService.Object);
+        SetUserContext(null, null);
     }
 
     private void SetUserContext(string? userId, string? role)
@@ -40,7 +41,7 @@ public class VideosControllerTests
             claims.Add(new Claim(ClaimTypes.Role, role));
         }
 
-        var identity = new ClaimsIdentity(claims, "TestAuth");
+        var identity = new ClaimsIdentity(claims, userId != null ? "TestAuth" : null);
         var principal = new ClaimsPrincipal(identity);
 
         _controller.ControllerContext = new ControllerContext
@@ -169,5 +170,151 @@ public class VideosControllerTests
         response.Message.Should().Be("Đã tải ảnh lên thành công.");
         response.Data!.Status.Should().Be("READY");
         response.Data.ImageUrl.Should().Be("https://res.cloudinary.com/demo/image/upload/demo.jpg");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task GetVideoTranscript_WhenIdIsInvalid_ThrowsBadRequest(int videoId)
+    {
+        // Act
+        var act = () => _controller.GetVideoTranscript(videoId, CancellationToken.None);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+    }
+
+    [Fact]
+    public async Task GetVideoTranscript_WhenGuestUser_PassesGuestUuidAndReturnsOk200()
+    {
+        // Arrange
+        SetUserContext(userId: null, role: null);
+        _controller.HttpContext.Request.Headers["X-Guest-Id"] = "guest-guid-12345";
+
+        var transcriptData = new VideoTranscriptResponseData
+        {
+            VideoId = 10,
+            RawTranscript = "Bước 1...",
+            Quota = new VideoTranscriptQuotaDto { Used = 1, Limit = 3, Remaining = 2 }
+        };
+
+        _mockVideoService.Setup(s => s.GetVideoTranscriptAsync(10, true, "guest-guid-12345", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(transcriptData);
+
+        // Act
+        var result = await _controller.GetVideoTranscript(10, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        okResult.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var response = okResult.Value.Should().BeOfType<ApiResponse<VideoTranscriptResponseData>>().Subject;
+        response.StatusCode.Should().Be(200);
+        response.Data!.VideoId.Should().Be(10);
+        response.Data.Quota!.Remaining.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetVideoTranscript_WhenMemberUser_PassesUserIdAndReturnsOk200()
+    {
+        // Arrange
+        SetUserContext(userId: "5", role: UserRoles.Member);
+
+        var transcriptData = new VideoTranscriptResponseData
+        {
+            VideoId = 12,
+            RawTranscript = "Công thức nấu chay..."
+        };
+
+        _mockVideoService.Setup(s => s.GetVideoTranscriptAsync(12, false, null, 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(transcriptData);
+
+        // Act
+        var result = await _controller.GetVideoTranscript(12, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        okResult.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var response = okResult.Value.Should().BeOfType<ApiResponse<VideoTranscriptResponseData>>().Subject;
+        response.StatusCode.Should().Be(200);
+        response.Data!.VideoId.Should().Be(12);
+        response.Data.Quota.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public async Task ExtractRecipe_WhenIdIsInvalid_ThrowsBadRequest(int videoId)
+    {
+        // Arrange
+        SetUserContext(userId: "5", role: UserRoles.Member);
+
+        // Act
+        var act = () => _controller.ExtractRecipe(videoId, CancellationToken.None);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+    }
+
+    [Fact]
+    public async Task ExtractRecipe_WhenGuestUser_ThrowsForbiddenGuestActionDenied()
+    {
+        // Arrange
+        SetUserContext(userId: "100", role: UserRoles.Guest);
+
+        // Act
+        var act = () => _controller.ExtractRecipe(15, CancellationToken.None);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrGuestCommunityActionDenied);
+    }
+
+    [Fact]
+    public async Task ExtractRecipe_WhenUserIdIsMissing_ThrowsUnauthorized()
+    {
+        // Arrange
+        SetUserContext(userId: null, role: UserRoles.Member);
+
+        // Act
+        var act = () => _controller.ExtractRecipe(15, CancellationToken.None);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(401);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrAuthInvalidToken);
+    }
+
+    [Fact]
+    public async Task ExtractRecipe_WhenMemberUser_CallsServiceAndReturnsAccepted202()
+    {
+        // Arrange
+        SetUserContext(userId: "5", role: UserRoles.Member);
+
+        _mockVideoService.Setup(s => s.ExtractRecipeAsync(20, 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ExtractVideoRecipeResponseData
+            {
+                VideoId = 20,
+                TranscriptStatus = "PENDING"
+            });
+
+        // Act
+        var result = await _controller.ExtractRecipe(20, CancellationToken.None);
+
+        // Assert
+        var objectResult = result.Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(StatusCodes.Status202Accepted);
+
+        var response = objectResult.Value.Should().BeOfType<ApiResponse<ExtractVideoRecipeResponseData>>().Subject;
+        response.StatusCode.Should().Be(202);
+        response.Message.Should().Be("Đang bóc tách công thức.");
+        response.Data!.VideoId.Should().Be(20);
+        response.Data.TranscriptStatus.Should().Be("PENDING");
     }
 }

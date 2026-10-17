@@ -45,4 +45,17 @@ Thumbs.db
 ~$*
 
 ## Scratch and temporary local test scripts
-scratch/
+scratch/
+
+## Figma tools & local generators
+figma-slide-generator/
+figma/
+*figma*
+
+## SRS Review & team checking folders
+Check-SRS/
+check-srs/
+*Check-SRS*
+*check-srs*
+
+

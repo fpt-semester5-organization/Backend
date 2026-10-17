@@ -81,6 +81,65 @@ public class VideosController : BaseApiController
     }
 
     /// <summary>
+    /// FN-POST-09: Xem bản phiên âm & công thức của video.
+    /// Trả bản phiên âm (Speech-to-Text) và công thức đã trích xuất sẵn của video công khai.
+    /// Khách bị trừ 1 trong 03 lượt AI dùng thử; Thành viên không giới hạn; người xem không kích hoạt bóc tách lại.
+    /// </summary>
+    /// <param name="id">Mã video (> 0).</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>Bản phiên âm thô, công thức bóc tách và thông tin hạn mức (cho Khách).</returns>
+    [HttpGet("{id:int}/transcript")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<VideoTranscriptResponseData>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> GetVideoTranscript([FromRoute] int id, CancellationToken ct)
+    {
+        if (id <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã video không hợp lệ (id > 0).");
+        }
+
+        var isGuest = IsGuestUser();
+        var guestId = isGuest ? ResolveGuestId() : null;
+        var currentUserId = isGuest ? null : (CurrentUserId.HasValue ? (int?)CurrentUserId.Value : null);
+
+        var result = await _videoService.GetVideoTranscriptAsync(id, isGuest, guestId, currentUserId, ct);
+        return OkResponse(result, "OK");
+    }
+
+    /// <summary>
+    /// FN-POST-10: Bóc tách công thức từ video (Whisper + Gemini).
+    /// Tác vụ ngầm chạy một lần cho mỗi video do tác giả đăng: trích âm thanh → Whisper STT → bản phiên âm thô → Gemini định dạng công thức → tạo Recipes nháp.
+    /// </summary>
+    /// <param name="id">Mã video của chính tác giả (> 0).</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>HTTP 202 Accepted: { videoId, transcriptStatus: "PENDING" }.</returns>
+    [HttpPost("{id:int}/extract-recipe")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    [ProducesResponseType(typeof(ApiResponse<ExtractVideoRecipeResponseData>), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> ExtractRecipe([FromRoute] int id, CancellationToken ct)
+    {
+        if (id <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã video không hợp lệ (id > 0).");
+        }
+
+        EnsureAuthorizedMember();
+
+        var result = await _videoService.ExtractRecipeAsync(id, (int)CurrentUserId!.Value, ct);
+        return AcceptedResponse(result, "Đang bóc tách công thức.");
+    }
+
+    /// <summary>
     /// Kiểm tra tính hợp lệ của tài khoản đăng nhập và từ chối khách vãng lai gọi thao tác ghi cộng đồng (FN-AUTH-03).
     /// </summary>
     private void EnsureAuthorizedMember()
@@ -98,5 +157,47 @@ public class VideosController : BaseApiController
                 ErrorCodes.ErrAuthInvalidToken,
                 "Phiên đăng nhập không hợp lệ hoặc thiếu thông tin định danh.");
         }
+    }
+
+    /// <summary>
+    /// Xác định xem người dùng hiện tại là khách vãng lai hay thành viên đã đăng nhập.
+    /// </summary>
+    private bool IsGuestUser()
+    {
+        if (User?.Identity == null || !User.Identity.IsAuthenticated)
+        {
+            return true;
+        }
+
+        var role = CurrentUserRole;
+        return string.IsNullOrEmpty(role) || string.Equals(role, UserRoles.Guest, System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Phân giải mã định danh của khách vãng lai từ Claim, Header hoặc Cookie.
+    /// </summary>
+    private string? ResolveGuestId()
+    {
+        if (!string.IsNullOrEmpty(CurrentGuestUuid))
+        {
+            return CurrentGuestUuid;
+        }
+
+        if (Request.Headers.TryGetValue("X-Guest-UUID", out var uuidHeader) && !string.IsNullOrEmpty(uuidHeader.FirstOrDefault()))
+        {
+            return uuidHeader.FirstOrDefault();
+        }
+
+        if (Request.Headers.TryGetValue("X-Guest-Id", out var idHeader) && !string.IsNullOrEmpty(idHeader.FirstOrDefault()))
+        {
+            return idHeader.FirstOrDefault();
+        }
+
+        if (Request.Cookies.TryGetValue("guest_uuid", out var cookieValue) && !string.IsNullOrEmpty(cookieValue))
+        {
+            return cookieValue;
+        }
+
+        return null;
     }
 }

@@ -97,7 +97,7 @@ public class ProductService : IProductService
         // Kiểm tra tính mới của dữ liệu: có và LastSyncedAt trong vòng 30 ngày (FN-BAR-01 Logic 3).
         // Nếu sản phẩm trong CSDL chưa có ảnh (ImageUrl null/rỗng) và chưa được Admin kiểm định,
         // thì cần truy vấn Open Food Facts để lấy ảnh sản phẩm phục vụ hiển thị.
-        bool isFresh = product != null 
+        bool isFresh = product != null
             && product.LastSyncedAt >= DateTime.UtcNow.AddDays(-30)
             && (product.AdminVerified || !string.IsNullOrWhiteSpace(product.ImageUrl));
 

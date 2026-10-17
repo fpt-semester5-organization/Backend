@@ -557,4 +557,22 @@ public class RecipeServiceTests : IDisposable
 
         _mockRedis.Verify(r => r.IncrementAsync("view_counter:recipe:501", 1, It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task ListRecipesAsync_VideoRecipe_ReturnsVideoIdInSummaryDto()
+    {
+        // Act
+        var (items, _) = await _service.ListRecipesAsync(new RecipeFilterRequest { Page = 1, Size = 10 }, isGuest: false, guestId: null);
+
+        // Assert: recipe 502 has video 2001, recipe 501 has no video
+        var videoRecipe = items.FirstOrDefault(r => r.RecipeId == 502);
+        videoRecipe.Should().NotBeNull();
+        videoRecipe!.Type.Should().Be("VIDEO");
+        videoRecipe.VideoId.Should().Be(2001);
+
+        var textRecipe = items.FirstOrDefault(r => r.RecipeId == 501);
+        textRecipe.Should().NotBeNull();
+        textRecipe!.Type.Should().Be("RECIPE");
+        textRecipe.VideoId.Should().BeNull();
+    }
 }
