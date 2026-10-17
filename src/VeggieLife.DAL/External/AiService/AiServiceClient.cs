@@ -91,8 +91,9 @@ public class AiServiceClient : IAiServiceClient
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadFromJsonAsync<AiMealPlanResponse>(cancellationToken: linkedCts.Token);
-                if (result != null)
+                if (result != null && result.Slots != null && result.Slots.Count == 21)
                 {
+                    result.Success = true; // [BỔ SUNG QUAN TRỌNG]: Xác nhận kết quả hợp lệ
                     result.ExecutionTimeMs = (int)sw.ElapsedMilliseconds;
                     RecordSuccess();
                     return result;
