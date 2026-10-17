@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace VeggieLife.DAL.External.AiService;
 
@@ -30,15 +31,46 @@ public class AiCandidateRecipeDto
 }
 
 /// <summary>
+/// DTO thông tin sử dụng token và mô hình từ AI-Service.
+/// </summary>
+public class AiUsageDto
+{
+    [JsonPropertyName("model")]
+    public string Model { get; set; } = "gemini-2.5-flash";
+
+    [JsonPropertyName("promptTokens")]
+    public int PromptTokens { get; set; }
+
+    [JsonPropertyName("completionTokens")]
+    public int CompletionTokens { get; set; }
+
+    [JsonPropertyName("latencyMs")]
+    public int LatencyMs { get; set; }
+
+    [JsonPropertyName("temperature")]
+    public decimal Temperature { get; set; }
+}
+
+/// <summary>
 /// Phản hồi từ ai-service (/meal/generate).
 /// </summary>
 public class AiMealPlanResponse
 {
-    public bool Success { get; set; }
+    [JsonPropertyName("success")]
+    public bool Success { get; set; } = true;
+
+    [JsonPropertyName("slots")]
     public List<AiMealSlotResultDto> Slots { get; set; } = new();
-    public int TokensConsumed { get; set; }
-    public string ModelVersion { get; set; } = "gemini-2.5-flash";
+
+    [JsonPropertyName("usage")]
+    public AiUsageDto? Usage { get; set; }
+
+    public int TokensConsumed => (Usage?.PromptTokens ?? 0) + (Usage?.CompletionTokens ?? 0);
+
+    public string ModelVersion => Usage?.Model ?? "gemini-2.5-flash";
+
     public string? ErrorMessage { get; set; }
+
     public int ExecutionTimeMs { get; set; }
 }
 
@@ -47,7 +79,12 @@ public class AiMealPlanResponse
 /// </summary>
 public class AiMealSlotResultDto
 {
+    [JsonPropertyName("dayOfWeek")]
     public string DayOfWeek { get; set; } = null!; // MON, TUE, WED, THU, FRI, SAT, SUN
+
+    [JsonPropertyName("mealType")]
     public string MealType { get; set; } = null!;  // BREAKFAST, LUNCH, DINNER
+
+    [JsonPropertyName("recipeId")]
     public int RecipeId { get; set; }
 }
