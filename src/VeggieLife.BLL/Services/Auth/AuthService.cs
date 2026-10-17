@@ -1313,7 +1313,8 @@ public class AuthService : IAuthService
                         {
                             throw AppException.Conflict(
                                 ErrorCodes.ErrAuthAccountLinkRequired,
-                                "Email đã có tài khoản mật khẩu; cần currentPassword.");
+                                "Email đã có tài khoản mật khẩu; cần currentPassword.",
+                                new { email = normalizedEmail });
                         }
 
                         // Đúng mật khẩu thì UPDATE Users.Google_ID (BR-USR-AUTH-02)
