@@ -870,9 +870,43 @@ public class MealPlanService : IMealPlanService
                 "Chỉ kích hoạt được thực đơn DRAFT.");
         }
 
-        // Chuyển các thực đơn ACTIVE khác của người dùng cùng tuần sang ARCHIVED (FN-MEAL-02)
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        // 1. Không cho phép kích hoạt thực đơn của tuần tương lai trước khi tuần đó bắt đầu
+        if (plan.StartDate > today)
+        {
+            throw AppException.Conflict(
+                ErrorCodes.ErrMealPlanNotDraft,
+                "Chưa đến thời gian áp dụng thực đơn tuần này. Bạn chỉ có thể kích hoạt khi tuần mới bắt đầu.");
+        }
+
+        // 2. Không cho phép kích hoạt nếu thực đơn tuần này đã qua thời gian áp dụng (quá khứ)
+        if (plan.EndDate < today)
+        {
+            throw AppException.Conflict(
+                ErrorCodes.ErrMealPlanNotDraft,
+                "Thực đơn tuần này đã hết hạn áp dụng, không thể kích hoạt.");
+        }
+
+        // 3. Không cho phép kích hoạt nếu đang có thực đơn tuần khác đang ACTIVE và trong thời gian hoạt động
+        var hasActivePlanInCurrentPeriod = await _db.MealPlans.AnyAsync(p =>
+            p.UserId == userId &&
+            p.PlanId != id &&
+            p.PlanStatus == "ACTIVE" &&
+            p.StartDate != plan.StartDate &&
+            p.StartDate <= today &&
+            p.EndDate >= today, ct);
+
+        if (hasActivePlanInCurrentPeriod)
+        {
+            throw AppException.Conflict(
+                ErrorCodes.ErrMealPlanNotDraft,
+                "Không thể kích hoạt thực đơn tuần mới khi thực đơn tuần hiện tại vẫn đang hoạt động. Không thể sử dụng song song 2 thực đơn tuần tại cùng một thời điểm.");
+        }
+
+        // 4. Chuyển các thực đơn ACTIVE khác của người dùng sang ARCHIVED (FN-MEAL-02)
         var otherActivePlans = await _db.MealPlans
-            .Where(p => p.UserId == userId && p.PlanId != id && p.PlanStatus == "ACTIVE" && p.StartDate == plan.StartDate)
+            .Where(p => p.UserId == userId && p.PlanId != id && p.PlanStatus == "ACTIVE")
             .ToListAsync(ct);
 
         foreach (var other in otherActivePlans)
