@@ -49,4 +49,17 @@ public class RecipeSummaryDto
     /// Huy hiệu xác nhận chuẩn chay từ Quản trị viên (Admin).
     /// </summary>
     public bool IsVerified { get; set; }
+
+    /// <summary>
+    /// Mã định danh video liên kết nếu loại nội dung là VIDEO (BUG-FL05-10).
+    /// </summary>
+    public int? VideoId { get; set; }
 }
+
+/// <summary>
+/// Bí danh theo hợp đồng Frontend cho RecipeSummaryDto (BUG-FL05-10).
+/// </summary>
+public class RecipeListItemDto : RecipeSummaryDto
+{
+}
+

@@ -216,4 +216,251 @@ public class VideoService : IVideoService
             Status = "PROCESSING"
         };
     }
+
+    /// <summary>
+    /// FN-POST-09: Xem bản phiên âm và công thức bóc tách sẵn của video công khai.
+    /// Khách vãng lai bị trừ 1 trong 3 lượt dùng thử AI; Thành viên không giới hạn.
+    /// </summary>
+    public async Task<VideoTranscriptResponseData> GetVideoTranscriptAsync(
+        int id,
+        bool isGuest,
+        string? guestUuid,
+        int? currentUserId,
+        CancellationToken ct = default)
+    {
+        // 1. Kiểm tra tham số id hợp lệ
+        if (id <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã video phải lớn hơn 0.");
+        }
+
+        // 2. Xử lý hạn ngạch nếu là Khách vãng lai (BR-GUEST-02, BR-AI-STT-03)
+        VideoTranscriptQuotaDto? quota = null;
+        if (isGuest)
+        {
+            if (string.IsNullOrWhiteSpace(guestUuid))
+            {
+                throw AppException.Unauthorized(ErrorCodes.ErrAuthInvalidToken, "Thiếu mã định danh phiên khách vãng lai (guestUuid).");
+            }
+
+            var guestKey = $"guest_quota:ai:{guestUuid}";
+            const int limit = 3;
+
+            var (allowed, current, remaining) = await _redisService.TryConsumeQuotaAsync(guestKey, limit, TimeSpan.FromHours(24), ct);
+            if (!allowed)
+            {
+                throw AppException.Forbidden(ErrorCodes.ErrQuotaAiExceeded,
+                    "Khách đã dùng hết 03 lượt AI dùng thử (FN-POST-09, BR-GUEST-02). Vui lòng đăng ký tài khoản để tiếp tục.");
+            }
+
+            quota = new VideoTranscriptQuotaDto
+            {
+                Used = (int)current,
+                Limit = limit,
+                Remaining = (int)remaining
+            };
+        }
+
+        // 3. Truy vấn Video cùng VideoTranscript và Recipe
+        var video = await _context.Videos
+            .AsNoTracking()
+            .Include(v => v.Post)
+            .Include(v => v.VideoTranscript)
+                .ThenInclude(vt => vt!.Recipe)
+                    .ThenInclude(r => r!.RecipeIngredients)
+                        .ThenInclude(ri => ri.Ingredient)
+            .FirstOrDefaultAsync(v => v.VideoId == id, ct);
+
+        if (video == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Video không tồn tại.");
+        }
+
+        // 4. Kiểm tra quyền xem nội dung (nếu không phải tác giả thì nội dung bài viết phải được duyệt)
+        var isAuthor = currentUserId.HasValue && video.Post.UserId == currentUserId.Value;
+        if (!isAuthor && video.Post.ModerationStatus != "APPROVED_ACTIVE" && video.Post.ModerationStatus != "APPROVED")
+        {
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
+        }
+
+        // 5. Kiểm tra trạng thái bản phiên âm
+        var transcript = video.VideoTranscript;
+        if (transcript == null || transcript.Status != "READY")
+        {
+            throw AppException.NotFound(ErrorCodes.ErrTranscriptNotReady, "Chưa có bản phiên âm cho video này.");
+        }
+
+        // 6. Xây dựng ExtractedRecipeDto
+        ExtractedRecipeDto? extractedRecipe = null;
+        if (!string.IsNullOrWhiteSpace(transcript.ExtractedRecipeJson))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(transcript.ExtractedRecipeJson);
+                var root = doc.RootElement;
+                var title = root.TryGetProperty("title", out var titleElem) ? titleElem.GetString() ?? string.Empty : string.Empty;
+                var steps = new List<string>();
+                if (root.TryGetProperty("steps", out var stepsElem) && stepsElem.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    foreach (var s in stepsElem.EnumerateArray())
+                    {
+                        var str = s.GetString();
+                        if (!string.IsNullOrEmpty(str))
+                        {
+                            steps.Add(str);
+                        }
+                    }
+                }
+
+                var ingredients = new List<ExtractedIngredientDto>();
+                if (root.TryGetProperty("ingredients", out var ingElem) && ingElem.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    foreach (var item in ingElem.EnumerateArray())
+                    {
+                        if (item.ValueKind == System.Text.Json.JsonValueKind.String)
+                        {
+                            ingredients.Add(new ExtractedIngredientDto
+                            {
+                                Name = item.GetString() ?? string.Empty
+                            });
+                        }
+                        else if (item.ValueKind == System.Text.Json.JsonValueKind.Object)
+                        {
+                            var name = item.TryGetProperty("name", out var n) ? n.GetString() ?? string.Empty : string.Empty;
+                            decimal? qty = null;
+                            if (item.TryGetProperty("quantity", out var q) && q.TryGetDecimal(out var dec))
+                            {
+                                qty = dec;
+                            }
+                            var unit = item.TryGetProperty("unit", out var u) ? u.GetString() : null;
+                            ingredients.Add(new ExtractedIngredientDto { Name = name, Quantity = qty, Unit = unit });
+                        }
+                    }
+                }
+
+                extractedRecipe = new ExtractedRecipeDto
+                {
+                    Title = title,
+                    Ingredients = ingredients,
+                    Steps = steps
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Lỗi phân tích cú pháp ExtractedRecipeJson cho video id={VideoId}", id);
+            }
+        }
+
+        if (extractedRecipe == null && transcript.Recipe != null)
+        {
+            var recipe = transcript.Recipe;
+            var steps = (recipe.Instructions ?? string.Empty)
+                .Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim())
+                .Where(s => !string.IsNullOrEmpty(s))
+                .ToList();
+
+            extractedRecipe = new ExtractedRecipeDto
+            {
+                Title = recipe.Title,
+                Ingredients = recipe.RecipeIngredients.Select(ri => new ExtractedIngredientDto
+                {
+                    Name = ri.Ingredient.IngredientName,
+                    Quantity = ri.QuantityNeeded,
+                    Unit = ri.Unit
+                }).ToList(),
+                Steps = steps
+            };
+        }
+
+        return new VideoTranscriptResponseData
+        {
+            VideoId = video.VideoId,
+            RawTranscript = transcript.RawTranscript ?? string.Empty,
+            ExtractedRecipe = extractedRecipe,
+            Quota = quota
+        };
+    }
+
+    /// <summary>
+    /// FN-POST-10: Kích hoạt tác vụ ngầm bóc tách công thức từ video (Whisper + Gemini).
+    /// Áp dụng cho tác giả của video (Member | VIP).
+    /// </summary>
+    public async Task<ExtractVideoRecipeResponseData> ExtractRecipeAsync(
+        int videoId,
+        int userId,
+        CancellationToken ct = default)
+    {
+        // 1. Kiểm tra tham số videoId
+        if (videoId <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã video phải lớn hơn 0.");
+        }
+
+        // 2. Tìm video kèm Post và VideoTranscript
+        var video = await _context.Videos
+            .Include(v => v.Post)
+            .Include(v => v.VideoTranscript)
+            .FirstOrDefaultAsync(v => v.VideoId == videoId, ct);
+
+        if (video == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
+        }
+
+        // 3. Kiểm tra quyền tác giả (BR-USR-03: ERR_CONTENT_NOT_OWNER)
+        if (video.Post.UserId != userId)
+        {
+            throw AppException.Forbidden(ErrorCodes.ErrContentNotOwner, "Không phải tác giả của nội dung.");
+        }
+
+        // 4. Kiểm tra thời lượng video (BR-AI-STT-01, BR-AI-STT-03: 10 giây đến 5 phút)
+        if (video.DurationSeconds < 10 || video.DurationSeconds > 300)
+        {
+            throw new AppException(422, ErrorCodes.ErrSttDurationInvalid, "Thời lượng video phải từ 10 giây đến tối đa 5 phút (300 giây).");
+        }
+
+        // 5. Kiểm tra trạng thái bản phiên âm hiện tại
+        if (video.VideoTranscript != null)
+        {
+            if (video.VideoTranscript.Status == "READY" || video.VideoTranscript.Status == "PROCESSING")
+            {
+                throw AppException.Conflict(ErrorCodes.ErrSttAlreadyDone, "Video đã có bản phiên âm hoặc đang được xử lý.");
+            }
+
+            // Cho phép chạy lại nếu lần đầu FAILED
+            video.VideoTranscript.Status = "PENDING";
+        }
+        else
+        {
+            var transcript = new VideoTranscript
+            {
+                VideoId = video.VideoId,
+                Status = "PENDING",
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.VideoTranscripts.Add(transcript);
+        }
+
+        video.Status = "PROCESSING";
+        await _context.SaveChangesAsync(ct);
+
+        // 6. Xếp hàng STT vào hàng đợi Redis
+        await _redisService.EnqueueAsync("stt_queue", new
+        {
+            VideoId = video.VideoId,
+            VideoUrl = video.VideoUrl,
+            DurationSeconds = video.DurationSeconds,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+
+        _logger.LogInformation("Người dùng {UserId} đã kích hoạt bóc tách công thức cho video id={VideoId}.", userId, video.VideoId);
+
+        return new ExtractVideoRecipeResponseData
+        {
+            VideoId = video.VideoId,
+            TranscriptStatus = "PENDING"
+        };
+    }
 }
+
