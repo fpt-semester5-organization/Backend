@@ -145,6 +145,61 @@ public class UsersControllerTests
         envelope.Message.Should().Be("Cập nhật dị ứng thành công.");
     }
 
+    [Fact]
+    public async Task GetCurrentUserHealthProfile_WhenCalled_ShouldReturnHealthProfileEnvelope()
+    {
+        var userProfile = new CurrentUserProfileResponse
+        {
+            UserId = 101,
+            Health = new HealthProfileDto
+            {
+                HeightCm = 170m,
+                CurrentWeightKg = 65m,
+                Bmi = 22.5m
+            }
+        };
+
+        _mockService.Setup(s => s.GetCurrentUserAsync(101, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(userProfile);
+
+        var actionResult = await _controller.GetCurrentUserHealthProfile(CancellationToken.None);
+
+        var okResult = actionResult as OkObjectResult;
+        okResult.Should().NotBeNull();
+        var envelope = okResult!.Value as ApiResponse<HealthProfileDto>;
+        envelope.Should().NotBeNull();
+        envelope!.StatusCode.Should().Be(200);
+        envelope.Message.Should().Be("Lấy hồ sơ sức khỏe thành công.");
+        envelope.Data!.Bmi.Should().Be(22.5m);
+    }
+
+    [Fact]
+    public async Task GetCurrentUserAllergies_WhenCalled_ShouldReturnAllergiesEnvelope()
+    {
+        var userProfile = new CurrentUserProfileResponse
+        {
+            UserId = 101,
+            Allergens = new List<AllergenBriefDto>
+            {
+                new() { AllergenId = 1, Name = "Đậu nành" }
+            }
+        };
+
+        _mockService.Setup(s => s.GetCurrentUserAsync(101, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(userProfile);
+
+        var actionResult = await _controller.GetCurrentUserAllergies(CancellationToken.None);
+
+        var okResult = actionResult as OkObjectResult;
+        okResult.Should().NotBeNull();
+        var envelope = okResult!.Value as ApiResponse<ReplaceCurrentUserAllergiesResponse>;
+        envelope.Should().NotBeNull();
+        envelope!.StatusCode.Should().Be(200);
+        envelope.Message.Should().Be("Lấy danh sách dị ứng thành công.");
+        envelope.Data!.Allergens.Should().HaveCount(1);
+        envelope.Data.Allergens[0].Name.Should().Be("Đậu nành");
+    }
+
     #region FN-PROF-03: Upload Avatar Tests
 
     [Fact]

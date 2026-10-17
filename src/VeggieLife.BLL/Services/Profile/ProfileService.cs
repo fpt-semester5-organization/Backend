@@ -231,14 +231,27 @@ public class ProfileService : IProfileService
         }
 
         // Kiểm tra giới tính
-        var normalizedGender = request.Gender.Trim().ToUpperInvariant();
+        var rawGender = (request.Gender ?? string.Empty).Trim().ToUpperInvariant();
+        var normalizedGender = rawGender switch
+        {
+            "NAM" or "MALE" => "MALE",
+            "NU" or "NỮ" or "FEMALE" => "FEMALE",
+            _ => rawGender
+        };
         if (normalizedGender != "MALE" && normalizedGender != "FEMALE")
         {
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Giới tính phải là MALE hoặc FEMALE.");
         }
 
         // Kiểm tra mục tiêu sức khỏe
-        var normalizedGoal = request.HealthGoal.Trim().ToUpperInvariant();
+        var rawGoal = (request.HealthGoal ?? string.Empty).Trim().ToUpperInvariant();
+        var normalizedGoal = rawGoal switch
+        {
+            "GIAM_CAN" or "LOSE_WEIGHT" => "LOSE_WEIGHT",
+            "GIU_CAN" or "MAINTAIN" => "MAINTAIN",
+            "TANG_CO" or "GAIN_MUSCLE" => "GAIN_MUSCLE",
+            _ => rawGoal
+        };
         if (normalizedGoal != "LOSE_WEIGHT" && normalizedGoal != "MAINTAIN" && normalizedGoal != "GAIN_MUSCLE")
         {
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mục tiêu sức khỏe phải là LOSE_WEIGHT, MAINTAIN hoặc GAIN_MUSCLE.");
@@ -248,7 +261,14 @@ public class ProfileService : IProfileService
         var regionPref = "SOUTH";
         if (!string.IsNullOrWhiteSpace(request.RegionPreference))
         {
-            regionPref = request.RegionPreference.Trim().ToUpperInvariant();
+            var rawRegion = request.RegionPreference.Trim().ToUpperInvariant();
+            regionPref = rawRegion switch
+            {
+                "MIEN_BAC" or "BAC" or "NORTH" => "NORTH",
+                "MIEN_TRUNG" or "TRUNG" or "CENTRAL" => "CENTRAL",
+                "MIEN_NAM" or "NAM" or "SOUTH" => "SOUTH",
+                _ => rawRegion
+            };
             if (regionPref != "NORTH" && regionPref != "CENTRAL" && regionPref != "SOUTH")
             {
                 throw AppException.BadRequest(ErrorCodes.ErrValidation, "Khẩu vị vùng miền phải là NORTH, CENTRAL hoặc SOUTH.");
@@ -282,73 +302,63 @@ public class ProfileService : IProfileService
 
         var now = DateTime.UtcNow;
 
-        // 4. Transaction: Cập nhật HealthProfiles và thêm bản ghi UserWeightHistory
-        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
-        try
+        // 4. Cập nhật HealthProfiles và thêm bản ghi UserWeightHistory (SaveChangesAsync tự động chạy trong transaction nguyên tử)
+        if (user.HealthProfile == null)
         {
-            if (user.HealthProfile == null)
-            {
-                var newProfile = new HealthProfile
-                {
-                    UserId = userId,
-                    DietarySchoolId = request.DietarySchoolId,
-                    Gender = normalizedGender,
-                    DateOfBirth = request.DateOfBirth,
-                    HeightCm = request.HeightCm,
-                    CurrentWeightKg = request.WeightKg,
-                    TargetWeightKg = request.TargetWeightKg,
-                    BmiValue = bmi,
-                    BmrKcal = bmr,
-                    TdeeKcal = tdee,
-                    TargetDailyCalories = targetCalories,
-                    RequiresAlliumFree = request.RequiresAlliumFree ?? false,
-                    RegionPreference = regionPref,
-                    HealthGoal = normalizedGoal,
-                    IsStaleMetrics = false,
-                    CreatedAt = now,
-                    UpdatedAt = now
-                };
-                _db.HealthProfiles.Add(newProfile);
-                user.HealthProfile = newProfile;
-            }
-            else
-            {
-                user.HealthProfile.DietarySchoolId = request.DietarySchoolId;
-                user.HealthProfile.Gender = normalizedGender;
-                user.HealthProfile.DateOfBirth = request.DateOfBirth;
-                user.HealthProfile.HeightCm = request.HeightCm;
-                user.HealthProfile.CurrentWeightKg = request.WeightKg;
-                user.HealthProfile.TargetWeightKg = request.TargetWeightKg;
-                user.HealthProfile.BmiValue = bmi;
-                user.HealthProfile.BmrKcal = bmr;
-                user.HealthProfile.TdeeKcal = tdee;
-                user.HealthProfile.TargetDailyCalories = targetCalories;
-                user.HealthProfile.RequiresAlliumFree = request.RequiresAlliumFree ?? false;
-                user.HealthProfile.RegionPreference = regionPref;
-                user.HealthProfile.HealthGoal = normalizedGoal;
-                user.HealthProfile.IsStaleMetrics = false;
-                user.HealthProfile.UpdatedAt = now;
-            }
-
-            // Ghi một mốc cân nặng vào lịch sử cân nặng
-            var weightLog = new UserWeightHistory
+            var newProfile = new HealthProfile
             {
                 UserId = userId,
-                WeightKg = request.WeightKg,
-                LoggedDate = DateOnly.FromDateTime(now),
-                Note = "Cập nhật từ hồ sơ sức khỏe",
-                CreatedAt = now
+                DietarySchoolId = request.DietarySchoolId,
+                Gender = normalizedGender,
+                DateOfBirth = request.DateOfBirth,
+                HeightCm = request.HeightCm,
+                CurrentWeightKg = request.WeightKg,
+                TargetWeightKg = request.TargetWeightKg,
+                BmiValue = bmi,
+                BmrKcal = bmr,
+                TdeeKcal = tdee,
+                TargetDailyCalories = targetCalories,
+                RequiresAlliumFree = request.RequiresAlliumFree ?? false,
+                RegionPreference = regionPref,
+                HealthGoal = normalizedGoal,
+                IsStaleMetrics = false,
+                CreatedAt = now,
+                UpdatedAt = now
             };
-            _db.UserWeightHistories.Add(weightLog);
-
-            await _db.SaveChangesAsync(ct);
-            await transaction.CommitAsync(ct);
+            _db.HealthProfiles.Add(newProfile);
+            user.HealthProfile = newProfile;
         }
-        catch
+        else
         {
-            await transaction.RollbackAsync(ct);
-            throw;
+            user.HealthProfile.DietarySchoolId = request.DietarySchoolId;
+            user.HealthProfile.Gender = normalizedGender;
+            user.HealthProfile.DateOfBirth = request.DateOfBirth;
+            user.HealthProfile.HeightCm = request.HeightCm;
+            user.HealthProfile.CurrentWeightKg = request.WeightKg;
+            user.HealthProfile.TargetWeightKg = request.TargetWeightKg;
+            user.HealthProfile.BmiValue = bmi;
+            user.HealthProfile.BmrKcal = bmr;
+            user.HealthProfile.TdeeKcal = tdee;
+            user.HealthProfile.TargetDailyCalories = targetCalories;
+            user.HealthProfile.RequiresAlliumFree = request.RequiresAlliumFree ?? false;
+            user.HealthProfile.RegionPreference = regionPref;
+            user.HealthProfile.HealthGoal = normalizedGoal;
+            user.HealthProfile.IsStaleMetrics = false;
+            user.HealthProfile.UpdatedAt = now;
         }
+
+        // Ghi một mốc cân nặng vào lịch sử cân nặng
+        var weightLog = new UserWeightHistory
+        {
+            UserId = userId,
+            WeightKg = request.WeightKg,
+            LoggedDate = DateOnly.FromDateTime(now),
+            Note = "Cập nhật từ hồ sơ sức khỏe",
+            CreatedAt = now
+        };
+        _db.UserWeightHistories.Add(weightLog);
+
+        await _db.SaveChangesAsync(ct);
 
         // 5. Xóa cache hồ sơ cá nhân và cache gợi ý thực đơn (BR-SCI-04)
         await _redis.RemoveAsync($"cache:profile:{userId}", ct);
@@ -418,38 +428,43 @@ public class ProfileService : IProfileService
 
         var now = DateTime.UtcNow;
 
-        // Transaction: DELETE toàn bộ UserAllergies cũ và INSERT các bản ghi mới
-        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
-        try
-        {
-            var oldAllergies = await _db.UserAllergies.Where(ua => ua.UserId == userId).ToListAsync(ct);
-            _db.UserAllergies.RemoveRange(oldAllergies);
+        // Cập nhật UserAllergies: đồng bộ danh sách chất dị ứng (cập nhật nếu đã có, xóa nếu bỏ chọn, thêm nếu mới)
+        var oldAllergies = await _db.UserAllergies.Where(ua => ua.UserId == userId).ToListAsync(ct);
+        var oldMap = oldAllergies.ToDictionary(ua => ua.AllergenId);
 
-            // Giữ lại phần tử duy nhất cho mỗi AllergenId
-            var addedIds = new HashSet<int>();
-            foreach (var item in request.Allergens)
+        var requestedIds = new HashSet<int>();
+        foreach (var item in request.Allergens)
+        {
+            if (!requestedIds.Add(item.AllergenId))
             {
-                if (addedIds.Add(item.AllergenId))
-                {
-                    _db.UserAllergies.Add(new UserAllergy
-                    {
-                        UserId = userId,
-                        AllergenId = item.AllergenId,
-                        Notes = item.Notes?.Trim(),
-                        CreatedAt = now,
-                        UpdatedAt = now
-                    });
-                }
+                continue;
             }
 
-            await _db.SaveChangesAsync(ct);
-            await transaction.CommitAsync(ct);
+            if (oldMap.TryGetValue(item.AllergenId, out var existing))
+            {
+                existing.Notes = item.Notes?.Trim();
+                existing.UpdatedAt = now;
+            }
+            else
+            {
+                _db.UserAllergies.Add(new UserAllergy
+                {
+                    UserId = userId,
+                    AllergenId = item.AllergenId,
+                    Notes = item.Notes?.Trim(),
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+            }
         }
-        catch
+
+        var toRemove = oldAllergies.Where(ua => !requestedIds.Contains(ua.AllergenId)).ToList();
+        if (toRemove.Count > 0)
         {
-            await transaction.RollbackAsync(ct);
-            throw;
+            _db.UserAllergies.RemoveRange(toRemove);
         }
+
+        await _db.SaveChangesAsync(ct);
 
         // Xóa cache hồ sơ và gợi ý thực đơn (BR-SCI-04)
         await _redis.RemoveAsync($"cache:profile:{userId}", ct);

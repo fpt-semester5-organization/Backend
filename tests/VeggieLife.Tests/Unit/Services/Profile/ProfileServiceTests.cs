@@ -136,6 +136,50 @@ public class ProfileServiceTests : IDisposable
         _mockRedis.Verify(r => r.RemoveAsync("cache:profile:101", It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task UpdateHealthProfileAsync_WhenProfileAlreadyExists_ShouldUpdateProperly()
+    {
+        // Tạo profile lần đầu
+        var initialRequest = new UpdateCurrentUserHealthProfileRequest
+        {
+            HeightCm = 170m,
+            WeightKg = 70m,
+            DateOfBirth = new DateOnly(2000, 1, 1),
+            Gender = "MALE",
+            DietarySchoolId = 1,
+            HealthGoal = "MAINTAIN",
+            RegionPreference = "SOUTH"
+        };
+        await _service.UpdateHealthProfileAsync(101, initialRequest);
+
+        // Cập nhật profile lần 2
+        var updateRequest = new UpdateCurrentUserHealthProfileRequest
+        {
+            HeightCm = 170m,
+            WeightKg = 65m,
+            DateOfBirth = new DateOnly(2000, 1, 1),
+            Gender = "MALE",
+            DietarySchoolId = 5,
+            HealthGoal = "LOSE_WEIGHT",
+            RegionPreference = "CENTRAL",
+            RequiresAlliumFree = true
+        };
+        var result = await _service.UpdateHealthProfileAsync(101, updateRequest);
+
+        result.Should().NotBeNull();
+        result.CurrentWeightKg.Should().Be(65m);
+        result.HealthGoal.Should().Be("LOSE_WEIGHT");
+        result.DietarySchool.Code.Should().Be("BUDDHIST");
+        result.RequiresAlliumFree.Should().BeTrue();
+        result.RegionPreference.Should().Be("CENTRAL");
+
+        var inDb = await _db.HealthProfiles.FirstOrDefaultAsync(hp => hp.UserId == 101);
+        inDb.Should().NotBeNull();
+        inDb!.CurrentWeightKg.Should().Be(65m);
+        inDb.DietarySchoolId.Should().Be(5);
+        inDb.RequiresAlliumFree.Should().BeTrue();
+    }
+
     [Theory]
     [InlineData(49)]
     [InlineData(251)]
@@ -325,6 +369,38 @@ public class ProfileServiceTests : IDisposable
         inDb.Should().HaveCount(2);
 
         _mockRedis.Verify(r => r.RemoveAsync("cache:profile:101", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplaceAllergiesAsync_CalledTwice_ShouldUpdateWithoutTrackingConflict()
+    {
+        var request1 = new ReplaceCurrentUserAllergiesRequest
+        {
+            Allergens = new List<UserAllergyItemRequest>
+            {
+                new() { AllergenId = 1, Notes = "Lan 1" },
+                new() { AllergenId = 2, Notes = "Lan 1" }
+            }
+        };
+        await _service.ReplaceAllergiesAsync(101, request1);
+
+        var request2 = new ReplaceCurrentUserAllergiesRequest
+        {
+            Allergens = new List<UserAllergyItemRequest>
+            {
+                new() { AllergenId = 1, Notes = "Lan 2 cap nhat" },
+                new() { AllergenId = 3, Notes = "Them moi 3" }
+            }
+        };
+
+        var result = await _service.ReplaceAllergiesAsync(101, request2);
+
+        result.Should().NotBeNull();
+        result.Allergens.Should().HaveCount(2);
+        result.Allergens.Select(a => a.AllergenId).Should().Contain(new[] { 1, 3 });
+
+        var inDb = await _db.UserAllergies.Where(ua => ua.UserId == 101).ToListAsync();
+        inDb.Should().HaveCount(2);
     }
 
     [Fact]
