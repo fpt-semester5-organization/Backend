@@ -264,7 +264,10 @@ public class VenueServiceTests : IDisposable
         // 3. Không lọc theo rating (chỉ dùng Goong Places) nên Quán Dưỡng Sinh Cũ (2.1 sao) vẫn có mặt
         venues.Should().Contain(v => v.VenueId == 305);
 
-        // 4. Kiểm tra meta
+        // 4. Kiểm tra meta và thông tin tọa độ / rating của quán
+        venues[0].Latitude.Should().BeGreaterThan(0);
+        venues[0].Longitude.Should().BeGreaterThan(0);
+        venues[0].Rating.Should().BeGreaterThan(0);
         result.Meta.RadiusKm.Should().Be(5.0);
         result.Meta.Quota.Should().BeNull(); // Thành viên không có quota
     }

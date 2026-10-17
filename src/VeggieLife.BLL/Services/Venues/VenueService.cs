@@ -199,7 +199,18 @@ public class VenueService : IVenueService
 
         var candidateVenues = await _redis.GetAsync<List<NearbyVenueItemDto>>(cacheKey, ct);
 
-        if (candidateVenues == null)
+        if (candidateVenues != null)
+        {
+            // Tự động phục hồi tọa độ từ DirectionsUrl nếu cache cũ thiếu latitude/longitude
+            foreach (var cv in candidateVenues)
+            {
+                if (cv.Latitude == 0 && cv.Longitude == 0 && !string.IsNullOrWhiteSpace(cv.DirectionsUrl))
+                {
+                    ApplyFallbackCoordinates(cv);
+                }
+            }
+        }
+        else
         {
             // BƯỚC 9b: Goong Places API: Quét tìm địa điểm quán chay (tên quán, địa chỉ, tọa độ)
             // Đồng thời truy vấn CSDL địa phương bảng VeganVenues (chỉ quán Is_Active = 1, BR-ADM-MAP-001)
@@ -375,7 +386,11 @@ public class VenueService : IVenueService
             VenueId = v.VenueId,
             Name = v.VenueName,
             Address = v.Address,
+            Latitude = (double)v.Latitude,
+            Longitude = (double)v.Longitude,
             DistanceKm = distanceKm,
+            Rating = v.Rating,
+            IsFullyVegan = v.IsFullyVegan,
             ThumbnailUrl = v.ThumbnailUrl,
             Categories = v.VenueCategories.Select(vc => vc.Category.CategoryName).ToList(),
             DirectionsUrl = $"https://www.google.com/maps/dir/?api=1&destination={v.Latitude.ToString("G29", CultureInfo.InvariantCulture)},{v.Longitude.ToString("G29", CultureInfo.InvariantCulture)}"
@@ -532,6 +547,10 @@ public class VenueService : IVenueService
         var cachedVenue = await _redis.GetAsync<VenueDetailDto>(cacheKey, ct);
         if (cachedVenue != null)
         {
+            if (cachedVenue.Latitude == 0 && cachedVenue.Longitude == 0 && !string.IsNullOrWhiteSpace(cachedVenue.DirectionsUrl))
+            {
+                ApplyFallbackCoordinates(cachedVenue);
+            }
             if (lat.HasValue && lng.HasValue)
             {
                 ApplyCoordinatesDistance(cachedVenue, lat.Value, lng.Value);
@@ -565,7 +584,11 @@ public class VenueService : IVenueService
             VenueId = venue.VenueId,
             Name = venue.VenueName,
             Address = venue.Address,
+            Latitude = (double)venue.Latitude,
+            Longitude = (double)venue.Longitude,
             DistanceKm = null,
+            Rating = venue.Rating,
+            IsFullyVegan = venue.IsFullyVegan,
             ThumbnailUrl = venue.ThumbnailUrl,
             Categories = venue.VenueCategories.Select(vc => vc.Category.CategoryName).ToList(),
             DirectionsUrl = directionsUrl,
@@ -714,6 +737,42 @@ public class VenueService : IVenueService
                 double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var vLng))
             {
                 dto.DistanceKm = Math.Round(GeoHelper.CalculateDistanceKm(lat, lng, vLat, vLng), 1);
+            }
+        }
+    }
+
+    private static void ApplyFallbackCoordinates(NearbyVenueItemDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DirectionsUrl)) return;
+        var idx = dto.DirectionsUrl.IndexOf("destination=", StringComparison.OrdinalIgnoreCase);
+        if (idx >= 0)
+        {
+            var coordStr = dto.DirectionsUrl[(idx + "destination=".Length)..];
+            var parts = coordStr.Split(',');
+            if (parts.Length == 2 &&
+                double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var vLat) &&
+                double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var vLng))
+            {
+                dto.Latitude = vLat;
+                dto.Longitude = vLng;
+            }
+        }
+    }
+
+    private static void ApplyFallbackCoordinates(VenueDetailDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DirectionsUrl)) return;
+        var idx = dto.DirectionsUrl.IndexOf("destination=", StringComparison.OrdinalIgnoreCase);
+        if (idx >= 0)
+        {
+            var coordStr = dto.DirectionsUrl[(idx + "destination=".Length)..];
+            var parts = coordStr.Split(',');
+            if (parts.Length == 2 &&
+                double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var vLat) &&
+                double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var vLng))
+            {
+                dto.Latitude = vLat;
+                dto.Longitude = vLng;
             }
         }
     }
