@@ -27,7 +27,6 @@ public class SubscriptionsController : BaseApiController
     /// Auth: Public / Bearer (GUEST | MEMBER | VIP).
     /// </summary>
     [HttpGet("/api/v1/subscription-plans")]
-    [HttpGet("/subscription-plans")]
     [AllowAnonymous]
     public async Task<IActionResult> ListSubscriptionPlans(CancellationToken ct)
     {
@@ -40,7 +39,6 @@ public class SubscriptionsController : BaseApiController
     /// Auth: Bearer (MEMBER | VIP).
     /// </summary>
     [HttpPost("/api/v1/subscriptions/checkout")]
-    [HttpPost("/subscriptions/checkout")]
     [Authorize(Policy = PolicyNames.RequireMember)]
     public async Task<IActionResult> CheckoutSubscription(
         [FromBody] CheckoutSubscriptionRequest request,
@@ -61,7 +59,6 @@ public class SubscriptionsController : BaseApiController
     /// Auth: Bearer (MEMBER | VIP).
     /// </summary>
     [HttpGet("/api/v1/users/me/subscription")]
-    [HttpGet("/users/me/subscription")]
     [Authorize(Policy = PolicyNames.RequireMember)]
     public async Task<IActionResult> GetCurrentUserSubscription(CancellationToken ct)
     {

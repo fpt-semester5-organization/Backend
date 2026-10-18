@@ -135,8 +135,8 @@ if (app.Environment.IsDevelopment())
         c.RoutePrefix = "swagger";
     });
 
-    // Tự động chuyển hướng từ "/" sang "/swagger" để tiện kiểm thử
-    app.MapGet("/", () => Results.Redirect("/swagger"));
+    // Tự động chuyển hướng từ "/" sang "/swagger" để tiện kiểm thử (ẩn khỏi Swagger contract)
+    app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 }
 else
 {
