@@ -418,6 +418,20 @@ public static class ServiceExtensions
         // Dịch vụ Đăng ký gói VIP & Thanh toán (FN-SUB-01..04)
         services.AddScoped<VeggieLife.BLL.Services.Subscriptions.ISubscriptionService, VeggieLife.BLL.Services.Subscriptions.SubscriptionService>();
 
+        // Dịch vụ Bóc tách công thức từ video & Background Worker (FN-POST-10)
+        services.AddHttpClient<VeggieLife.BLL.Services.AI.IAiSttClient, VeggieLife.BLL.Services.AI.AiSttClient>("AiSttServiceClient")
+            .ConfigureHttpClient((sp, client) =>
+            {
+                var config = sp.GetRequiredService<IConfiguration>();
+                var baseUrl = config["AiService:SttBaseUrl"] ?? config["AiService:BaseUrl"] ?? "http://localhost:8082";
+                var apiKey = config["AiService:InternalApiKey"] ?? "dev-internal-key";
+
+                client.BaseAddress = new System.Uri(baseUrl);
+                client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
+                client.Timeout = System.TimeSpan.FromSeconds(120);
+            });
+        services.AddHostedService<VeggieLife.API.BackgroundJobs.SttProcessingWorker>();
+
         return services;
     }
 
