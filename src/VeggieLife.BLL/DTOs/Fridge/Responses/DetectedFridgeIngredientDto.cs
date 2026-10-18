@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.Text.Json.Serialization;
+
 namespace VeggieLife.BLL.DTOs.Fridge.Responses;
 
 /// <summary>
@@ -25,4 +28,10 @@ public class DetectedFridgeIngredientDto
     /// Ước lượng độ tươi: FRESH | NON-FRESH.
     /// </summary>
     public string FreshnessStatus { get; set; } = "FRESH";
+
+    /// <summary>
+    /// Tọa độ hộp bao [ymin, xmin, ymax, xmax] trong thang đo 0..1000 chuẩn hóa từ Gemini Vision.
+    /// </summary>
+    [JsonPropertyName("box2d")]
+    public List<int>? Box2D { get; set; }
 }

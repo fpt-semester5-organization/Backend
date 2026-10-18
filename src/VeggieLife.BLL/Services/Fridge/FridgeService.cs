@@ -220,7 +220,7 @@ public class FridgeService : IFridgeService
         foreach (var rawItem in rawAiItems)
         {
             var rawName = rawItem.Name.Trim();
-            var isMeatOrAnimal = IsMeatOrSeafood(rawName, rawItem.FoodGroup);
+            var isMeatOrAnimal = rawItem.IsAnimalProduct || rawItem.IsRedMeat || IsMeatOrSeafood(rawName, rawItem.FoodGroup);
 
             if (isGuest)
             {
@@ -274,7 +274,8 @@ public class FridgeService : IFridgeService
                     InventoryId = null, // Sẽ được điền sau khi lưu vào DB (nếu là Thành viên)
                     IngredientId = bestMatch.IngredientId,
                     Name = bestMatch.IngredientName,
-                    FreshnessStatus = freshness
+                    FreshnessStatus = freshness,
+                    Box2D = rawItem.Box2D
                 };
                 detectedList.Add(dto);
                 matchedItemsForSave.Add((dto, bestMatch));
@@ -287,7 +288,8 @@ public class FridgeService : IFridgeService
                     InventoryId = null,
                     IngredientId = null,
                     Name = rawName,
-                    FreshnessStatus = freshness
+                    FreshnessStatus = freshness,
+                    Box2D = rawItem.Box2D
                 });
             }
         }
@@ -805,8 +807,8 @@ public class FridgeService : IFridgeService
     {
         return new List<AiDetectedItemDto>
         {
-            new() { Name = "Nấm rơm", FreshnessStatus = "FRESH" },
-            new() { Name = "Rau lạ", FreshnessStatus = "NON-FRESH" }
+            new() { Name = "Nấm rơm", FreshnessStatus = "FRESH", Box2D = new List<int> { 145, 230, 420, 510 } },
+            new() { Name = "Rau lạ", FreshnessStatus = "NON-FRESH", Box2D = new List<int> { 510, 120, 780, 390 } }
         };
     }
 }
