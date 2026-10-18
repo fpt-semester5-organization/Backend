@@ -18,6 +18,11 @@ public class FridgeRecipeSuggestionDto
     public string Title { get; set; } = string.Empty;
 
     /// <summary>
+    /// Đường dẫn ảnh đại diện của món ăn.
+    /// </summary>
+    public string? ImageUrl { get; set; }
+
+    /// <summary>
     /// Điểm tương đồng nguyên liệu (0.7 - 1.0).
     /// </summary>
     public double Similarity { get; set; }

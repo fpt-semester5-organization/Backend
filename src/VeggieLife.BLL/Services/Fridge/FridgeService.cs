@@ -137,12 +137,17 @@ public class FridgeService : IFridgeService
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Tên tệp ảnh không có phần mở rộng hợp lệ.");
         }
 
-        input.ImageStream.Position = 0;
-        var headerBytes = new byte[16];
-        var bytesRead = await input.ImageStream.ReadAsync(headerBytes.AsMemory(0, 16), ct);
-        input.ImageStream.Position = 0;
+        using var imageBufferStream = new MemoryStream();
+        if (input.ImageStream.CanSeek)
+        {
+            input.ImageStream.Position = 0;
+        }
+        await input.ImageStream.CopyToAsync(imageBufferStream, ct);
+        var imageBytes = imageBufferStream.ToArray();
 
-        if (bytesRead < 12 || !ImageMetadataHelper.IsValidImageSignature(headerBytes, extension))
+        var headerBytes = imageBytes.AsSpan(0, Math.Min(imageBytes.Length, 16)).ToArray();
+
+        if (headerBytes.Length < 12 || !ImageMetadataHelper.IsValidImageSignature(headerBytes, extension))
         {
             throw AppException.BadRequest(
                 ErrorCodes.ErrValidation,
@@ -150,9 +155,8 @@ public class FridgeService : IFridgeService
         }
 
         // 2.3 Kiểm tra độ phân giải ảnh >= 640x480 pixels
-        input.ImageStream.Position = 0;
-        var dimSuccess = ImageMetadataHelper.TryGetImageDimensions(input.ImageStream, out var width, out var height);
-        input.ImageStream.Position = 0;
+        using var dimStream = new MemoryStream(imageBytes);
+        var dimSuccess = ImageMetadataHelper.TryGetImageDimensions(dimStream, out var width, out var height);
 
         if (!dimSuccess || width <= 0 || height <= 0 ||
             (Math.Max(width, height) < 640 || Math.Min(width, height) < 480))
@@ -180,8 +184,8 @@ public class FridgeService : IFridgeService
                : extension.Equals(".webp", StringComparison.OrdinalIgnoreCase) ? "image/webp" : "image/jpeg")
             : input.ContentType;
 
-        input.ImageStream.Position = 0;
-        var aiResult = await _aiClient.DetectFridgeIngredientsAsync(input.ImageStream, mimeType, ct);
+        using var aiStream = new MemoryStream(imageBytes);
+        var aiResult = await _aiClient.DetectFridgeIngredientsAsync(aiStream, mimeType, ct);
         sw.Stop();
 
         // Nếu AI trả về null và Circuit Breaker vừa bị bật mở
@@ -307,9 +311,9 @@ public class FridgeService : IFridgeService
             string imageCdnUrl;
             try
             {
-                input.ImageStream.Position = 0;
+                using var uploadStream = new MemoryStream(imageBytes);
                 var uploadResult = await _mediaService.UploadImageAsync(
-                    input.ImageStream,
+                    uploadStream,
                     input.FileName,
                     "veggielife/fridge",
                     ct);
@@ -786,6 +790,7 @@ public class FridgeService : IFridgeService
             {
                 RecipeId = recipe.RecipeId,
                 Title = recipe.Title,
+                ImageUrl = recipe.ImageUrl,
                 Similarity = similarity,
                 MissingIngredients = missing,
                 UsesNonFreshItems = usesNonFresh
