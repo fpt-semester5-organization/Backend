@@ -57,5 +57,10 @@ public interface IRedisService
     /// <summary>
     /// Đưa công việc vào hàng đợi phân tán Redis (tương đương LPUSH cho stt_queue).
     /// </summary>
-    Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default);
+    Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default) => Task.CompletedTask;
+
+    /// <summary>
+    /// Lấy một công việc từ hàng đợi phân tán Redis (tương đương RPOP cho FIFO queue).
+    /// </summary>
+    Task<T?> DequeueAsync<T>(string queueName, CancellationToken ct = default) => Task.FromResult<T?>(default);
 }
