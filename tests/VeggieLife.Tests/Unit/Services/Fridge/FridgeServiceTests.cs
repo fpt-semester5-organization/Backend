@@ -880,6 +880,112 @@ public class FridgeServiceTests : IDisposable
         result[1].Similarity.Should().Be(1.0);
     }
 
+    [Fact]
+    public async Task DetectIngredients_WithBoundingBox_ShouldPassThroughCoordinates()
+    {
+        // Arrange
+        using var stream = CreateValidPngStream(800, 600);
+        var input = new FridgeDetectionInputDto
+        {
+            ImageStream = stream,
+            FileName = "fridge.png",
+            FileLength = stream.Length,
+            ContentType = "image/png"
+        };
+
+        _mockAiClient.Setup(c => c.DetectFridgeIngredientsAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiFridgeDetectionResult
+            {
+                Success = true,
+                Items = new List<AiDetectedItemDto>
+                {
+                    new()
+                    {
+                        Name = "Nấm rơm",
+                        FreshnessStatus = "FRESH",
+                        FoodGroup = "MUSHROOM",
+                        Box2D = new List<int> { 145, 230, 420, 510 }
+                    },
+                    new()
+                    {
+                        Name = "Rau dại kỳ lạ",
+                        FreshnessStatus = "NON-FRESH",
+                        FoodGroup = "VEGETABLE",
+                        Box2D = new List<int> { 510, 120, 780, 390 }
+                    },
+                    new()
+                    {
+                        Name = "Cà rốt không có tọa độ",
+                        FreshnessStatus = "FRESH",
+                        FoodGroup = "VEGETABLE",
+                        Box2D = null
+                    }
+                }
+            });
+
+        // Act
+        var result = await _service.DetectIngredientsAsync(input, userId: 1, userRole: "MEMBER", guestUuid: null);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Detected.Should().HaveCount(3);
+
+        // Mục 1: Khớp với Nấm rơm (IngredientId 12), toạ độ Box2D được giữ nguyên
+        result.Detected[0].Name.Should().Be("Nấm rơm");
+        result.Detected[0].IngredientId.Should().Be(12);
+        result.Detected[0].Box2D.Should().NotBeNull();
+        result.Detected[0].Box2D.Should().Equal(new List<int> { 145, 230, 420, 510 });
+
+        // Mục 2: Không khớp danh mục, toạ độ Box2D vẫn được giữ nguyên để FE crop
+        result.Detected[1].Name.Should().Be("Rau dại kỳ lạ");
+        result.Detected[1].IngredientId.Should().BeNull();
+        result.Detected[1].Box2D.Should().NotBeNull();
+        result.Detected[1].Box2D.Should().Equal(new List<int> { 510, 120, 780, 390 });
+
+        // Mục 3: Không có toạ độ từ AI -> Box2D null
+        result.Detected[2].Name.Should().Be("Cà rốt không có tọa độ");
+        result.Detected[2].Box2D.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DetectIngredients_WithIsAnimalProductFlag_ShouldTriggerWarning()
+    {
+        // Arrange
+        using var stream = CreateValidPngStream(800, 600);
+        var input = new FridgeDetectionInputDto
+        {
+            ImageStream = stream,
+            FileName = "fridge.png",
+            FileLength = stream.Length,
+            ContentType = "image/png"
+        };
+
+        _mockAiClient.Setup(c => c.DetectFridgeIngredientsAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiFridgeDetectionResult
+            {
+                Success = true,
+                Items = new List<AiDetectedItemDto>
+                {
+                    new()
+                    {
+                        Name = "Thực phẩm có nguồn gốc động vật",
+                        FreshnessStatus = "FRESH",
+                        IsAnimalProduct = true,
+                        IsRedMeat = false,
+                        Box2D = new List<int> { 100, 100, 200, 200 }
+                    }
+                }
+            });
+
+        // Act
+        var result = await _service.DetectIngredientsAsync(input, userId: 1, userRole: "MEMBER", guestUuid: null);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Warnings.Should().NotBeEmpty();
+        result.Warnings.Any(w => w.Contains("nguồn gốc động vật")).Should().BeTrue();
+    }
+
     // =========================================================================
     // HÀM BỔ TRỢ TẠO LUỒNG ẢNH HỢP LỆ VỚI HEADER CHUẨN
     // =========================================================================

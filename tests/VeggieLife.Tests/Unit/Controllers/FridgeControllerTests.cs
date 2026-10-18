@@ -339,4 +339,68 @@ public class FridgeControllerTests
         response.Should().NotBeNull();
         response!.Message.Should().Be("Đã xóa.");
     }
+
+    [Fact]
+    public async Task CreateFridgeDetection_WithBoundingBoxData_PreservesBox2D()
+    {
+        // Arrange
+        var userId = 25;
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(ClaimTypes.Role, UserRoles.Member)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        var fileMock = new Mock<IFormFile>();
+        var content = "dummy-image-data";
+        var ms = new MemoryStream(Encoding.UTF8.GetBytes(content));
+        fileMock.Setup(f => f.OpenReadStream()).Returns(ms);
+        fileMock.Setup(f => f.FileName).Returns("fridge.jpg");
+        fileMock.Setup(f => f.Length).Returns(ms.Length);
+        fileMock.Setup(f => f.ContentType).Returns("image/jpeg");
+
+        var form = new CreateFridgeDetectionForm { Image = fileMock.Object };
+
+        var expectedBox = new List<int> { 120, 240, 310, 450 };
+        var serviceResponse = new CreateFridgeDetectionResponseData
+        {
+            Saved = true,
+            Detected = new List<DetectedFridgeIngredientDto>
+            {
+                new()
+                {
+                    InventoryId = 55,
+                    IngredientId = 12,
+                    Name = "Nấm rơm",
+                    FreshnessStatus = "FRESH",
+                    Box2D = expectedBox
+                }
+            },
+            Quota = new FridgeDetectionQuotaDto { Used = 1, Limit = 10, Remaining = 9 }
+        };
+
+        _mockService.Setup(s => s.DetectIngredientsAsync(
+                It.IsAny<FridgeDetectionInputDto>(),
+                userId,
+                UserRoles.Member,
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(serviceResponse);
+
+        // Act
+        var result = await _controller.CreateFridgeDetection(form, CancellationToken.None);
+
+        // Assert
+        var okResult = result as OkObjectResult;
+        okResult.Should().NotBeNull();
+        okResult!.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var response = okResult.Value as ApiResponse<CreateFridgeDetectionResponseData>;
+        response.Should().NotBeNull();
+        response!.Data!.Detected.Should().HaveCount(1);
+        response.Data.Detected[0].Box2D.Should().NotBeNull();
+        response.Data.Detected[0].Box2D.Should().Equal(expectedBox);
+    }
 }
+
