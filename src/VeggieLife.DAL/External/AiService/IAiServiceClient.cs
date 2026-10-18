@@ -20,6 +20,11 @@ public interface IAiServiceClient
     Task<AiFridgeDetectionResult?> DetectFridgeIngredientsAsync(System.IO.Stream imageStream, string mimeType, CancellationToken ct = default);
 
     /// <summary>
+    /// Gửi thông tin sản phẩm và từ điển phụ gia sang AI Service phân loại thuần chay (FN-BAR-01).
+    /// </summary>
+    Task<AiBarcodeClassifyResponse?> ClassifyBarcodeAsync(AiBarcodeClassifyRequest request, CancellationToken ct = default);
+
+    /// <summary>
     /// Kiểm tra xem trạng thái ngắt mạch (Circuit Breaker) có đang mở hay không (BR-ADM-AI-002).
     /// </summary>
     bool IsCircuitOpen { get; }

@@ -2583,6 +2583,40 @@ GO
 -- 18. VEGAN VENUES (Bảng 33), VENUE CATEGORIES (Bảng 35), VENUE MENU ITEMS (Bảng 34)
 PRINT N'>> [18/38] Nạp dữ liệu Quán Chay, Menu & Phân loại...';
 
+SET IDENTITY_INSERT dbo.VeganVenues ON;
+MERGE INTO dbo.VeganVenues AS target
+USING (
+    VALUES
+        (7, 'GOOGLE_PLACES', 'GP_VN_SGN_007', N'Nhà Hàng Chay Ý Basilico', N'45 Hai Bà Trưng, Bến Nghé, Quận 1, TP. Hồ Chí Minh', 10.778210, 106.700140, 4.8, 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"02838221234"}', DATEADD(DAY, -65, SYSDATETIME())),
+        (8, 'GOONG', 'GOONG_SGN_008', N'Quán Chay Hương Sen Miền Tây', N'123 Nguyễn Thị Thập, Tân Phú, Quận 7, TP. Hồ Chí Minh', 10.741210, 106.715240, 4.5, 'https://images.unsplash.com/photo-1543007630-9710e4a00a20?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"0908123456"}', DATEADD(DAY, -60, SYSDATETIME())),
+        (9, 'GOOGLE_PLACES', 'GP_VN_SGN_009', N'Lẩu Chay Nấm Rơm Nam Bộ', N'56 Lê Văn Sỹ, Phường 11, Quận Phú Nhuận, TP. Hồ Chí Minh', 10.793210, 106.674310, 4.6, 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"02839912345"}', DATEADD(DAY, -58, SYSDATETIME())),
+        (10, 'HAPPYCOW', 'HC_VN_SGN_010', N'Buffet Chay Dưỡng Sinh Mandala', N'110 Sư Vạn Hạnh, Phường 12, Quận 10, TP. Hồ Chí Minh', 10.771210, 106.669810, 4.7, 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=800&q=80', 1, 1, '{"priceRange":"120.000đ - 180.000đ"}', DATEADD(DAY, -55, SYSDATETIME())),
+        (11, 'GOONG', 'GOONG_HAN_011', N'Bún Chay Hoa Chuối Phố Cổ', N'22 Hàng Buồm, Hoàn Kiếm, Hà Nội', 21.035210, 105.851240, 4.6, 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=800&q=80', 1, 1, '{"city":"Hà Nội"}', DATEADD(DAY, -52, SYSDATETIME())),
+        (12, 'HAPPYCOW', 'HC_VN_HAN_012', N'Cơm Niêu Chay Tứ Xuyên', N'88 Trần Hưng Đạo, Hoàn Kiếm, Hà Nội', 21.022140, 105.844310, 4.7, 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80', 1, 1, '{"city":"Hà Nội"}', DATEADD(DAY, -50, SYSDATETIME())),
+        (13, 'GOOGLE_PLACES', 'GP_VN_PQC_013', N'Lẩu Nấm Chay Tiêu Xanh', N'34 Đường 30 Tháng 4, Dương Đông, Phú Quốc, Kiên Giang', 10.218540, 103.965410, 4.8, 'https://images.unsplash.com/photo-1505253758473-96b301b5c81d?auto=format&fit=crop&w=800&q=80', 1, 1, '{"city":"Phú Quốc"}', DATEADD(DAY, -48, SYSDATETIME())),
+        (14, 'HAPPYCOW', 'HC_VN_SGN_014', N'Green Burger & Healthy Vegan', N'15 Thảo Điền, TP. Thủ Đức, TP. Hồ Chí Minh', 10.804520, 106.735410, 4.9, 'https://images.unsplash.com/photo-1520072959219-c595dc870360?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"0918123456"}', DATEADD(DAY, -45, SYSDATETIME())),
+        (15, 'GOONG', 'GOONG_SGN_015', N'Hủ Tiếu Mì Chay Chợ Lớn', N'234 An Dương Vương, Phường 4, Quận 5, TP. Hồ Chí Minh', 10.755410, 106.671240, 4.4, 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"02838334455"}', DATEADD(DAY, -42, SYSDATETIME())),
+        (16, 'GOOGLE_PLACES', 'GP_VN_HOI_016', N'Mì Quảng Chay Phố Hội', N'78 Nguyễn Huệ, Cẩm Châu, Hội An, Quảng Nam', 15.880210, 108.331240, 4.7, 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80', 1, 1, '{"city":"Hội An"}', DATEADD(DAY, -40, SYSDATETIME())),
+        (17, 'HAPPYCOW', 'HC_VN_HAN_017', N'Cơm Chay Văn Phòng Thực Dưỡng', N'52 Lê Đại Hành, Hai Bà Trưng, Hà Nội', 21.011240, 105.848520, 4.5, 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80', 1, 1, '{"city":"Hà Nội"}', DATEADD(DAY, -38, SYSDATETIME())),
+        (18, 'GOONG', 'GOONG_SGN_018', N'Lẩu Mắm Chay Đất Phương Nam', N'99 Phan Xích Long, Phường 2, Phú Nhuận, TP. Hồ Chí Minh', 10.798540, 106.691240, 4.6, 'https://images.unsplash.com/photo-1505253758473-96b301b5c81d?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"0933221100"}', DATEADD(DAY, -35, SYSDATETIME())),
+        (101, 'HAPPYCOW', 'HC_VN_SGN_001', N'Nhà hàng Chay Kashew Thảo Điền', N'14 Trần Ngọc Diện, Thảo Điền, Quận 2, TP. Hồ Chí Minh', 10.803450, 106.732140, 4.8, 'https://res.cloudinary.com/swrsuenp/image/upload/v1792252798/veggielife/venues/kashew_cheese.jpg', 1, 1, '{"phone":"02836208888","website":"https://kashewcheese.com"}', DATEADD(DAY, -60, SYSDATETIME())),
+        (102, 'HAPPYCOW', 'HC_VN_SGN_002', N'Pi Vegetarian Bistro', N'19 Võ Văn Tần, Phường 6, Quận 3, TP. Hồ Chí Minh', 10.776520, 106.692340, 4.7, 'https://res.cloudinary.com/swrsuenp/image/upload/v1792252804/veggielife/venues/pi_vegetarian.jpg', 1, 1, '{"phone":"0938888888","openHours":"10:00 - 22:00"}', DATEADD(DAY, -50, SYSDATETIME())),
+        (103, 'GOOGLE_PLACES', 'GP_VN_SGN_003', N'Lẩu Nấm Chay An Nhiên', N'81 Phạm Ngũ Lão, Phường 3, Quận Gò Vấp, TP. Hồ Chí Minh', 10.826540, 106.685410, 4.6, 'https://res.cloudinary.com/swrsuenp/image/upload/v1792252837/veggielife/venues/lau_nam_an_nhien.jpg', 1, 1, '{"phone":"02838945678"}', DATEADD(DAY, -45, SYSDATETIME())),
+        (104, 'GOONG', 'GOONG_SGN_004', N'Cơm Chay Nàng Gấm', N'73 Lê Quang Định, Phường 14, Quận Bình Thạnh, TP. Hồ Chí Minh', 10.801240, 106.698540, 4.5, 'https://res.cloudinary.com/swrsuenp/image/upload/v1792252841/veggielife/venues/com_chay_nang_gam.jpg', 1, 1, '{"phone":"0903123456"}', DATEADD(DAY, -40, SYSDATETIME())),
+        (105, 'GOOGLE_PLACES', 'GP_VN_SGN_005', N'Nhà hàng Buffet Chay D''Gemma', N'5B Phổ Quang, Phường 2, Quận Tân Bình, TP. Hồ Chí Minh', 10.808720, 106.669810, 4.9, 'https://res.cloudinary.com/swrsuenp/image/upload/v1792252845/veggielife/venues/buffet_chay_dgemma.jpg', 1, 1, '{"priceRange":"150.000đ - 220.000đ"}', DATEADD(DAY, -35, SYSDATETIME())),
+        (106, 'HAPPYCOW', 'HC_VN_SGN_006', N'Nhà hàng Chay Bếp Xanh An Duyên', N'10 Nguyễn Tri Phương, Phường 6, Quận 5, TP. Hồ Chí Minh', 10.753410, 106.668720, 4.6, 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"02838555555"}', DATEADD(DAY, -30, SYSDATETIME())),
+        (107, 'GOONG', 'GOONG_SGN_007', N'Quán Cơm Chay Thiện Duyên', N'24 Tôn Thất Thiệp, Bến Nghé, Quận 1, TP. Hồ Chí Minh', 10.773210, 106.703410, 4.4, 'https://images.unsplash.com/photo-1543007630-9710e4a00a20?auto=format&fit=crop&w=800&q=80', 1, 1, '{"priceRange":"35.000đ - 50.000đ"}', DATEADD(DAY, -25, SYSDATETIME())),
+        (108, 'HAPPYCOW', 'HC_VN_HAN_008', N'Sadhu Vegetarian Restaurant Hanoi', N'87 Lý Thường Kiệt, Cửa Nam, Hoàn Kiếm, Hà Nội', 21.023410, 105.842310, 4.8, 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80', 1, 1, '{"city":"Hà Nội"}', DATEADD(DAY, -20, SYSDATETIME()))
+) AS source (Venue_ID, External_Source, External_Place_ID, Venue_Name, Address, Latitude, Longitude, Rating, Thumbnail_Url, Is_Fully_Vegan, Is_Active, Raw_Origin_JSON, Created_At)
+ON target.Venue_ID = source.Venue_ID
+WHEN MATCHED THEN
+    UPDATE SET target.Venue_Name = source.Venue_Name, target.Thumbnail_Url = source.Thumbnail_Url, target.Rating = source.Rating
+WHEN NOT MATCHED THEN
+    INSERT (Venue_ID, External_Source, External_Place_ID, Venue_Name, Address, Latitude, Longitude, Rating, Thumbnail_Url, Is_Fully_Vegan, Is_Active, Raw_Origin_JSON, Created_At)
+    VALUES (source.Venue_ID, source.External_Source, source.External_Place_ID, source.Venue_Name, source.Address, source.Latitude, source.Longitude, source.Rating, source.Thumbnail_Url, source.Is_Fully_Vegan, source.Is_Active, source.Raw_Origin_JSON, source.Created_At);
+SET IDENTITY_INSERT dbo.VeganVenues OFF;
+GO
+
 MERGE INTO dbo.VenueCategories AS target
 USING (
     VALUES
