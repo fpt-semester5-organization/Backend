@@ -314,6 +314,51 @@ public class PostServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ListPosts_WhenAuthorQueriesOwnPosts_ReturnsModerationStatusAndVisibility()
+    {
+        // BUG-FL05-08: Màn hình MyPosts.tsx (SCR-28) cần hiển thị huy hiệu Nháp / Chờ duyệt / Đã duyệt
+        // Khi tham số authorId trùng với ID người gọi (currentUserId), phải trả về ModerationStatus và Visibility
+        // Arrange
+        var filter = new PostFilterRequest { AuthorId = 1024, Page = 1, Size = 10 };
+
+        // Act
+        var (items, meta) = await _service.ListPostsAsync(filter, isGuest: false, guestId: null, currentUserId: 1024);
+
+        // Assert
+        items.Should().HaveCount(3); // Post 1, 3, 4 (Post 5 is deleted)
+
+        var post1 = items.Single(p => p.PostId == 1);
+        post1.ModerationStatus.Should().Be("APPROVED_ACTIVE");
+        post1.Visibility.Should().Be("PUBLIC");
+
+        var post3 = items.Single(p => p.PostId == 3);
+        post3.ModerationStatus.Should().Be("APPROVED_ACTIVE");
+        post3.Visibility.Should().Be("PRIVATE");
+
+        var post4 = items.Single(p => p.PostId == 4);
+        post4.ModerationStatus.Should().Be("PENDING_REVIEW");
+        post4.Visibility.Should().Be("PUBLIC");
+    }
+
+    [Fact]
+    public async Task ListPosts_WhenNotAuthorQuery_ReturnsNullModerationStatusAndVisibility()
+    {
+        // Khi người khác hoặc khách tra cứu bài viết (authorId khác currentUserId hoặc authorId = null),
+        // ModerationStatus và Visibility phải là null
+        // Arrange: Người dùng 2048 xem bài của người dùng 1024
+        var filter = new PostFilterRequest { AuthorId = 1024, Page = 1, Size = 10 };
+
+        // Act
+        var (items, meta) = await _service.ListPostsAsync(filter, isGuest: false, guestId: null, currentUserId: 2048);
+
+        // Assert: Người dùng 2048 chỉ thấy bài Approved + Public (Post 1) và không thấy ModerationStatus/Visibility
+        items.Should().HaveCount(1);
+        var post1 = items.Single(p => p.PostId == 1);
+        post1.ModerationStatus.Should().BeNull();
+        post1.Visibility.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ListPosts_FilterByKeyword_MatchesTitleOrContent()
     {
         // Arrange: Tìm theo từ khóa "nấm"
