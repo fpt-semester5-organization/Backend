@@ -26,7 +26,6 @@ public class PaymentsController : BaseApiController
     /// Auth: Chữ ký HMAC-SHA256 của cổng (không dùng JWT).
     /// </summary>
     [HttpPost("/api/v1/payments/{gateway}/ipn")]
-    [HttpPost("/payments/{gateway}/ipn")]
     [AllowAnonymous]
     public async Task<IActionResult> HandlePaymentIpn(
         [FromRoute] string gateway,
