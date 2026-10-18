@@ -22,12 +22,9 @@ public class OpenFoodFactsClient : IOpenFoodFactsClient
     private readonly ILogger<OpenFoodFactsClient> _logger;
 
     // Các từ khóa chỉ nguồn gốc động vật phổ biến trong thành phần tiếng Việt & tiếng Anh
-    private static readonly string[] NonVeganKeywords = new[]
-    {
-        "sữa", "whey", "casein", "trứng", "mật ong", "gelatin", "thịt", "cá",
-        "tôm", "mực", "mỡ heo", "mỡ bò", "mỡ động vật", "nước mắm", "chiết xuất thịt",
-        "carmine", "cochineal", "e120", "shellac", "e904", "rennet", "tallow", "lard"
-    };
+    private static readonly Regex AnimalKeywordRegex = new(
+        @"(?i)(?:^|[^\p{L}\p{N}])(sữa|whey|casein|trứng|mật\s+ong|gelatin|thịt|cá|tôm|mực|mỡ\s+heo|mỡ\s+bò|mỡ\s+động\s+vật|nước\s+mắm|chiết\s+xuất\s+thịt|carmine|cochineal|e120|shellac|e904|rennet|tallow|lard)(?:$|[^\p{L}\p{N}])",
+        RegexOptions.Compiled);
 
     public OpenFoodFactsClient(
         HttpClient httpClient,
@@ -193,6 +190,34 @@ public class OpenFoodFactsClient : IOpenFoodFactsClient
                 }
             }
 
+            // Dấu vết dị ứng (traces_tags)
+            var tracesTags = new List<string>();
+            if (product.TryGetProperty("traces_tags", out var trTags) && trTags.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var tag in trTags.EnumerateArray())
+                {
+                    var raw = tag.GetString();
+                    if (!string.IsNullOrWhiteSpace(raw))
+                    {
+                        tracesTags.Add(raw.Trim());
+                    }
+                }
+            }
+
+            // Nhãn sản phẩm (labels_tags)
+            var labelsTags = new List<string>();
+            if (product.TryGetProperty("labels_tags", out var lbTags) && lbTags.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var tag in lbTags.EnumerateArray())
+                {
+                    var raw = tag.GetString();
+                    if (!string.IsNullOrWhiteSpace(raw))
+                    {
+                        labelsTags.Add(raw.Trim());
+                    }
+                }
+            }
+
             // Phân tích Vegan
             string veganVerdict = "DOUBTFUL";
             string verdictText = "Chưa đủ dữ liệu để xác nhận thuần chay.";
@@ -229,15 +254,12 @@ public class OpenFoodFactsClient : IOpenFoodFactsClient
             // Kiểm tra chéo với danh sách từ khóa phi chay trong ingredients_text nếu có
             if (!string.IsNullOrWhiteSpace(ingredientsText))
             {
-                var lowerIng = ingredientsText.ToLowerInvariant();
-                foreach (var kw in NonVeganKeywords)
+                var match = AnimalKeywordRegex.Match(ingredientsText);
+                if (match.Success)
                 {
-                    if (lowerIng.Contains(kw))
-                    {
-                        veganVerdict = "NON_VEGAN";
-                        verdictText = $"Phát hiện thành phần không thuần chay: '{kw}'.";
-                        break;
-                    }
+                    var kw = match.Groups[1].Value;
+                    veganVerdict = "NON_VEGAN";
+                    verdictText = $"Phát hiện thành phần không thuần chay: '{kw}'.";
                 }
             }
 
@@ -256,6 +278,11 @@ public class OpenFoodFactsClient : IOpenFoodFactsClient
                 VerdictText = verdictText,
                 Additives = additives.Distinct().ToList(),
                 Allergens = allergens.Distinct().ToList(),
+                AdditivesTags = additives.Distinct().ToList(),
+                AllergensTags = allergens.Distinct().ToList(),
+                TracesTags = tracesTags.Distinct().ToList(),
+                LabelsTags = labelsTags.Distinct().ToList(),
+                IngredientsAnalysisTags = analysisTags.Distinct().ToList(),
                 ImageUrl = imageUrl
             };
         }

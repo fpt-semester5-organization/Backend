@@ -44,6 +44,9 @@ public class AiUsageDto
     [JsonPropertyName("completionTokens")]
     public int CompletionTokens { get; set; }
 
+    [JsonPropertyName("totalTokens")]
+    public int TotalTokens { get; set; }
+
     [JsonPropertyName("latencyMs")]
     public int LatencyMs { get; set; }
 

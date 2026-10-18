@@ -12,6 +12,11 @@ namespace VeggieLife.DAL.External.OpenFoodFacts
         public string VerdictText { get; set; } = string.Empty;
         public List<string> Additives { get; set; } = new();
         public List<string> Allergens { get; set; } = new();
+        public List<string> AdditivesTags { get; set; } = new();
+        public List<string> AllergensTags { get; set; } = new();
+        public List<string> TracesTags { get; set; } = new();
+        public List<string> LabelsTags { get; set; } = new();
+        public List<string> IngredientsAnalysisTags { get; set; } = new();
         public string? ImageUrl { get; set; }
     }
 }

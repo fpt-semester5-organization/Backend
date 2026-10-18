@@ -14,27 +14,17 @@ using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.Products;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
+using VeggieLife.DAL.External.AiService;
 using VeggieLife.DAL.External.OpenFoodFacts;
 using Xunit;
 
 namespace VeggieLife.Tests.Unit.Services.Products;
 
-/// <summary>
-/// Bộ kiểm thử đơn vị toàn diện cho ProductService (FN-BAR-01, FN-BAR-02).
-/// Kiểm tra:
-/// 1. Định dạng mã vạch EAN-8/13, UPC-A (^\d{8,14}$) - từ chối 400 ERR_VALIDATION.
-/// 2. Hạn mức Khách (BR-GUEST-07) tối đa 03 lần/ngày qua Redis - vượt quá từ chối 403 ERR_QUOTA_BARCODE_EXCEEDED.
-/// 3. Không tìm thấy ở cả CSDL và Open Food Facts - trả 404 ERR_PRODUCT_NOT_FOUND và không trừ lượt.
-/// 4. Lỗi mạng/timeout Open Food Facts - trả 503 ERR_EXT_OPENFOODFACTS_FAILED.
-/// 5. Sản phẩm CSDL còn hạn 30 ngày - dùng trực tiếp từ CSDL, không gọi Open Food Facts.
-/// 6. Bóc tách phụ gia E-Numbers và kết luận chuẩn GREEN / YELLOW / RED.
-/// 7. Thành viên: đối chiếu dị ứng cá nhân và ghi lịch sử UserScanHistory.
-/// 8. Lấy danh sách lịch sử quét có phân trang và lọc theo verdict.
-/// </summary>
 public class ProductServiceTests : IDisposable
 {
     private readonly AppDbContext _db;
     private readonly Mock<IOpenFoodFactsClient> _mockOffClient;
+    private readonly Mock<IAiServiceClient> _mockAiClient;
     private readonly Mock<IRedisService> _mockRedis;
     private readonly Mock<ILogger<ProductService>> _mockLogger;
     private readonly ProductService _service;
@@ -47,12 +37,14 @@ public class ProductServiceTests : IDisposable
 
         _db = new AppDbContext(options);
         _mockOffClient = new Mock<IOpenFoodFactsClient>();
+        _mockAiClient = new Mock<IAiServiceClient>();
         _mockRedis = new Mock<IRedisService>();
         _mockLogger = new Mock<ILogger<ProductService>>();
 
         _service = new ProductService(
             _db,
             _mockOffClient.Object,
+            _mockAiClient.Object,
             _mockRedis.Object,
             _mockLogger.Object);
 
@@ -471,4 +463,232 @@ public class ProductServiceTests : IDisposable
         updatedProduct.Should().NotBeNull();
         updatedProduct!.ImageUrl.Should().Be(expectedImageUrl);
     }
+
+    [Fact]
+    public async Task ScanBarcode_WithAiClassification_SavesAiQuotaLogsAndAuditLogs()
+    {
+        // Arrange
+        var barcode = "8939999000111";
+        var memberId = 10;
+
+        _mockOffClient.Setup(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenFoodFactsProductDto
+            {
+                Barcode = barcode,
+                ProductName = "Bánh đậu xanh thuần chay",
+                Brand = "Hải Dương",
+                IngredientsText = "Bột đậu xanh, đường cát, dầu thực vật",
+                VeganVerdict = "VEGAN",
+                Additives = new List<string> { "E300" }
+            });
+
+        _mockAiClient.Setup(a => a.IsCircuitOpen).Returns(false);
+        _mockAiClient.Setup(a => a.ClassifyBarcodeAsync(It.IsAny<AiBarcodeClassifyRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiBarcodeClassifyResponse
+            {
+                VeganVerdict = "VEGAN",
+                VerdictText = "Sản phẩm thuần chay 100%.",
+                Confidence = 0.98,
+                DetectedAdditives = new List<AiDetectedAdditiveDto>
+                {
+                    new() { Code = "E300", Name = "Acid ascorbic", VeganStatus = "VEGAN", Source = "DICTIONARY" }
+                },
+                Allergens = new List<AiBarcodeAllergenDto>
+                {
+                    new() { Name = "Đậu phộng", PresenceType = "MAY_CONTAIN" }
+                },
+                Usage = new AiUsageDto
+                {
+                    Model = "gemini-2.5-flash",
+                    PromptTokens = 120,
+                    CompletionTokens = 40,
+                    TotalTokens = 160,
+                    LatencyMs = 280,
+                    Temperature = 0.15m
+                },
+                Audit = new AiAuditDto
+                {
+                    Prompt = "Thẩm định bánh đậu xanh",
+                    RawResult = "{\"veganVerdict\":\"VEGAN\"}"
+                }
+            });
+
+        // Act
+        var result = await _service.ScanBarcodeAsync(barcode, memberId, null, "CAMERA_BARCODE");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.VeganVerdict.Should().Be("GREEN");
+        result.VerdictText.Should().Be("Sản phẩm thuần chay 100%.");
+        result.DetectedAdditives.Should().ContainSingle(a => a.Code == "E300");
+
+        // Kiểm tra AIQuotaLogs và AuditLogs đã được ghi nhận cho member
+        var quotaLog = await _db.AiquotaLogs.FirstOrDefaultAsync(l => l.UserId == memberId && l.FeatureCode == "AI_BARCODE");
+        quotaLog.Should().NotBeNull();
+        quotaLog!.TokensConsumed.Should().Be(160);
+        quotaLog.RequestStatus.Should().Be("SUCCESS");
+
+        var auditLog = await _db.AuditLogs.FirstOrDefaultAsync(a => a.TargetTable == "Products" && a.Action == "AI_BARCODE_CLASSIFY");
+        auditLog.Should().NotBeNull();
+        auditLog!.ActorUserId.Should().Be(memberId);
+        auditLog.NewValue.Should().Contain("gemini-2.5-flash");
+
+        // Kiểm tra ProductAllergens được lưu và kích hoạt cảnh báo dị ứng Đậu phộng của member
+        var product = await _db.Products.Include(p => p.ProductAllergens).FirstOrDefaultAsync(p => p.Barcode == barcode);
+        product.Should().NotBeNull();
+        product!.ProductAllergens.Should().NotBeEmpty();
+        result.PersonalAllergyCheck.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ScanBarcode_AdminVerifiedProduct_NeverOverwritten()
+    {
+        // Arrange - Sản phẩm đã được Admin duyệt VEGAN
+        var barcode = "8934444555666";
+        _db.Products.Add(new Product
+        {
+            Barcode = barcode,
+            ProductName = "Sữa hạt điều hữu cơ",
+            Brand = "Hạt Việt",
+            IngredientsText = "Hạt điều nguyên chất",
+            VeganVerdict = "VEGAN",
+            AdminVerified = true, // Đã được Admin kiểm định
+            CreatedAt = DateTime.UtcNow.AddDays(-10),
+            LastSyncedAt = DateTime.UtcNow.AddDays(-35) // Đã quá hạn 30 ngày
+        });
+        await _db.SaveChangesAsync();
+
+        // OFF trả về NON_VEGAN
+        _mockOffClient.Setup(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenFoodFactsProductDto
+            {
+                Barcode = barcode,
+                ProductName = "Sữa hạt điều công nghiệp (tên mới)",
+                Brand = "Hạt Việt Mới",
+                IngredientsText = "Hạt điều, sữa bò",
+                VeganVerdict = "NON_VEGAN"
+            });
+
+        // AI cũng trả về NON_VEGAN
+        _mockAiClient.Setup(a => a.IsCircuitOpen).Returns(false);
+        _mockAiClient.Setup(a => a.ClassifyBarcodeAsync(It.IsAny<AiBarcodeClassifyRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiBarcodeClassifyResponse
+            {
+                VeganVerdict = "NON_VEGAN",
+                VerdictText = "Có sữa bò"
+            });
+
+        _mockRedis.Setup(r => r.GetAsync<int?>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+
+        // Act
+        var result = await _service.ScanBarcodeAsync(barcode, null, "guest-1");
+
+        // Assert: Kết luận vẫn phải là GREEN vì AdminVerified = true không bao giờ bị ghi đè
+        result.VeganVerdict.Should().Be("GREEN");
+
+        var inDb = await _db.Products.FirstAsync(p => p.Barcode == barcode);
+        inDb.VeganVerdict.Should().Be("VEGAN");
+        inDb.AdminVerified.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ScanBarcode_AiCircuitOpen_UsesRuleBasedFallbackAndWritesAuditLogs()
+    {
+        // Arrange - Mạch AI đang OPEN
+        var barcode = "8936666777888";
+        _mockOffClient.Setup(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenFoodFactsProductDto
+            {
+                Barcode = barcode,
+                ProductName = "Thạch dâu tây",
+                Brand = "Jelly",
+                IngredientsText = "Đường, nước ép dâu, chất tạo màu carmine (E120)",
+                VeganVerdict = "NON_VEGAN",
+                Additives = new List<string> { "E120" }
+            });
+
+        _mockAiClient.Setup(a => a.IsCircuitOpen).Returns(true); // Circuit Open!
+
+        _mockRedis.Setup(r => r.GetAsync<int?>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+        _mockRedis.Setup(r => r.IncrementAsync(It.IsAny<string>(), 1, It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        // Act
+        var result = await _service.ScanBarcodeAsync(barcode, null, "guest-1");
+
+        // Assert: Fallback engine dùng từ điển ENumberDictionary nhận diện E120 là NON_VEGAN -> RED
+        result.VeganVerdict.Should().Be("RED");
+        result.DetectedAdditives.Should().ContainSingle(a => a.Code == "E120" && a.VeganStatus == "NON_VEGAN");
+
+        // Xác nhận đã ghi AuditLog với Action AI_BARCODE_FALLBACK
+        var fallbackAudit = await _db.AuditLogs.FirstOrDefaultAsync(a => a.TargetTable == "Products" && a.Action == "AI_BARCODE_FALLBACK");
+        fallbackAudit.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ScanBarcode_GuestQuotaBoundary_ThirdAttemptSucceeds_FourthAttemptBlocked()
+    {
+        // Arrange - Lần quét thứ 3 (đang ở 2, chưa quá 3)
+        var barcode = "8931111222999";
+        var guestId = "guest-boundary-uuid";
+        var guestKey = $"guest_quota:{guestId}:barcode";
+
+        _mockOffClient.Setup(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenFoodFactsProductDto
+            {
+                Barcode = barcode,
+                ProductName = "Nước khoáng thiên nhiên",
+                VeganVerdict = "VEGAN"
+            });
+
+        _mockRedis.Setup(r => r.GetAsync<int?>(guestKey, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(2); // Đã dùng 2 lần -> lần này là lần 3
+        _mockRedis.Setup(r => r.IncrementAsync(guestKey, 1, It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(3); // Tăng lên 3
+
+        // Act - Lần 3 thành công
+        var resultThird = await _service.ScanBarcodeAsync(barcode, null, guestId);
+        resultThird.Should().NotBeNull();
+        resultThird.Quota.Used.Should().Be(3);
+        resultThird.Quota.Remaining.Should().Be(0);
+
+        // Lần 4: Redis trả về 3 -> Bị chặn 403
+        _mockRedis.Setup(r => r.GetAsync<int?>(guestKey, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(3);
+
+        Func<Task> actFourth = async () => await _service.ScanBarcodeAsync(barcode, null, guestId);
+        var ex = await actFourth.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrQuotaBarcodeExceeded);
+    }
+
+    [Fact]
+    public async Task ScanBarcode_OffProductWithoutIngredientsOrAdditives_ConcludesDoubtful()
+    {
+        // Arrange - Open Food Facts trả về không có ingredients_text và không có additives
+        var barcode = "8935555111222";
+        _mockOffClient.Setup(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenFoodFactsProductDto
+            {
+                Barcode = barcode,
+                ProductName = "Trà giải khát",
+                Brand = "TeaBrand",
+                IngredientsText = null, // Không có thành phần
+                Additives = new List<string>(), // Không có phụ gia
+                AdditivesTags = new List<string>(),
+                VeganVerdict = "DOUBTFUL"
+            });
+
+        _mockRedis.Setup(r => r.GetAsync<int?>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+
+        // Act
+        var result = await _service.ScanBarcodeAsync(barcode, null, "guest-1");
+
+        // Assert: Tuyệt đối không đoán VEGAN (GREEN) khi thiếu dữ liệu, phải trả DOUBTFUL (YELLOW)
+        result.VeganVerdict.Should().Be("YELLOW");
+    }
 }
+
