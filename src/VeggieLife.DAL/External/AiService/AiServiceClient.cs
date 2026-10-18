@@ -43,7 +43,7 @@ public class AiServiceClient : IAiServiceClient
             _httpClient.DefaultRequestHeaders.Add("X-Internal-Api-Key", _settings.InternalApiKey);
         }
 
-        _httpClient.Timeout = TimeSpan.FromSeconds(_settings.TimeoutSeconds > 0 ? _settings.TimeoutSeconds : 4);
+        _httpClient.Timeout = TimeSpan.FromSeconds(_settings.TimeoutSeconds > 0 ? _settings.TimeoutSeconds : 60);
     }
 
     public bool IsCircuitOpen
@@ -140,15 +140,24 @@ public class AiServiceClient : IAiServiceClient
 
         var sw = Stopwatch.StartNew();
 
-        var timeoutSeconds = _settings.TimeoutSeconds > 0 ? _settings.TimeoutSeconds : 15;
+        var timeoutSeconds = _settings.TimeoutSeconds > 0 ? Math.Max(_settings.TimeoutSeconds, 60) : 60;
 
         try
         {
             using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
+            // Sao chép sang MemoryStream nội bộ để không vô tình dispose stream của caller
+            using var memoryStream = new MemoryStream();
+            if (imageStream.CanSeek)
+            {
+                imageStream.Position = 0;
+            }
+            await imageStream.CopyToAsync(memoryStream, linkedCts.Token);
+            memoryStream.Position = 0;
+
             using var content = new MultipartFormDataContent();
-            using var streamContent = new StreamContent(imageStream);
+            using var streamContent = new StreamContent(memoryStream);
             streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType);
             content.Add(streamContent, "image", "fridge.jpg");
 
@@ -157,8 +166,9 @@ public class AiServiceClient : IAiServiceClient
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
                 // Fallback nếu microservice ai-service cũ dùng route /fridge/detect
+                memoryStream.Position = 0;
                 using var fallbackContent = new MultipartFormDataContent();
-                using var fallbackStreamContent = new StreamContent(imageStream);
+                using var fallbackStreamContent = new StreamContent(memoryStream);
                 fallbackStreamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType);
                 fallbackContent.Add(fallbackStreamContent, "image", "fridge.jpg");
                 response = await _httpClient.PostAsync("/fridge/detect", fallbackContent, linkedCts.Token);

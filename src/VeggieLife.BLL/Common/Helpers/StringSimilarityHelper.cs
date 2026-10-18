@@ -1,17 +1,26 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace VeggieLife.BLL.Common.Helpers;
 
 /// <summary>
 /// Tiện ích tính toán độ tương đồng giữa hai chuỗi ký tự tên nguyên liệu.
-/// Kết hợp khoảng cách biên tập Levenshtein chuẩn hóa và chỉ số tương đồng từ khóa (Token Jaccard)
+/// Kết hợp khoảng cách biên tập Levenshtein chuẩn hóa, chỉ số tương đồng từ khóa (Token Jaccard/Dice)
+/// và bóc tách biệt danh/tên phụ trong ngoặc đơn (Alias extraction)
 /// để đối chiếu tên nguyên liệu nhận diện với danh mục Ingredients theo ngưỡng >= 80% (FN-VIS-01).
 /// </summary>
 public static class StringSimilarityHelper
 {
+    private static readonly char[] PunctuationSeparators = new[]
+    {
+        '(', ')', '[', ']', '{', '}', ',', '.', ';', ':', '-', '_', '/', '\\', '\"', '\'', '!', '?', '+'
+    };
+
     /// <summary>
     /// Tính độ tương đồng giữa hai chuỗi từ 0.0 (hoàn toàn khác) đến 1.0 (trùng khớp hoàn toàn).
+    /// Tự động tách và so sánh các biến thể (tên chính, biệt danh trong ngoặc đơn) giữa 2 chuỗi.
     /// </summary>
     public static double CalculateSimilarity(string? source, string? target)
     {
@@ -20,6 +29,80 @@ public static class StringSimilarityHelper
             return 0.0;
         }
 
+        var sourceVariants = ExtractVariants(source);
+        var targetVariants = ExtractVariants(target);
+
+        var maxSimilarity = 0.0;
+
+        foreach (var sVar in sourceVariants)
+        {
+            foreach (var tVar in targetVariants)
+            {
+                var sim = ComputeCoreSimilarity(sVar, tVar);
+                if (sim > maxSimilarity)
+                {
+                    maxSimilarity = sim;
+                }
+
+                if (maxSimilarity >= 1.0)
+                {
+                    return 1.0;
+                }
+            }
+        }
+
+        return maxSimilarity;
+    }
+
+    /// <summary>
+    /// Bóc tách các biến thể tên gọi từ một chuỗi (ví dụ: "Bí đỏ hạt đậu (Bí ngô)" -> ["Bí đỏ hạt đậu (Bí ngô)", "Bí đỏ hạt đậu", "Bí ngô"]).
+    /// Hỗ trợ cả dấu ngoặc đơn chứa nhiều biệt danh cách nhau bởi dấu '/' hoặc ','.
+    /// </summary>
+    public static List<string> ExtractVariants(string text)
+    {
+        var variants = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var trimmed = text.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return new List<string>();
+        }
+
+        variants.Add(trimmed);
+
+        // Bóc tách nội dung bên trong dấu ngoặc đơn: "Bí đỏ hạt đậu (Bí ngô)" -> main = "Bí đỏ hạt đậu", alias = "Bí ngô"
+        var openIdx = trimmed.IndexOf('(');
+        var closeIdx = trimmed.LastIndexOf(')');
+
+        if (openIdx >= 0 && closeIdx > openIdx)
+        {
+            var mainPart = trimmed.Substring(0, openIdx).Trim();
+            if (!string.IsNullOrEmpty(mainPart))
+            {
+                variants.Add(mainPart);
+            }
+
+            var aliasPart = trimmed.Substring(openIdx + 1, closeIdx - openIdx - 1).Trim();
+            if (!string.IsNullOrEmpty(aliasPart))
+            {
+                var aliases = aliasPart.Split(new[] { '/', ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                foreach (var alias in aliases)
+                {
+                    if (!string.IsNullOrEmpty(alias))
+                    {
+                        variants.Add(alias);
+                    }
+                }
+            }
+        }
+
+        return variants.ToList();
+    }
+
+    /// <summary>
+    /// Tính độ tương đồng cốt lõi giữa 2 chuỗi con đã được bóc tách.
+    /// </summary>
+    private static double ComputeCoreSimilarity(string source, string target)
+    {
         var s = source.Trim().ToLowerInvariant();
         var t = target.Trim().ToLowerInvariant();
 
@@ -28,38 +111,58 @@ public static class StringSimilarityHelper
             return 1.0;
         }
 
+        // Chuẩn hóa loại bỏ dấu câu để so sánh sạch
+        var cleanS = CleanPunctuation(s);
+        var cleanT = CleanPunctuation(t);
+
+        if (cleanS == cleanT)
+        {
+            return 1.0;
+        }
+
+        if (string.IsNullOrWhiteSpace(cleanS) || string.IsNullOrWhiteSpace(cleanT))
+        {
+            return 0.0;
+        }
+
         // 1. Khoảng cách Levenshtein chuẩn hóa
-        var distance = LevenshteinDistance(s, t);
-        var maxLen = Math.Max(s.Length, t.Length);
+        var distance = LevenshteinDistance(cleanS, cleanT);
+        var maxLen = Math.Max(cleanS.Length, cleanT.Length);
         var levSim = maxLen > 0 ? 1.0 - ((double)distance / maxLen) : 1.0;
 
         // 2. Độ tương đồng Token Jaccard và Sørensen-Dice
-        var sTokens = s.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet();
-        var tTokens = t.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet();
+        var sTokens = cleanS.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet();
+        var tTokens = cleanT.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet();
 
         var intersection = sTokens.Intersect(tTokens).Count();
         var union = sTokens.Union(tTokens).Count();
         var tokenSim = union > 0 ? (double)intersection / union : 0.0;
         var diceSim = (sTokens.Count + tTokens.Count) > 0 ? (2.0 * intersection) / (sTokens.Count + tTokens.Count) : 0.0;
 
-        // 3. Nếu một chuỗi chứa chuỗi kia như cụm từ con hoàn chỉnh (ví dụ "Nấm rơm" trong "Nấm rơm tươi")
+        // 3. Nếu một chuỗi chứa chuỗi kia như cụm từ con hoàn chỉnh
         var substringSim = 0.0;
-        if (s.Contains(t) || t.Contains(s))
+        if (cleanS.Contains(cleanT) || cleanT.Contains(cleanS))
         {
             var minTokens = Math.Min(sTokens.Count, tTokens.Count);
             var tokenContainment = minTokens > 0 ? (double)intersection / minTokens : 0.0;
             if (tokenContainment >= 1.0)
             {
-                substringSim = Math.Max(diceSim, 0.80);
+                substringSim = Math.Max(diceSim, 0.85);
             }
             else
             {
-                var minLen = Math.Min(s.Length, t.Length);
+                var minLen = Math.Min(cleanS.Length, cleanT.Length);
                 substringSim = (double)minLen / maxLen;
             }
         }
 
         return Math.Max(levSim, Math.Max(tokenSim, Math.Max(diceSim, substringSim)));
+    }
+
+    private static string CleanPunctuation(string input)
+    {
+        var chars = input.Select(c => PunctuationSeparators.Contains(c) ? ' ' : c).ToArray();
+        return Regex.Replace(new string(chars), @"\s+", " ").Trim();
     }
 
     /// <summary>
