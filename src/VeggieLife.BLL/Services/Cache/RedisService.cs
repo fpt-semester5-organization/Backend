@@ -21,6 +21,7 @@ public class RedisService : IRedisService
     private readonly IConnectionMultiplexer? _multiplexer;
     private readonly ILogger<RedisService> _logger;
     private static readonly object _syncLock = new();
+    private static readonly ConcurrentDictionary<string, ConcurrentQueue<string>> _memoryQueues = new();
     private static DateTime _redisCooldownUntil = DateTime.MinValue;
 
     public RedisService(
@@ -393,17 +394,56 @@ public class RedisService : IRedisService
 
     public async Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default)
     {
-        try
+        var json = JsonSerializer.Serialize(item);
+        if (_multiplexer != null && _multiplexer.IsConnected && !IsInCooldown)
         {
-            var json = JsonSerializer.Serialize(item);
-            _logger.LogInformation("Đã xếp công việc vào hàng đợi {QueueName}: {Payload}", queueName, json);
+            try
+            {
+                var db = _multiplexer.GetDatabase();
+                await db.ListLeftPushAsync(queueName, json);
+                _logger.LogInformation("Đã đẩy tác vụ vào hàng đợi Redis [{QueueName}]: {Payload}", queueName, json);
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi khi đẩy tác vụ vào hàng đợi Redis [{QueueName}], chuyển sang hàng đợi bộ nhớ", queueName);
+                TriggerCooldown(ex, $"EnqueueAsync({queueName})");
+            }
+        }
 
-            // Ghi nhận vào cache để theo dõi trạng thái công việc mới nhất
-            await SetAsync($"queue:{queueName}:latest", item, TimeSpan.FromHours(24), ct);
-        }
-        catch (Exception ex)
+        // Fallback In-Memory Queue (khi không có kết nối Redis)
+        var queue = _memoryQueues.GetOrAdd(queueName, _ => new ConcurrentQueue<string>());
+        queue.Enqueue(json);
+        _logger.LogInformation("Đã đẩy tác vụ vào hàng đợi In-Memory [{QueueName}]: {Payload}", queueName, json);
+    }
+
+    public async Task<T?> DequeueAsync<T>(string queueName, CancellationToken ct = default)
+    {
+        if (_multiplexer != null && _multiplexer.IsConnected && !IsInCooldown)
         {
-            _logger.LogWarning(ex, "Lỗi khi đưa phần tử vào hàng đợi '{QueueName}'.", queueName);
+            try
+            {
+                var db = _multiplexer.GetDatabase();
+                var value = await db.ListRightPopAsync(queueName);
+                if (value.HasValue)
+                {
+                    return JsonSerializer.Deserialize<T>(value.ToString()!);
+                }
+                return default;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Lỗi khi lấy tác vụ từ hàng đợi Redis [{QueueName}], thử hàng đợi bộ nhớ", queueName);
+                TriggerCooldown(ex, $"DequeueAsync({queueName})");
+            }
         }
+
+        // Fallback In-Memory Queue
+        if (_memoryQueues.TryGetValue(queueName, out var memQueue) && memQueue.TryDequeue(out var memJson))
+        {
+            return JsonSerializer.Deserialize<T>(memJson);
+        }
+
+        return default;
     }
 }

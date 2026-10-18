@@ -519,6 +519,7 @@ public class RecipeServiceTests : IDisposable
         // Assert
         result.Type.Should().Be("VIDEO");
         result.HasTranscript.Should().BeTrue();
+        result.VideoId.Should().Be(2001);
     }
 
     [Fact]

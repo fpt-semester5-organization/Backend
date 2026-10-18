@@ -274,17 +274,19 @@ public class RecipeService : IRecipeService
             throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
         }
 
-        // 5. Xác định hasTranscript: VideoTranscripts COMPLETED hoặc Video gắn Post có Transcript COMPLETED
-        var hasTranscript = recipe.VideoTranscripts.Any(vt => vt.Status == "COMPLETED") ||
-                            recipe.Posts.Any(p => p.Videos.Any(v => v.VideoTranscript != null && v.VideoTranscript.Status == "COMPLETED"));
+        // 5. Xác định hasTranscript: VideoTranscripts COMPLETED/READY hoặc Video gắn Post có Transcript COMPLETED/READY
+        var hasTranscript = recipe.VideoTranscripts.Any(vt => vt.Status == "COMPLETED" || vt.Status == "READY") ||
+                            recipe.Posts.Any(p => p.Videos.Any(v => v.VideoTranscript != null && (v.VideoTranscript.Status == "COMPLETED" || v.VideoTranscript.Status == "READY")));
 
         // 6. Tính số bình luận và lượt vote
         var voteCount = recipe.Posts.SelectMany(p => p.Votes).Count();
         var commentCount = recipe.Posts.SelectMany(p => p.Comments).Count(c => !c.IsSoftDeleted);
 
-        // 7. Xác định Type (VIDEO nếu có video READY, ngược lại là RECIPE)
-        var hasReadyVideo = recipe.Posts.Any(p => p.Videos.Any(v => v.Status == "READY"));
+        // 7. Xác định Type (VIDEO nếu có video READY, ngược lại là RECIPE) và lấy VideoId liên kết (FN-POST-02)
+        var readyVideo = recipe.Posts.SelectMany(p => p.Videos).FirstOrDefault(v => v.Status == "READY");
+        var hasReadyVideo = readyVideo != null;
         var contentType = hasReadyVideo ? "VIDEO" : "RECIPE";
+        var videoId = readyVideo?.VideoId;
 
         // 8. Chuyển đổi toàn văn các bước nấu ăn (Instructions) thành danh sách chuỗi
         var parsedInstructions = ParseInstructions(recipe.Instructions);
@@ -326,6 +328,7 @@ public class RecipeService : IRecipeService
             Instructions = parsedInstructions,
             Ingredients = ingredients,
             HasTranscript = hasTranscript,
+            VideoId = videoId,
             CommentCount = commentCount,
             MemberActions = memberActions
         };

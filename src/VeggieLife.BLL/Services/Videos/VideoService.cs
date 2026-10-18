@@ -462,5 +462,59 @@ public class VideoService : IVideoService
             TranscriptStatus = "PENDING"
         };
     }
+
+    /// <summary>
+    /// FN-POST-12: Lấy thông tin chi tiết siêu dữ liệu của một video độc lập theo mã video.
+    /// Cho phép khách vãng lai và thành viên xem video trực tiếp mà không bắt buộc có query param ?postId=.
+    /// </summary>
+    public async Task<VideoDetailResponseData> GetVideoByIdAsync(
+        int id,
+        int? currentUserId = null,
+        CancellationToken ct = default)
+    {
+        if (id <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã video phải lớn hơn 0.");
+        }
+
+        var video = await _context.Videos
+            .AsNoTracking()
+            .Include(v => v.Post)
+                .ThenInclude(p => p.User)
+            .FirstOrDefaultAsync(v => v.VideoId == id, ct);
+
+        if (video == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Video không tồn tại.");
+        }
+
+        // Kiểm tra quyền xem nội dung: nếu không phải tác giả thì bài viết phải APPROVED_ACTIVE
+        var isAuthor = currentUserId.HasValue && video.Post.UserId == currentUserId.Value;
+        if (!isAuthor && video.Post.ModerationStatus != "APPROVED_ACTIVE" && video.Post.ModerationStatus != "APPROVED")
+        {
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
+        }
+
+        return new VideoDetailResponseData
+        {
+            VideoId = video.VideoId,
+            PostId = video.PostId,
+            RecipeId = video.Post.RecipeId,
+            Title = video.Title,
+            VideoUrl = video.VideoUrl,
+            ThumbnailUrl = video.ThumbnailUrl,
+            DurationSeconds = video.DurationSeconds,
+            Status = video.Status,
+            ViewCount = video.ViewCount,
+            Author = video.Post.User != null ? new VideoAuthorDto
+            {
+                UserId = video.Post.User.UserId,
+                FullName = video.Post.User.FullName,
+                AvatarUrl = video.Post.User.AvatarUrl
+            } : null,
+            CreatedAt = video.CreatedAt,
+            UpdatedAt = video.UpdatedAt
+        };
+    }
 }
 

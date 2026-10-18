@@ -111,6 +111,27 @@ public class VideosController : BaseApiController
     }
 
     /// <summary>
+    /// FN-POST-12: Lấy thông tin chi tiết siêu dữ liệu của video độc lập.
+    /// Cho phép trang VideoPlayer (SCR-21) phát video trực tiếp qua /videos/:id mà không cần query param ?postId=.
+    /// </summary>
+    /// <param name="id">Mã định danh video (> 0).</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>HTTP 200 OK: Thông tin chi tiết video, URL đa phương tiện và thông tin tác giả.</returns>
+    [HttpGet("{id:int}")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<VideoDetailResponseData>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetVideoById([FromRoute] int id, CancellationToken ct)
+    {
+        var isGuest = IsGuestUser();
+        var currentUserId = isGuest ? null : (CurrentUserId.HasValue ? (int?)CurrentUserId.Value : null);
+
+        var result = await _videoService.GetVideoByIdAsync(id, currentUserId, ct);
+        return OkResponse(result, "OK");
+    }
+
+    /// <summary>
     /// FN-POST-10: Bóc tách công thức từ video (Whisper + Gemini).
     /// Tác vụ ngầm chạy một lần cho mỗi video do tác giả đăng: trích âm thanh → Whisper STT → bản phiên âm thô → Gemini định dạng công thức → tạo Recipes nháp.
     /// </summary>

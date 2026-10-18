@@ -317,4 +317,67 @@ public class VideosControllerTests
         response.Data!.VideoId.Should().Be(20);
         response.Data.TranscriptStatus.Should().Be("PENDING");
     }
+
+    [Fact]
+    public async Task GetVideoById_WhenCalledByGuest_CallsServiceWithNullUserIdAndReturnsOk200()
+    {
+        // Arrange
+        SetUserContext(userId: null, role: null);
+
+        var expectedData = new VideoDetailResponseData
+        {
+            VideoId = 15,
+            PostId = 100,
+            Title = "Video chay",
+            VideoUrl = "https://example.com/video.mp4",
+            DurationSeconds = 120,
+            Status = "READY",
+            ViewCount = 10,
+            Author = new VideoAuthorDto { UserId = 5, FullName = "Bếp Chay" }
+        };
+
+        _mockVideoService.Setup(s => s.GetVideoByIdAsync(15, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedData);
+
+        // Act
+        var result = await _controller.GetVideoById(15, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        okResult.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var response = okResult.Value.Should().BeOfType<ApiResponse<VideoDetailResponseData>>().Subject;
+        response.Data.Should().NotBeNull();
+        response.Data!.VideoId.Should().Be(15);
+        response.Data.Title.Should().Be("Video chay");
+        response.Data.Author!.FullName.Should().Be("Bếp Chay");
+    }
+
+    [Fact]
+    public async Task GetVideoById_WhenCalledByMember_CallsServiceWithCurrentUserId()
+    {
+        // Arrange
+        SetUserContext(userId: "7", role: UserRoles.Member);
+
+        var expectedData = new VideoDetailResponseData
+        {
+            VideoId = 18,
+            PostId = 105,
+            Title = "Món chay gia đình",
+            VideoUrl = "https://example.com/video18.mp4",
+            DurationSeconds = 60,
+            Status = "READY"
+        };
+
+        _mockVideoService.Setup(s => s.GetVideoByIdAsync(18, 7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedData);
+
+        // Act
+        var result = await _controller.GetVideoById(18, CancellationToken.None);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        okResult.StatusCode.Should().Be(StatusCodes.Status200OK);
+        _mockVideoService.Verify(s => s.GetVideoByIdAsync(18, 7, It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

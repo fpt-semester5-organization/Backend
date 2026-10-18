@@ -706,4 +706,80 @@ public class VideoServiceTests : IDisposable
 
         _mockRedisService.Verify(r => r.EnqueueAsync("stt_queue", It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task GetVideoByIdAsync_WhenIdInvalid_ThrowsBadRequest()
+    {
+        // Act
+        var act = () => _videoService.GetVideoByIdAsync(0);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+    }
+
+    [Fact]
+    public async Task GetVideoByIdAsync_WhenVideoNotFound_ThrowsNotFound()
+    {
+        // Act
+        var act = () => _videoService.GetVideoByIdAsync(9999);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrContentNotFound);
+    }
+
+    [Fact]
+    public async Task GetVideoByIdAsync_WhenPostNotApprovedAndNotAuthor_ThrowsNotFound()
+    {
+        // Arrange
+        var user = new User { UserId = 81, Email = "u81@veggie.vn", FullName = "Tác giả 81", Role = "MEMBER", AccountStatus = "ACTIVE" };
+        var post = new Post { PostId = 81, UserId = 81, Title = "P81", Content = "C81", ModerationStatus = "DRAFT", Visibility = "PRIVATE" };
+        var video = new Video { VideoId = 81, PostId = 81, Title = "Video 81", VideoUrl = "https://demo81.mp4", Status = "READY", DurationSeconds = 60 };
+        _context.Users.Add(user);
+        _context.Posts.Add(post);
+        _context.Videos.Add(video);
+        await _context.SaveChangesAsync();
+
+        // Act (caller là user 99 khác tác giả)
+        var act = () => _videoService.GetVideoByIdAsync(81, currentUserId: 99);
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrContentNotFound);
+    }
+
+    [Fact]
+    public async Task GetVideoByIdAsync_WhenValidApproved_ReturnsVideoDetailsAndAuthor()
+    {
+        // Arrange
+        var user = new User { UserId = 82, Email = "u82@veggie.vn", FullName = "Đầu Bếp Tuệ", AvatarUrl = "https://avatar82.jpg", Role = "MEMBER", AccountStatus = "ACTIVE" };
+        var post = new Post { PostId = 82, UserId = 82, Title = "P82", Content = "C82", ModerationStatus = "APPROVED_ACTIVE", Visibility = "PUBLIC" };
+        var video = new Video { VideoId = 82, PostId = 82, Title = "Video Nấu Chay 82", VideoUrl = "https://demo82.mp4", ThumbnailUrl = "https://thumb82.jpg", Status = "READY", DurationSeconds = 150, ViewCount = 45 };
+        _context.Users.Add(user);
+        _context.Posts.Add(post);
+        _context.Videos.Add(video);
+        await _context.SaveChangesAsync();
+
+        // Act (guest truy cập)
+        var result = await _videoService.GetVideoByIdAsync(82, currentUserId: null);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.VideoId.Should().Be(82);
+        result.PostId.Should().Be(82);
+        result.Title.Should().Be("Video Nấu Chay 82");
+        result.VideoUrl.Should().Be("https://demo82.mp4");
+        result.ThumbnailUrl.Should().Be("https://thumb82.jpg");
+        result.DurationSeconds.Should().Be(150);
+        result.Status.Should().Be("READY");
+        result.ViewCount.Should().Be(45);
+        result.Author.Should().NotBeNull();
+        result.Author!.UserId.Should().Be(82);
+        result.Author.FullName.Should().Be("Đầu Bếp Tuệ");
+        result.Author.AvatarUrl.Should().Be("https://avatar82.jpg");
+    }
 }

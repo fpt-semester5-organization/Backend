@@ -84,6 +84,11 @@ public class RecipeDetailDto
     public bool HasTranscript { get; set; }
 
     /// <summary>
+    /// Mã định danh video liên kết nếu công thức có video hướng dẫn (FN-POST-02).
+    /// </summary>
+    public int? VideoId { get; set; }
+
+    /// <summary>
     /// Tổng số lượng bình luận của bài viết.
     /// </summary>
     public int CommentCount { get; set; }

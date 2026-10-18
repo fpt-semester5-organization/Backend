@@ -557,4 +557,64 @@ public class VideosEndpointIntegrationTests : IClassFixture<WebApplicationFactor
         var json = await response.Content.ReadAsStringAsync();
         json.Should().Contain("/api/v1/videos");
     }
+
+    [Fact]
+    public async Task GetVideoById_WhenVideoExistsAndPostApproved_ReturnsOk200WithVideoMetadata()
+    {
+        // Arrange
+        var client = _factory.CreateClient();
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var video = new Video
+            {
+                VideoId = 555,
+                PostId = 101,
+                Title = "Video Nấm Đùi Gà Kho Tiêu",
+                VideoUrl = "https://res.cloudinary.com/veggie/video/upload/sample555.mp4",
+                ThumbnailUrl = "https://res.cloudinary.com/veggie/video/upload/sample555.jpg",
+                DurationSeconds = 125,
+                Status = "READY",
+                ViewCount = 77,
+                CreatedAt = DateTime.UtcNow
+            };
+            if (!context.Videos.Any(v => v.VideoId == 555))
+            {
+                context.Videos.Add(video);
+                await context.SaveChangesAsync();
+            }
+        }
+
+        // Act
+        var response = await client.GetAsync("/api/v1/videos/555");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var envelope = await response.Content.ReadFromJsonAsync<ApiResponse<VideoDetailResponseData>>();
+        envelope.Should().NotBeNull();
+        envelope!.StatusCode.Should().Be(200);
+        envelope.Data.Should().NotBeNull();
+        envelope.Data!.VideoId.Should().Be(555);
+        envelope.Data.Title.Should().Be("Video Nấm Đùi Gà Kho Tiêu");
+        envelope.Data.VideoUrl.Should().Be("https://res.cloudinary.com/veggie/video/upload/sample555.mp4");
+        envelope.Data.ThumbnailUrl.Should().Be("https://res.cloudinary.com/veggie/video/upload/sample555.jpg");
+        envelope.Data.DurationSeconds.Should().Be(125);
+        envelope.Data.Status.Should().Be("READY");
+        envelope.Data.ViewCount.Should().Be(77);
+        envelope.Data.Author.Should().NotBeNull();
+        envelope.Data.Author!.FullName.Should().Be("Tác Giả Một");
+    }
+
+    [Fact]
+    public async Task GetVideoById_WhenVideoDoesNotExist_ReturnsNotFound404()
+    {
+        // Arrange
+        var client = _factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/api/v1/videos/99999");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 }

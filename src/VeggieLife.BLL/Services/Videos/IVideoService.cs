@@ -49,5 +49,17 @@ public interface IVideoService
         int videoId,
         int userId,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// FN-POST-12: Lấy thông tin chi tiết siêu dữ liệu của một video độc lập theo mã video.
+    /// </summary>
+    /// <param name="id">Mã định danh video (> 0).</param>
+    /// <param name="currentUserId">Mã người dùng hiện tại (nếu có).</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>Dữ liệu chi tiết video và tác giả.</returns>
+    Task<VideoDetailResponseData> GetVideoByIdAsync(
+        int id,
+        int? currentUserId = null,
+        CancellationToken ct = default);
 }
 
