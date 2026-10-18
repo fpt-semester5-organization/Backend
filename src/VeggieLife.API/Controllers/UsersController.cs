@@ -173,7 +173,7 @@ public class UsersController : BaseApiController
     {
         EnsureAuthorizedMember();
         var result = await _productService.GetUserScanHistoryAsync((int)CurrentUserId!.Value, verdict, allergenOnly, page, size);
-        return OkResponse(result, "Lấy lịch sử quét mã vạch thành công.");
+        return PagedResponse(result.Items, new PagedMeta(result.PageNumber, result.PageSize, result.TotalItems), "Lấy lịch sử quét mã vạch thành công.");
     }
 
     /// <summary>
