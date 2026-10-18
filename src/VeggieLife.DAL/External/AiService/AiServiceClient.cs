@@ -204,6 +204,67 @@ public class AiServiceClient : IAiServiceClient
         }
     }
 
+    public async Task<AiBarcodeClassifyResponse?> ClassifyBarcodeAsync(AiBarcodeClassifyRequest request, CancellationToken ct = default)
+    {
+        if (IsCircuitOpen)
+        {
+            _logger.LogWarning("[AiServiceClient] Mạch AI đang mở (Circuit Breaker OPEN). Kích hoạt Fallback Engine cho barcode.");
+            return null;
+        }
+
+        var sw = Stopwatch.StartNew();
+
+        try
+        {
+            var timeoutSec = _settings.BarcodeTimeoutSeconds > 0 ? _settings.BarcodeTimeoutSeconds : 6;
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSec));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+
+            var response = await _httpClient.PostAsJsonAsync("/barcode/classify", request, linkedCts.Token);
+            sw.Stop();
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<AiBarcodeClassifyResponse>(cancellationToken: linkedCts.Token);
+                if (result != null)
+                {
+                    if (result.Usage != null && result.Usage.LatencyMs <= 0)
+                    {
+                        result.Usage.LatencyMs = (int)sw.ElapsedMilliseconds;
+                    }
+                    RecordSuccess();
+                    return result;
+                }
+            }
+
+            var statusCode = (int)response.StatusCode;
+            _logger.LogWarning("[AiServiceClient] ai-service /barcode/classify phản hồi lỗi HTTP {StatusCode}", statusCode);
+            RecordFailure();
+            return null;
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            sw.Stop();
+            _logger.LogWarning(ex, "[AiServiceClient] Gọi ai-service /barcode/classify bị TIMEOUT ({ElapsedMs} ms).", sw.ElapsedMilliseconds);
+            RecordFailure();
+            return null;
+        }
+        catch (HttpRequestException ex)
+        {
+            sw.Stop();
+            _logger.LogWarning(ex, "[AiServiceClient] Không thể kết nối tới ai-service /barcode/classify ({BaseUrl}).", _httpClient.BaseAddress);
+            RecordFailure();
+            return null;
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            _logger.LogError(ex, "[AiServiceClient] Lỗi không xác định khi gọi ai-service /barcode/classify.");
+            RecordFailure();
+            return null;
+        }
+    }
+
     private void RecordSuccess()
     {
         lock (_lock)
