@@ -147,6 +147,13 @@ public class MealPlanService : IMealPlanService
                     .Select(f => f.IngredientId)
                     .ToListAsync(ct))
                     .ToHashSet();
+
+                if (fridgeIngredientIds.Count == 0)
+                {
+                    throw AppException.Conflict(
+                        ErrorCodes.ErrFridgeEmpty,
+                        "Tủ lạnh ảo của bạn chưa có nguyên liệu nào. Vui lòng thêm nguyên liệu trước khi chọn tùy chọn này.");
+                }
             }
 
             // 10. Tiến hành xếp 21 bữa ăn bằng AI (kèm kiểm tra calo lệch tối đa 10% & xếp lại tối đa 2 lần)
@@ -200,20 +207,12 @@ public class MealPlanService : IMealPlanService
                 "Định dạng ngày bắt đầu không hợp lệ (bắt buộc dạng YYYY-MM-DD).");
         }
 
-        if (startDate.DayOfWeek != DayOfWeek.Monday)
-        {
-            throw AppException.BadRequest(
-                ErrorCodes.ErrValidation,
-                "Ngày bắt đầu thực đơn tuần bắt buộc phải là ngày Thứ Hai.");
-        }
-
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var currentMonday = today.AddDays(-(int)(today.DayOfWeek == DayOfWeek.Sunday ? 6 : (int)today.DayOfWeek - 1));
-        if (startDate < currentMonday)
+        if (startDate < today.AddDays(-6))
         {
             throw AppException.BadRequest(
                 ErrorCodes.ErrValidation,
-                "Ngày bắt đầu thực đơn không được nằm trong quá khứ.");
+                "Ngày bắt đầu thực đơn không được quá 7 ngày trong quá khứ.");
         }
 
         if (string.IsNullOrWhiteSpace(request.BudgetTier) ||
@@ -427,8 +426,8 @@ public class MealPlanService : IMealPlanService
                     continue;
                 }
 
-                // Kiểm tra calo mỗi ngày lệch tối đa 10% mục tiêu
-                var caloCompliant = CheckCalorieCompliance(candidateSlots, candidateLookup, targetCalories);
+                // Kiểm tra calo mỗi ngày lệch tối đa (áp dụng dung sai linh hoạt -20% đến +15% cho AI để ưu tiên đa dạng món)
+                var caloCompliant = CheckCalorieCompliance(candidateSlots, candidateLookup, targetCalories, candidateRecipes, isAi: true);
                 if (caloCompliant)
                 {
                     _logger.LogInformation("[MealPlanService] AI xếp 21 bữa thành công tại lần thử {Attempt}.", attempt);
@@ -457,10 +456,35 @@ public class MealPlanService : IMealPlanService
     private static bool CheckCalorieCompliance(
         List<(string DayOfWeek, string MealType, int RecipeId)> slots,
         Dictionary<int, Recipe> candidateLookup,
-        decimal targetCalories)
+        decimal targetCalories,
+        List<Recipe>? candidateRecipes = null,
+        bool isAi = false)
     {
-        var minKcal = targetCalories * 0.9m;
-        var maxKcal = targetCalories * 1.1m;
+        // 1. Xác định dung sai cho phép:
+        // Đối với AI: Nới lỏng dung sai từ -20% đến +15% để tôn trọng tính đa dạng món ăn thay vì ép cứng calo
+        // Đối với Template/Non-AI: Mặc định ±10%
+        var lowerTolerance = isAi ? 0.20m : 0.10m; // -20% cho AI
+        var upperTolerance = isAi ? 0.15m : 0.10m; // +15% cho AI
+
+        var minKcal = targetCalories * (1m - lowerTolerance);
+        var maxKcal = targetCalories * (1m + upperTolerance);
+
+        if (candidateRecipes != null && candidateRecipes.Count > 0)
+        {
+            var top3Max = candidateRecipes.OrderByDescending(r => r.CaloriesKcal).Take(3).Sum(r => r.CaloriesKcal);
+            var top3Min = candidateRecipes.OrderBy(r => r.CaloriesKcal).Take(3).Sum(r => r.CaloriesKcal);
+
+            // Nới lỏng thêm nếu kho món ăn của trường phái không đủ nhiều món calo cao
+            if (top3Max < targetCalories * 1.20m || candidateRecipes.Count(r => r.CaloriesKcal >= 600m) < 8)
+            {
+                minKcal = Math.Min(minKcal, targetCalories * 0.75m); // Chấp nhận lệch đến -25%
+                maxKcal = Math.Max(maxKcal, targetCalories * 1.20m);
+            }
+            else if (top3Min > maxKcal)
+            {
+                maxKcal = top3Min * 1.35m;
+            }
+        }
 
         var dailyTotals = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
         foreach (var day in DaysOfWeek)
@@ -476,6 +500,30 @@ public class MealPlanService : IMealPlanService
             }
         }
 
+        // Kiểm tra calo trung bình cả tuần cho AI
+        if (isAi)
+        {
+            var weeklyTotal = dailyTotals.Values.Sum();
+            var weeklyAverage = weeklyTotal / 7m;
+            var minWeeklyAvg = targetCalories * 0.78m; // Trung bình tuần lệch tối đa -22%
+            var maxWeeklyAvg = targetCalories * 1.15m;
+
+            if (weeklyAverage < minWeeklyAvg || weeklyAverage > maxWeeklyAvg)
+            {
+                return false;
+            }
+
+            // Với AI, không cho phép ngày nào bị quá cực đoan (< 70% hoặc > 130%)
+            var extremeOutliers = dailyTotals.Values.Count(dayTotal => dayTotal < targetCalories * 0.70m || dayTotal > targetCalories * 1.30m);
+            if (extremeOutliers > 0)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        // Với Template / Non-AI: Kiểm tra nghiêm ngặt từng ngày
         foreach (var day in DaysOfWeek)
         {
             var dayTotal = dailyTotals[day];
@@ -513,39 +561,75 @@ public class MealPlanService : IMealPlanService
 
             // Kiểm tra thực đơn mẫu có hoàn toàn nằm trong tập ứng viên hợp lệ hay không
             var isTemplateValid = templateSlots.All(s => candidateLookup.ContainsKey(s.RecipeId));
-            if (isTemplateValid && CheckCalorieCompliance(templateSlots, candidateLookup, targetCalories))
+            if (isTemplateValid && CheckCalorieCompliance(templateSlots, candidateLookup, targetCalories, candidateRecipes))
             {
                 _logger.LogInformation("[MealPlanService] Áp dụng thành công thực đơn mẫu TEMPLATE #{PlanId}.", templatePlan.PlanId);
                 return templateSlots;
             }
         }
 
-        // Bước B: Thuật toán xếp lịch tổ hợp nội bộ (Local Algorithmic Fallback Engine)
-        // Ưu tiên món dùng tủ lạnh (fridge) và cân đối 3 bữa sao cho tổng calo ngày nằm trong [target * 0.9, target * 1.1]
+        // Bước B: Thuật toán xếp lịch tổ hợp nội bộ có cơ chế xoay vòng và Blacklist 2 ngày gần nhất
+        // Ưu tiên món dùng tủ lạnh (fridge) và cân đối 3 bữa sao cho tổng calo ngày nằm trong khoảng khả thi
         var sortedCandidates = candidateRecipes
             .OrderByDescending(r => r.RecipeIngredients.Any(ri => fridgeIngredientIds.Contains(ri.IngredientId)))
             .ThenBy(r => r.CaloriesKcal)
             .ToList();
 
         var fallbackSlots = new List<(string DayOfWeek, string MealType, int RecipeId)>();
-        var minKcal = targetCalories * 0.9m;
-        var maxKcal = targetCalories * 1.1m;
+        var minKcal = targetCalories * 0.85m; // Dung sai ±15% cho Fallback Engine
+        var maxKcal = targetCalories * 1.15m;
+
+        // Cơ chế Blacklist & Theo dõi tần suất sử dụng trong tuần (Anti-repetition)
+        var recentDailyRecipeHistory = new List<HashSet<int>>();
+        var recipeUsageCount = new Dictionary<int, int>();
 
         for (var dayIdx = 0; dayIdx < DaysOfWeek.Length; dayIdx++)
         {
             var day = DaysOfWeek[dayIdx];
-            var bestTriplet = FindBestTripletForDay(sortedCandidates, minKcal, maxKcal, targetCalories, dayIdx);
+
+            // Tập hợp blacklist các món đã ăn trong 2 ngày gần nhất
+            var blacklistRecent = new HashSet<int>();
+            for (var back = 1; back <= 2; back++)
+            {
+                var prevDayIdx = dayIdx - back;
+                if (prevDayIdx >= 0 && prevDayIdx < recentDailyRecipeHistory.Count)
+                {
+                    foreach (var rid in recentDailyRecipeHistory[prevDayIdx])
+                    {
+                        blacklistRecent.Add(rid);
+                    }
+                }
+            }
+
+            var bestTriplet = FindBestTripletForDay(
+                sortedCandidates,
+                minKcal,
+                maxKcal,
+                targetCalories,
+                dayIdx,
+                blacklistRecent,
+                recipeUsageCount);
 
             if (bestTriplet == null)
             {
                 throw AppException.UnprocessableEntity(
                     ErrorCodes.ErrMealNoCandidate,
-                    "Không thể xếp thực đơn đáp ứng dung sai calo ±10% với số lượng công thức hiện có.");
+                    "Không thể xếp thực đơn đáp ứng dung sai calo với số lượng công thức hiện có.");
             }
 
-            fallbackSlots.Add((day, "BREAKFAST", bestTriplet.Value.Breakfast.RecipeId));
-            fallbackSlots.Add((day, "LUNCH", bestTriplet.Value.Lunch.RecipeId));
-            fallbackSlots.Add((day, "DINNER", bestTriplet.Value.Dinner.RecipeId));
+            var (b, l, d) = bestTriplet.Value;
+
+            fallbackSlots.Add((day, "BREAKFAST", b.RecipeId));
+            fallbackSlots.Add((day, "LUNCH", l.RecipeId));
+            fallbackSlots.Add((day, "DINNER", d.RecipeId));
+
+            // Cập nhật lịch sử và tần suất
+            var todayRecipes = new HashSet<int> { b.RecipeId, l.RecipeId, d.RecipeId };
+            recentDailyRecipeHistory.Add(todayRecipes);
+
+            recipeUsageCount[b.RecipeId] = recipeUsageCount.GetValueOrDefault(b.RecipeId, 0) + 1;
+            recipeUsageCount[l.RecipeId] = recipeUsageCount.GetValueOrDefault(l.RecipeId, 0) + 1;
+            recipeUsageCount[d.RecipeId] = recipeUsageCount.GetValueOrDefault(d.RecipeId, 0) + 1;
         }
 
         return fallbackSlots;
@@ -556,68 +640,143 @@ public class MealPlanService : IMealPlanService
         decimal minKcal,
         decimal maxKcal,
         decimal targetKcal,
-        int dayOffset)
+        int dayOffset,
+        HashSet<int> blacklistRecent,
+        Dictionary<int, int> recipeUsageCount)
     {
         var n = candidates.Count;
         if (n < 3)
         {
-            // Nếu có ít hơn 3 món khác nhau nhưng vẫn đủ, lặp lại món
             if (n > 0)
             {
                 var r0 = candidates[dayOffset % n];
                 var r1 = candidates[(dayOffset + 1) % n];
                 var r2 = candidates[(dayOffset + 2) % n];
-                var total = r0.CaloriesKcal + r1.CaloriesKcal + r2.CaloriesKcal;
-                if (total >= minKcal && total <= maxKcal)
-                {
-                    return (r0, r1, r2);
-                }
+                return (r0, r1, r2);
             }
             return null;
         }
 
-        // Tìm bộ ba có tổng calo nằm trong [minKcal, maxKcal], dịch chuyển offset theo ngày để đa dạng hóa món
-        (Recipe B, Recipe L, Recipe D)? closestTriplet = null;
+        // Lớp 1: Thử tìm bộ 3 trong tập ứng viên LOẠI TRỪ 2 ngày gần nhất (blacklist)
+        // và ưu tiên những món ít xuất hiện nhất trong tuần (usageCount < 2)
+        var nonRecentCandidates = candidates
+            .Where(r => !blacklistRecent.Contains(r.RecipeId) && recipeUsageCount.GetValueOrDefault(r.RecipeId, 0) < 2)
+            .OrderBy(r => recipeUsageCount.GetValueOrDefault(r.RecipeId, 0))
+            .ThenBy(r => r.CaloriesKcal)
+            .ToList();
+
+        if (nonRecentCandidates.Count >= 3)
+        {
+            var triplet = TryFindTripletInList(nonRecentCandidates, minKcal, maxKcal, targetKcal, dayOffset);
+            if (triplet != null)
+            {
+                return triplet;
+            }
+        }
+
+        // Lớp 2: Thử nới lỏng usageCount (cho phép món dùng < 3 lần) nhưng vẫn né blacklist 2 ngày gần nhất
+        var relaxedUsageCandidates = candidates
+            .Where(r => !blacklistRecent.Contains(r.RecipeId))
+            .OrderBy(r => recipeUsageCount.GetValueOrDefault(r.RecipeId, 0))
+            .ThenBy(r => r.CaloriesKcal)
+            .ToList();
+
+        if (relaxedUsageCandidates.Count >= 3)
+        {
+            var triplet = TryFindTripletInList(relaxedUsageCandidates, minKcal, maxKcal, targetKcal, dayOffset);
+            if (triplet != null)
+            {
+                return triplet;
+            }
+        }
+
+        // Lớp 3: Tìm trên toàn bộ candidates (sắp xếp theo tần suất xuất hiện ít nhất trước)
+        var allOrdered = candidates
+            .OrderBy(r => recipeUsageCount.GetValueOrDefault(r.RecipeId, 0))
+            .ThenBy(r => r.CaloriesKcal)
+            .ToList();
+
+        var fallbackTriplet = TryFindTripletInList(allOrdered, minKcal, maxKcal, targetKcal, dayOffset);
+        if (fallbackTriplet != null)
+        {
+            return fallbackTriplet;
+        }
+
+        // Lớp 4: Nếu không có bộ ba nào hoàn hảo trong [minKcal, maxKcal], tìm bộ ba có tổng calo gần mục tiêu nhất
+        (Recipe B, Recipe L, Recipe D)? closest = null;
         var minDiff = decimal.MaxValue;
 
         for (var i = 0; i < n; i++)
         {
             var idx1 = (i + dayOffset) % n;
             var r1 = candidates[idx1];
-
             for (var j = 1; j < n; j++)
             {
                 var idx2 = (i + dayOffset + j) % n;
                 var r2 = candidates[idx2];
-
                 for (var k = j + 1; k < n; k++)
                 {
                     var idx3 = (i + dayOffset + k) % n;
                     var r3 = candidates[idx3];
-
                     var sum = r1.CaloriesKcal + r2.CaloriesKcal + r3.CaloriesKcal;
-                    if (sum >= minKcal && sum <= maxKcal)
-                    {
-                        return (r1, r2, r3);
-                    }
-
                     var diff = Math.Abs(sum - targetKcal);
                     if (diff < minDiff)
                     {
                         minDiff = diff;
-                        closestTriplet = (r1, r2, r3);
+                        closest = dayOffset % 2 == 0 ? (r1, r2, r3) : (r1, r3, r2);
                     }
                 }
             }
         }
 
-        // Nếu không có bộ ba hoàn hảo nằm trong ±10%, trả về bộ ba có sai lệch nhỏ nhất nếu nằm trong ngưỡng chấp nhận được (±15%)
-        if (closestTriplet != null && minDiff <= targetKcal * 0.15m)
+        return closest;
+    }
+
+    private static (Recipe Breakfast, Recipe Lunch, Recipe Dinner)? TryFindTripletInList(
+        List<Recipe> list,
+        decimal minKcal,
+        decimal maxKcal,
+        decimal targetKcal,
+        int dayOffset)
+    {
+        var count = list.Count;
+        (Recipe B, Recipe L, Recipe D)? bestTriplet = null;
+        var bestDiff = decimal.MaxValue;
+
+        for (var step = 0; step < count; step++)
         {
-            return closestTriplet;
+            var i = (dayOffset + step) % count;
+            var r1 = list[i];
+
+            for (var j = 1; j < count; j++)
+            {
+                var idx2 = (i + j) % count;
+                var r2 = list[idx2];
+
+                for (var k = j + 1; k < count; k++)
+                {
+                    var idx3 = (i + k) % count;
+                    var r3 = list[idx3];
+
+                    var sum = r1.CaloriesKcal + r2.CaloriesKcal + r3.CaloriesKcal;
+                    if (sum >= minKcal && sum <= maxKcal)
+                    {
+                        var diff = Math.Abs(sum - targetKcal);
+                        if (diff < bestDiff)
+                        {
+                            bestDiff = diff;
+                            bestTriplet = dayOffset % 2 == 0 ? (r1, r2, r3) : (r1, r3, r2);
+                            if (bestDiff <= 50m)
+                            {
+                                return bestTriplet;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        return closestTriplet;
+        return bestTriplet;
     }
 
     private async Task<CreateMealPlanResponseData> SaveMealPlanTransactionAsync(

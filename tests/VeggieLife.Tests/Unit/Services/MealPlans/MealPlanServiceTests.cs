@@ -386,7 +386,7 @@ public class MealPlanServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateMealPlan_WhenStartDateNotMonday_ShouldThrow_ERR_VALIDATION()
+    public async Task CreateMealPlan_WhenStartDateInDeepPast_ShouldThrow_ERR_VALIDATION()
     {
         var userId = 78;
         _db.Users.Add(new User { UserId = userId, Email = "u78@veggielife.vn", FullName = "U78", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
@@ -407,11 +407,11 @@ public class MealPlanServiceTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        // Chọn ngày Thứ Tư thay vì Thứ Hai
-        var wednesday = GetNextMonday().AddDays(2);
+        // Chọn ngày quá khứ 30 ngày trước
+        var pastDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-30);
         var req = new CreateMealPlanRequest
         {
-            StartDate = wednesday.ToString("yyyy-MM-dd"),
+            StartDate = pastDate.ToString("yyyy-MM-dd"),
             BudgetTier = "STANDARD"
         };
 
