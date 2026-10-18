@@ -722,7 +722,7 @@ BEGIN
         CONSTRAINT [PK_VideoTranscripts] PRIMARY KEY CLUSTERED ([Transcript_ID] ASC),
         CONSTRAINT [FK_VideoTranscripts_Videos] FOREIGN KEY ([Video_ID]) REFERENCES [dbo].[Videos]([Video_ID]) ON DELETE CASCADE,
         CONSTRAINT [FK_VideoTranscripts_Recipes] FOREIGN KEY ([Recipe_ID]) REFERENCES [dbo].[Recipes]([Recipe_ID]),
-        CONSTRAINT [CK_VideoTranscripts_Status] CHECK ([Status] IN ('PENDING', 'COMPLETED', 'FAILED'))
+        CONSTRAINT [CK_VideoTranscripts_Status] CHECK ([Status] IN ('PENDING', 'PROCESSING', 'READY', 'COMPLETED', 'FAILED'))
     );
 
     CREATE UNIQUE NONCLUSTERED INDEX [UQ_VideoTranscripts_Video_ID] ON [dbo].[VideoTranscripts]([Video_ID] ASC);
