@@ -374,6 +374,7 @@ public class RecipesController : BaseApiController
     /// <param name="limit">Số lượng quán gợi ý (1..5, mặc định 5).</param>
     /// <param name="ct">CancellationToken.</param>
     [HttpGet("{id:int}/venues")]
+    [ApiExplorerSettings(IgnoreApi = true)]
     [AllowAnonymous]
     [Tags("Venues")]
     [ProducesResponseType(typeof(ApiResponse<List<NearbyVenueItemDto>>), StatusCodes.Status200OK)]
