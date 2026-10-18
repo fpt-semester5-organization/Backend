@@ -50,8 +50,7 @@ public class GuestSecurityMiddleware
         if (path.StartsWith("/swagger") ||
             path.StartsWith("/health") ||
             path.StartsWith("/favicon") ||
-            path == "/" ||
-            path.Contains("/dev-latest-otp"))
+            path == "/")
         {
             await _next(context);
             return;

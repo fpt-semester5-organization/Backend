@@ -310,27 +310,6 @@ public class AuthController : BaseApiController
         return OkResponse<object?>(null, "Đổi mật khẩu thành công.");
     }
 
-    /// <summary>
-    /// Endpoint hỗ trợ kiểm thử tự động trong môi trường Development: Lấy mã OTP vừa sinh.
-    /// Không kích hoạt trong môi trường Production.
-    /// </summary>
-    [HttpGet("dev-latest-otp")]
-    public IActionResult GetDevLatestOtp([FromQuery] string email)
-    {
-        if (!_environment.IsDevelopment())
-        {
-            return NotFound();
-        }
-
-        var normalizedEmail = email?.Trim().ToLowerInvariant() ?? string.Empty;
-        if (EmailServiceStub.LastSentOtps.TryGetValue(normalizedEmail, out var otp))
-        {
-            return OkResponse(new { email = normalizedEmail, otp = otp }, "Lấy mã OTP môi trường dev thành công.");
-        }
-
-        return NotFound(new { message = "Chưa có mã OTP nào được gửi tới email này trong phiên chạy hiện tại." });
-    }
-
     private void SetRefreshTokenCookie(string refreshToken)
     {
         if (string.IsNullOrEmpty(refreshToken)) return;

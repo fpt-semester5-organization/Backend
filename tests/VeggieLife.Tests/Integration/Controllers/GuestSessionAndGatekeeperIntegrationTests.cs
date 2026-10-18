@@ -304,7 +304,7 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
         // Act: Bắn đồng thời 20 HTTP requests vào endpoint dùng thử AI
         var tasks = Enumerable.Range(0, 20).Select(async _ =>
         {
-            var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/guest/trial/ai");
+            var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/test/guest/trial/ai");
             req.Headers.Add("X-Guest-UUID", guestUuid);
 
             var res = await client.SendAsync(req);
@@ -591,20 +591,20 @@ public class GuestSessionAndGatekeeperIntegrationTests : IClassFixture<WebApplic
         // 1. Tiêu thụ 3 lượt FridgeVision
         for (int i = 0; i < 3; i++)
         {
-            var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/guest/trial/FridgeVision");
+            var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/test/guest/trial/FridgeVision");
             req.Headers.Add("X-Guest-UUID", guestUuid);
             var res = await client.SendAsync(req);
             res.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
         // Lượt thứ 4 FridgeVision bị chặn
-        var reqFridge4 = new HttpRequestMessage(HttpMethod.Post, "/api/v1/guest/trial/FridgeVision");
+        var reqFridge4 = new HttpRequestMessage(HttpMethod.Post, "/api/v1/test/guest/trial/FridgeVision");
         reqFridge4.Headers.Add("X-Guest-UUID", guestUuid);
         var resFridge4 = await client.SendAsync(reqFridge4);
         resFridge4.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
 
         // 2. VideoStt VẪN HOẠT ĐỘNG vì có hạn ngạch độc lập
-        var reqStt = new HttpRequestMessage(HttpMethod.Post, "/api/v1/guest/trial/VideoStt");
+        var reqStt = new HttpRequestMessage(HttpMethod.Post, "/api/v1/test/guest/trial/VideoStt");
         reqStt.Headers.Add("X-Guest-UUID", guestUuid);
         var resStt = await client.SendAsync(reqStt);
         resStt.StatusCode.Should().Be(HttpStatusCode.OK);

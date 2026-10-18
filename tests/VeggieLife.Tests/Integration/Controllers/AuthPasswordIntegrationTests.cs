@@ -290,11 +290,9 @@ public class AuthPasswordIntegrationTests : IClassFixture<WebApplicationFactory<
         var forgotRes = await client.PostAsJsonAsync("/api/v1/auth/forgot-password", new ForgotPasswordRequest { Email = email });
         Assert.Equal(HttpStatusCode.OK, forgotRes.StatusCode);
 
-        // Lấy OTP từ Dev stub endpoint
-        var devOtpRes = await client.GetAsync($"/api/v1/auth/dev-latest-otp?email={email}");
-        Assert.Equal(HttpStatusCode.OK, devOtpRes.StatusCode);
-        var devOtpJson = await devOtpRes.Content.ReadFromJsonAsync<JsonElement>();
-        var otpCode = devOtpJson.GetProperty("data").GetProperty("otp").GetString()!;
+        // Lấy OTP từ EmailServiceStub
+        Assert.True(EmailServiceStub.LastSentOtps.TryGetValue(email.ToLowerInvariant(), out var otpCode));
+        Assert.NotNull(otpCode);
         Assert.Matches(@"^\d{6}$", otpCode);
 
         // 3. Đặt lại mật khẩu bằng mã OTP

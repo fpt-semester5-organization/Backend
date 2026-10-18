@@ -71,25 +71,6 @@ public class GuestController : BaseApiController
         return OkResponse(result, "Lấy hạn mức dùng thử thành công.");
     }
 
-    /// <summary>
-    /// Tiêu hao 01 lượt dùng thử tính năng nguyên tử (Atomic Quota Consumption).
-    /// </summary>
-    /// <param name="trialType">Loại tính năng dùng thử: Chatbot/Ai (1), BarcodeDaily (2), MapSearch (3), FridgeVision (4), VideoStt (5).</param>
-    /// <param name="ct">CancellationToken.</param>
-    /// <returns>Kết quả tiêu hao và số lượt còn lại.</returns>
-    [HttpPost("trial/{trialType}")]
-    public async Task<IActionResult> ConsumeTrial([FromRoute] GuestTrialType trialType, CancellationToken ct)
-    {
-        var guestUuid = ResolveGuestId();
-        if (string.IsNullOrEmpty(guestUuid) || !Guid.TryParse(guestUuid, out _))
-        {
-            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Không xác định được định danh phiên khách hợp lệ (thiếu hoặc sai Guest_UUID).");
-        }
-
-        var result = await _guestService.ConsumeTrialQuotaAsync(guestUuid, trialType, ct);
-        return OkResponse(result, result.Message);
-    }
-
     private string? ResolveGuestId()
     {
         if (!string.IsNullOrEmpty(CurrentGuestUuid))
