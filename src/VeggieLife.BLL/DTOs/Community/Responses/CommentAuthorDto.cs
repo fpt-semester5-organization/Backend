@@ -14,4 +14,9 @@ public class CommentAuthorDto
     /// Họ tên hiển thị của người dùng.
     /// </summary>
     public string FullName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Đường dẫn ảnh đại diện của tác giả (nếu có).
+    /// </summary>
+    public string? AvatarUrl { get; set; }
 }

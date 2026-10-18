@@ -81,6 +81,7 @@ public class CommentsEndpointIntegrationTests : IClassFixture<WebApplicationFact
             UserId = 101,
             Email = "member101@veggielife.vn",
             FullName = "Nguyễn Văn Một",
+            AvatarUrl = "https://res.cloudinary.com/veggielife/avatar101.jpg",
             Role = UserRoles.Member,
             AccountStatus = "ACTIVE",
             CreatedAt = DateTime.UtcNow.AddDays(-10)
@@ -90,6 +91,7 @@ public class CommentsEndpointIntegrationTests : IClassFixture<WebApplicationFact
             UserId = 102,
             Email = "member102@veggielife.vn",
             FullName = "Trần Thị Hai",
+            AvatarUrl = "https://res.cloudinary.com/veggielife/avatar102.jpg",
             Role = UserRoles.Member,
             AccountStatus = "ACTIVE",
             CreatedAt = DateTime.UtcNow.AddDays(-10)
@@ -231,6 +233,49 @@ public class CommentsEndpointIntegrationTests : IClassFixture<WebApplicationFact
         result.Data![0].CommentId.Should().Be(701);
         result.Data[0].Replies.Should().HaveCount(1); // 1 câu trả lời 702
         result.Data[0].Replies[0].CommentId.Should().Be(702);
+    }
+
+    [Fact]
+    public async Task GetPostComments_NestedTwoTierTree_ValidatesAuthorAndParentCommentIdStructure()
+    {
+        // BUG-FL05-07: Rà Soát Tích Hợp Cây Bình Luận Đa Cấp Sau PR 49
+        // Kiểm tra toàn diện DTO bình luận 2 tầng: author { userId, fullName, avatarUrl } và parentCommentId
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/v1/posts/501/comments?page=1&size=20");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<ApiResponse<List<CommentDto>>>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        result.Should().NotBeNull();
+        result!.StatusCode.Should().Be(200);
+        result.Data.Should().NotBeNull();
+        result.Data.Should().HaveCount(1);
+
+        // 1. Kiểm tra cấu trúc bình luận gốc (Cấp 1)
+        var root = result.Data![0];
+        root.CommentId.Should().Be(701);
+        root.Content.Should().Be("Bình luận ban đầu của tác giả 101");
+        root.ParentCommentId.Should().BeNull("Bình luận cấp 1 bắt buộc có parentCommentId là null");
+        root.Status.Should().Be("ACTIVE");
+        root.Author.Should().NotBeNull();
+        root.Author.UserId.Should().Be(101);
+        root.Author.FullName.Should().Be("Nguyễn Văn Một");
+        root.Author.AvatarUrl.Should().Be("https://res.cloudinary.com/veggielife/avatar101.jpg");
+
+        // 2. Kiểm tra cấu trúc phản hồi trực tiếp (Cấp 2)
+        root.Replies.Should().HaveCount(1);
+        var reply = root.Replies[0];
+        reply.CommentId.Should().Be(702);
+        reply.Content.Should().Be("Phản hồi của thành viên 102");
+        reply.ParentCommentId.Should().Be(701, "Bình luận cấp 2 bắt buộc trỏ đúng parentCommentId của bình luận gốc");
+        reply.Status.Should().Be("ACTIVE");
+        reply.Author.Should().NotBeNull();
+        reply.Author.UserId.Should().Be(102);
+        reply.Author.FullName.Should().Be("Trần Thị Hai");
+        reply.Author.AvatarUrl.Should().Be("https://res.cloudinary.com/veggielife/avatar102.jpg");
+        reply.Replies.Should().BeEmpty("Bình luận cấp 2 không được lồng thêm replies cấp 3 (tối đa 2 tầng hiển thị)");
     }
 
     [Fact]

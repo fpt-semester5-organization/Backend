@@ -390,4 +390,28 @@ public class PostsEndpointIntegrationTests : IClassFixture<WebApplicationFactory
         var respAgain = await client.DeleteAsync("/api/v1/posts/503");
         respAgain.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    [Fact]
+    public async Task Get_AuthorQueriesOwnPosts_ShouldReturnModerationStatusAndVisibility()
+    {
+        // BUG-FL05-08: Khi tác giả gọi GET /api/v1/posts?authorId={userId}, trả về ModerationStatus và Visibility
+        var client = _factory.CreateClient();
+        var token = GenerateJwtToken(101, UserRoles.Member);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await client.GetAsync("/api/v1/posts?authorId=101");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var envelope = await response.Content.ReadFromJsonAsync<ApiResponse<List<PostSummaryDto>>>();
+        envelope.Should().NotBeNull();
+        envelope!.StatusCode.Should().Be(200);
+        envelope.Data.Should().NotBeNull();
+        envelope.Data.Should().NotBeEmpty();
+
+        foreach (var post in envelope.Data!)
+        {
+            post.ModerationStatus.Should().NotBeNullOrWhiteSpace("Tác giả xem bài của chính mình phải có ModerationStatus");
+            post.Visibility.Should().NotBeNullOrWhiteSpace("Tác giả xem bài của chính mình phải có Visibility");
+        }
+    }
 }

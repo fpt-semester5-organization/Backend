@@ -109,7 +109,8 @@ public class CommentService : ICommentService
             Author = new CommentAuthorDto
             {
                 UserId = root.User?.UserId ?? root.UserId,
-                FullName = root.User?.FullName ?? "Thành viên"
+                FullName = root.User?.FullName ?? "Thành viên",
+                AvatarUrl = root.User?.AvatarUrl
             },
             Content = root.Content,
             ParentCommentId = null,
@@ -121,7 +122,8 @@ public class CommentService : ICommentService
                 Author = new CommentAuthorDto
                 {
                     UserId = reply.User?.UserId ?? reply.UserId,
-                    FullName = reply.User?.FullName ?? "Thành viên"
+                    FullName = reply.User?.FullName ?? "Thành viên",
+                    AvatarUrl = reply.User?.AvatarUrl
                 },
                 Content = reply.Content,
                 ParentCommentId = reply.ParentCommentId,
@@ -270,7 +272,8 @@ public class CommentService : ICommentService
             Author = new CommentAuthorDto
             {
                 UserId = author?.UserId ?? userId,
-                FullName = author?.FullName ?? "Thành viên"
+                FullName = author?.FullName ?? "Thành viên",
+                AvatarUrl = author?.AvatarUrl
             },
             Content = comment.Content,
             ParentCommentId = comment.ParentCommentId,
@@ -402,7 +405,8 @@ public class CommentService : ICommentService
             Author = new CommentAuthorDto
             {
                 UserId = comment.User?.UserId ?? comment.UserId,
-                FullName = comment.User?.FullName ?? "Thành viên"
+                FullName = comment.User?.FullName ?? "Thành viên",
+                AvatarUrl = comment.User?.AvatarUrl
             },
             Content = comment.Content,
             ParentCommentId = comment.ParentCommentId,

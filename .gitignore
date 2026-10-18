@@ -4,6 +4,7 @@
 ## Local Project Documentation (Specs, BRs, Data Models, Decision Log)
 project-docs/
 local-docs/
+docs/
 
 ## Build results
 [Bb]in/

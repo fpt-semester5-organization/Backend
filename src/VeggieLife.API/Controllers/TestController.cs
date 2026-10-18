@@ -1,9 +1,11 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
+using VeggieLife.BLL.Services.Guest;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.Services.AI;
@@ -285,6 +287,42 @@ public class TestController : BaseApiController
             mediaUploadedUrl = mediaUrl,
             payment = momo
         }, "Tất cả các bản rỗng của Interface dịch vụ dùng chung đã được tiêm phụ thuộc (DI) và phản hồi tốt.");
+    }
+
+    /// <summary>
+    /// Tiêu hao 01 lượt dùng thử tính năng nguyên tử (phục vụ kiểm thử nội bộ).
+    /// </summary>
+    [HttpPost("guest/trial/{trialType}")]
+    public async Task<IActionResult> ConsumeTrial([FromRoute] GuestTrialType trialType, [FromServices] IGuestService guestService, CancellationToken ct)
+    {
+        var guestUuid = ResolveGuestId();
+        if (string.IsNullOrEmpty(guestUuid) || !Guid.TryParse(guestUuid, out _))
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Không xác định được định danh phiên khách hợp lệ (thiếu hoặc sai Guest_UUID).");
+        }
+
+        var result = await guestService.ConsumeTrialQuotaAsync(guestUuid, trialType, ct);
+        return OkResponse(result, result.Message);
+    }
+
+    private string? ResolveGuestId()
+    {
+        if (!string.IsNullOrEmpty(CurrentGuestUuid))
+        {
+            return CurrentGuestUuid;
+        }
+
+        if (Request.Headers.TryGetValue("X-Guest-UUID", out var headerValue) && !string.IsNullOrWhiteSpace(headerValue))
+        {
+            return headerValue.ToString().Trim();
+        }
+
+        if (Request.Cookies.TryGetValue("guest_uuid", out var cookieValue) && !string.IsNullOrWhiteSpace(cookieValue))
+        {
+            return cookieValue.Trim();
+        }
+
+        return null;
     }
 }
 

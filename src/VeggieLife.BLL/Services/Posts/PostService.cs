@@ -148,6 +148,9 @@ public class PostService : IPostService
                 .OrderByDescending(p => p.CreatedAt);
         }
 
+        // BUG-FL05-08: Khi truy vấn bài viết với tham số authorId trùng với ID người gọi, trả về đầy đủ ModerationStatus và Visibility
+        var isAuthorQuery = currentUserId.HasValue && filter.AuthorId.HasValue && currentUserId.Value == filter.AuthorId.Value;
+
         // Phân trang và chiếu DTO
         var items = await orderedQuery
             .Skip((filter.Page - 1) * filter.Size)
@@ -160,7 +163,9 @@ public class PostService : IPostService
                 ImageUrl = p.ImageUrl,
                 VoteCount = p.Votes.Count,
                 CommentCount = p.Comments.Count(c => !c.IsSoftDeleted),
-                CreatedAt = p.CreatedAt
+                CreatedAt = p.CreatedAt,
+                ModerationStatus = isAuthorQuery ? p.ModerationStatus : null,
+                Visibility = isAuthorQuery ? p.Visibility : null
             })
             .ToListAsync(ct);
 

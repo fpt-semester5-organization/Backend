@@ -62,7 +62,6 @@ public class SubscriptionsController : BaseApiController
     /// </summary>
     [HttpGet("/api/v1/users/me/subscription")]
     [HttpGet("/users/me/subscription")]
-    [HttpGet("/api/v1/subscriptions/me")]
     [Authorize(Policy = PolicyNames.RequireMember)]
     public async Task<IActionResult> GetCurrentUserSubscription(CancellationToken ct)
     {

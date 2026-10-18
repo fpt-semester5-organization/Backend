@@ -41,4 +41,16 @@ public class PostSummaryDto
     /// Thời điểm khởi tạo bài viết.
     /// </summary>
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>
+    /// Trạng thái kiểm duyệt bài viết (DRAFT, PENDING, APPROVED_ACTIVE, REJECTED, QUARANTINED_HIDDEN).
+    /// Chỉ hiển thị khi tác giả tra cứu danh sách bài viết của chính mình (authorId == currentUserId).
+    /// </summary>
+    public string? ModerationStatus { get; set; }
+
+    /// <summary>
+    /// Phạm vi hiển thị bài viết (PUBLIC, PRIVATE).
+    /// Chỉ hiển thị khi tác giả tra cứu danh sách bài viết của chính mình (authorId == currentUserId).
+    /// </summary>
+    public string? Visibility { get; set; }
 }

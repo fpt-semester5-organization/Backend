@@ -420,7 +420,7 @@ public class ChatServiceTests
     }
 
     [Fact]
-    public async Task SendMessage_VipMember_AllowsUpTo50Questions()
+    public async Task SendMessage_VipMember_AllowsUpTo200Questions()
     {
         // Arrange
         var (db, _, aiMock, service) = CreateHarness();
@@ -435,7 +435,7 @@ public class ChatServiceTests
         };
         db.ChatSessions.Add(session);
 
-        // Thêm 20 tin nhắn trong ngày (vượt mốc 20 của Free nhưng chưa tới 50)
+        // Thêm 20 tin nhắn trong ngày (vượt mốc 20 của Free nhưng chưa tới 200)
         for (int i = 0; i < 20; i++)
         {
             db.ChatMessages.Add(new ChatMessage
@@ -465,8 +465,8 @@ public class ChatServiceTests
         // Assert
         result.Should().NotBeNull();
         result.Quota.Used.Should().Be(21);
-        result.Quota.Limit.Should().Be(50);
-        result.Quota.Remaining.Should().Be(29);
+        result.Quota.Limit.Should().Be(200);
+        result.Quota.Remaining.Should().Be(179);
     }
 
     [Fact]

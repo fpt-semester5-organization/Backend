@@ -20,7 +20,7 @@ public static class ChatConstants
     // === Hạn mức sử dụng AI (BR-GUEST-02, BR-USR-10, BR-PAY-SUB-01) ===
     public const int GuestAiLimit = 3;
     public const int FreeMemberDailyLimit = 20;
-    public const int VipDailyLimit = 50;
+    public const int VipDailyLimit = 200;
 
     // === Mã tính năng AI Quota Logs (BR-ADM-AI-003) ===
     public const string FeatureCodeAiChat = "AI_CHAT";
