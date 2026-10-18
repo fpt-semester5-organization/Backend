@@ -12,6 +12,7 @@ public class AuthUserDto
     public bool IsVip { get; set; }
     public string AccountStatus { get; set; } = string.Empty;
     public bool IsProfileCompleted { get; set; }
+    public string? AvatarUrl { get; set; }
 }
 
 /// <summary>

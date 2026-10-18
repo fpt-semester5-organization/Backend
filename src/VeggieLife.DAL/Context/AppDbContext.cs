@@ -1097,7 +1097,7 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValueSql("(sysdatetime())")
                 .HasColumnName("Created_At");
             entity.Property(e => e.ExternalPlaceId)
-                .HasMaxLength(100)
+                .HasMaxLength(255)
                 .IsUnicode(false)
                 .HasColumnName("External_Place_ID");
             entity.Property(e => e.ExternalSource)

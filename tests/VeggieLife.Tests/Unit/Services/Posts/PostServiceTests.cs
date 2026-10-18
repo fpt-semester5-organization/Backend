@@ -794,9 +794,9 @@ public class PostServiceTests : IDisposable
     [Fact]
     public async Task CreatePost_ValidationFailures_ShouldThrowBadRequest()
     {
-        // Title quá ngắn (< 10 ký tự)
-        var shortTitleReq = new CreatePostRequest { Title = "Ngắn", Content = "Nội dung hợp lệ..." };
-        var act1 = async () => await _service.CreatePostAsync(shortTitleReq, 1024, "MEMBER");
+        // Title quá dài (> 150 ký tự)
+        var longTitleReq = new CreatePostRequest { Title = new string('A', 151), Content = "Nội dung hợp lệ..." };
+        var act1 = async () => await _service.CreatePostAsync(longTitleReq, 1024, "MEMBER");
         (await act1.Should().ThrowAsync<AppException>()).Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
 
         // Content rỗng

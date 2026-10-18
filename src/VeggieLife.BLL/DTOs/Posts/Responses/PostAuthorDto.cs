@@ -14,4 +14,9 @@ public class PostAuthorDto
     /// Họ và tên người dùng.
     /// </summary>
     public string FullName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Đường dẫn ảnh đại diện của tác giả bài viết.
+    /// </summary>
+    public string? AvatarUrl { get; set; }
 }

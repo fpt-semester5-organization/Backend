@@ -253,7 +253,10 @@ public class VenueService : IVenueService
             }
 
             // Ghi vào Redis cache 24 giờ nếu có kết quả
-            await _redis.SetAsync(cacheKey, candidateVenues, TimeSpan.FromHours(24), ct);
+            if (candidateVenues.Count > 0)
+            {
+                await _redis.SetAsync(cacheKey, candidateVenues, TimeSpan.FromHours(24), ct);
+            }
         }
 
         // BƯỚC: Danh mục quán chay (Data Object)
@@ -422,26 +425,26 @@ public class VenueService : IVenueService
                 10,
                 ct);
 
+            var validPredictions = predictions
+                .Where(p => !string.IsNullOrWhiteSpace(p.PlaceId))
+                .Where(p => !venuesFromDb.Any(v => v.ExternalPlaceId == p.PlaceId) &&
+                            !candidateVenues.Any(cv => !string.IsNullOrEmpty(p.StructuredFormatting?.MainText) &&
+                                                       cv.Name.Equals(p.StructuredFormatting.MainText, StringComparison.OrdinalIgnoreCase)))
+                .Take(10)
+                .ToList();
+
+            var detailTasks = validPredictions.Select(async pred =>
+            {
+                var detail = await _goongClient.GetPlaceDetailAsync(pred.PlaceId, ct);
+                return (Prediction: pred, Detail: detail);
+            });
+
+            var detailResults = await Task.WhenAll(detailTasks);
+
             var newVenuesToInsert = new List<(VeganVenue Entity, double Distance)>();
 
-            foreach (var pred in predictions)
+            foreach (var (pred, detail) in detailResults)
             {
-                if (string.IsNullOrWhiteSpace(pred.PlaceId))
-                {
-                    continue;
-                }
-
-                // Kiểm tra xem quán đã tồn tại trong CSDL hoặc danh sách ứng viên chưa
-                bool exists = venuesFromDb.Any(v => v.ExternalPlaceId == pred.PlaceId)
-                    || candidateVenues.Any(cv => !string.IsNullOrEmpty(pred.StructuredFormatting?.MainText) &&
-                                                 cv.Name.Equals(pred.StructuredFormatting.MainText, StringComparison.OrdinalIgnoreCase));
-
-                if (exists)
-                {
-                    continue;
-                }
-
-                var detail = await _goongClient.GetPlaceDetailAsync(pred.PlaceId, ct);
                 if (detail?.Geometry?.Location != null && GeoHelper.IsInVietnam(detail.Geometry.Location.Lat, detail.Geometry.Location.Lng))
                 {
                     var distance = GeoHelper.CalculateDistanceKm(targetLat, targetLng, detail.Geometry.Location.Lat, detail.Geometry.Location.Lng);
@@ -492,14 +495,24 @@ public class VenueService : IVenueService
 
             if (newVenuesToInsert.Count > 0)
             {
-                await _db.SaveChangesAsync(ct);
-                _logger.LogInformation("Đã đồng bộ tự động {Count} quán chay mới từ Goong Places API vào CSDL.", newVenuesToInsert.Count);
-
-                // Chỉ map sang DTO sau khi SaveChangesAsync thành công để Entity nhận VenueId thực từ SQL Server
-                foreach (var (savedVenue, distance) in newVenuesToInsert)
+                try
                 {
-                    venuesFromDb.Add(savedVenue);
-                    candidateVenues.Add(MapToDto(savedVenue, distance));
+                    await _db.SaveChangesAsync(ct);
+                    _logger.LogInformation("Đã đồng bộ tự động {Count} quán chay mới từ Goong Places API vào CSDL.", newVenuesToInsert.Count);
+
+                    foreach (var (savedVenue, distance) in newVenuesToInsert)
+                    {
+                        venuesFromDb.Add(savedVenue);
+                        candidateVenues.Add(MapToDto(savedVenue, distance));
+                    }
+                }
+                catch (Exception dbEx)
+                {
+                    _logger.LogWarning(dbEx, "Lỗi khi lưu quán mới từ Goong vào CSDL; tiếp tục hiển thị trực tiếp dữ liệu từ Goong cho người dùng.");
+                    foreach (var (savedVenue, distance) in newVenuesToInsert)
+                    {
+                        candidateVenues.Add(MapToDto(savedVenue, distance));
+                    }
                 }
             }
         }

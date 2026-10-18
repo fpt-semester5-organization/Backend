@@ -37,6 +37,11 @@ public class GoongPlacesClient : IGoongPlacesClient
         {
             _httpClient.Timeout = TimeSpan.FromSeconds(_settings.TimeoutSeconds);
         }
+
+        if (!_httpClient.DefaultRequestHeaders.Contains("User-Agent"))
+        {
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (compatible; VeggieLife/1.0)");
+        }
     }
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_settings.ApiKey);

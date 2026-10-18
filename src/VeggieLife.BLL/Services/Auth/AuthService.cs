@@ -330,7 +330,8 @@ public class AuthService : IAuthService
                 Role = user.Role ?? UserRoles.Member,
                 IsVip = isVip,
                 AccountStatus = user.AccountStatus ?? AccountStatuses.Active,
-                IsProfileCompleted = isProfileCompleted
+                IsProfileCompleted = isProfileCompleted,
+                AvatarUrl = user.AvatarUrl
             },
             RedirectUrl = isProfileCompleted ? "/dashboard" : "/onboarding/health-profile"
         };
@@ -653,7 +654,8 @@ public class AuthService : IAuthService
                 Role = user.Role,
                 IsVip = isVip,
                 AccountStatus = user.AccountStatus,
-                IsProfileCompleted = isProfileCompleted
+                IsProfileCompleted = isProfileCompleted,
+                AvatarUrl = user.AvatarUrl
             }
         };
     }
@@ -1552,7 +1554,8 @@ public class AuthService : IAuthService
                 Role = user.Role,
                 IsVip = isVip,
                 AccountStatus = user.AccountStatus,
-                IsProfileCompleted = isProfileCompleted
+                IsProfileCompleted = isProfileCompleted,
+                AvatarUrl = user.AvatarUrl
             },
             IsNewAccount = isNewAccount
         };

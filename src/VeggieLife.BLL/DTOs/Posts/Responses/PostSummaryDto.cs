@@ -23,6 +23,11 @@ public class PostSummaryDto
     public string AuthorName { get; set; } = string.Empty;
 
     /// <summary>
+    /// Đường dẫn ảnh đại diện của tác giả bài viết (nếu có).
+    /// </summary>
+    public string? AuthorAvatarUrl { get; set; }
+
+    /// <summary>
     /// Đường dẫn ảnh đại diện bài viết (nếu có).
     /// </summary>
     public string? ImageUrl { get; set; }

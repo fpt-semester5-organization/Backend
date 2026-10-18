@@ -1,0 +1,10 @@
+**/.git
+**/.bin
+**/.vs
+**/bin
+**/obj
+**/.vscode
+**/.idea
+database/
+docs/
+*.md

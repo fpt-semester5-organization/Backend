@@ -160,6 +160,7 @@ public class PostService : IPostService
                 PostId = p.PostId,
                 Title = p.Title,
                 AuthorName = p.User.FullName,
+                AuthorAvatarUrl = p.User.AvatarUrl,
                 ImageUrl = p.ImageUrl,
                 VoteCount = p.Votes.Count,
                 CommentCount = p.Comments.Count(c => !c.IsSoftDeleted),
@@ -265,7 +266,8 @@ public class PostService : IPostService
             Author = new PostAuthorDto
             {
                 UserId = post.User.UserId,
-                FullName = post.User.FullName
+                FullName = post.User.FullName,
+                AvatarUrl = post.User.AvatarUrl
             },
             Videos = videos,
             Recipes = recipes,
@@ -397,6 +399,10 @@ public class PostService : IPostService
         string status;
         ContentModerationResult? modResult = null;
 
+        var resolvedTitle = !string.IsNullOrWhiteSpace(request.Title)
+            ? request.Title.Trim()
+            : GenerateTitleFromContent(request.Content);
+
         if (shouldSubmit)
         {
             // 2. Kiểm tra giới hạn đăng bài trong ngày (BR-USR-04):
@@ -405,7 +411,7 @@ public class PostService : IPostService
 
             // 3. Quét kiểm duyệt AI tự động (BR-USR-03, BR-ADM-CNT-002)
             modResult = await _moderationService.ModeratePostAsync(
-                request.Title,
+                resolvedTitle,
                 request.Content,
                 request.ImageUrl,
                 ct);
@@ -431,7 +437,7 @@ public class PostService : IPostService
         var post = new Post
         {
             UserId = userId,
-            Title = request.Title.Trim(),
+            Title = resolvedTitle,
             Content = request.Content.Trim(),
             ImageUrl = string.IsNullOrWhiteSpace(request.ImageUrl) ? null : request.ImageUrl.Trim(),
             Visibility = normalizedVisibility,
@@ -744,9 +750,9 @@ public class PostService : IPostService
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Dữ liệu yêu cầu không được để trống.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Trim().Length < 10 || request.Title.Trim().Length > 150)
+        if (!string.IsNullOrWhiteSpace(request.Title) && request.Title.Trim().Length > 150)
         {
-            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Tiêu đề bài viết phải từ 10 đến 150 ký tự.");
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Tiêu đề bài viết tối đa 150 ký tự.");
         }
 
         if (string.IsNullOrWhiteSpace(request.Content))
@@ -860,6 +866,21 @@ public class PostService : IPostService
         {
             _logger.LogWarning(ex, "Lỗi khi ghi nhật ký AIQuotaLogs cho người dùng {UserId}.", userId);
         }
+    }
+
+    /// <summary>
+    /// Tự động trích xuất tiêu đề từ nội dung bài viết khi người dùng không nhập tiêu đề.
+    /// </summary>
+    private static string GenerateTitleFromContent(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return "Bài viết chia sẻ";
+        var lines = content.Trim().Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        var firstLine = lines.Length > 0 ? lines[0].Trim() : content.Trim();
+        if (firstLine.Length > 80)
+        {
+            firstLine = firstLine.Substring(0, 77) + "...";
+        }
+        return string.IsNullOrWhiteSpace(firstLine) ? "Bài viết chia sẻ" : firstLine;
     }
 
     /// <summary>

@@ -6,9 +6,9 @@ namespace VeggieLife.BLL.DTOs.Posts.Requests;
 public class CreatePostRequest
 {
     /// <summary>
-    /// Tiêu đề bài viết (10–150 ký tự, bắt buộc).
+    /// Tiêu đề bài viết (tối đa 150 ký tự, không bắt buộc).
     /// </summary>
-    public string Title { get; set; } = null!;
+    public string? Title { get; set; }
 
     /// <summary>
     /// Nội dung bài viết (không rỗng, bắt buộc).
