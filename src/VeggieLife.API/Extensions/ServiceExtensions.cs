@@ -334,6 +334,10 @@ public static class ServiceExtensions
         services.AddScoped<IProfileService, ProfileService>();
         services.AddScoped<IMasterDataService, MasterDataService>();
 
+        // Dịch vụ Quản trị hệ thống (FN-ADM-07, FN-ADM-08, FN-ADM-09)
+        services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminCategoryService, VeggieLife.BLL.Services.Admin.AdminCategoryService>();
+        services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminRecipeService, VeggieLife.BLL.Services.Admin.AdminRecipeService>();
+
         // Cấu hình & Dịch vụ tra cứu mã vạch Open Food Facts (FN-BAR-01, FN-BAR-02)
         services.Configure<OpenFoodFactsSettings>(configuration.GetSection(OpenFoodFactsSettings.SectionName));
         services.AddHttpClient<IOpenFoodFactsClient, OpenFoodFactsClient>();

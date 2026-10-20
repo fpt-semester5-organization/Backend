@@ -11,6 +11,10 @@ public class ApiErrorResponse
     public string Message { get; set; } = string.Empty;
     public object? Details { get; set; }
 
+    [System.Text.Json.Serialization.JsonPropertyName("data")]
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public object? Data { get; set; }
+
     public ApiErrorResponse()
     {
     }
@@ -21,6 +25,7 @@ public class ApiErrorResponse
         ErrorCode = errorCode;
         Message = message;
         Details = details;
+        Data = details;
     }
 
     public static ApiErrorResponse Create(int statusCode, string errorCode, string message, object? details = null)

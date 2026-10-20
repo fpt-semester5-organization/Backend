@@ -123,6 +123,30 @@ public class RedisService : IRedisService
         {
             try
             {
+                if (key.Contains('*') && _multiplexer != null && _multiplexer.IsConnected)
+                {
+                    try
+                    {
+                        var endpoints = _multiplexer.GetEndPoints();
+                        foreach (var ep in endpoints)
+                        {
+                            var server = _multiplexer.GetServer(ep);
+                            if (server.IsConnected)
+                            {
+                                var keys = System.Linq.Enumerable.ToArray(server.Keys(pattern: key));
+                                if (keys.Length > 0)
+                                {
+                                    var db = _multiplexer.GetDatabase();
+                                    await db.KeyDeleteAsync(keys);
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Lỗi khi xóa khóa Redis theo mẫu {Pattern}", key);
+                    }
+                }
                 await _cache.RemoveAsync(key, ct);
             }
             catch (Exception ex)
