@@ -731,7 +731,7 @@ public class ProductService : IProductService
 
         return new BarcodeScanResponse
         {
-            Barcode = product.Barcode,
+            Barcode = product!.Barcode,
             ProductName = product.ProductName,
             Brand = product.Brand ?? "Không rõ thương hiệu",
             ImageUrl = product.ImageUrl,
