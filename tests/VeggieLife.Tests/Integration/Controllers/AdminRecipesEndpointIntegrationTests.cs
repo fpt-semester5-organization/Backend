@@ -271,8 +271,8 @@ public class AdminRecipesEndpointIntegrationTests : IClassFixture<WebApplication
         body.Should().NotBeNull();
         body!.StatusCode.Should().Be(200);
         body.Message.Should().Be("Đã cấp huy hiệu.");
-        body.Data.RecipeId.Should().Be(301);
-        body.Data.IsVerified.Should().BeTrue();
+        body.Data!.RecipeId.Should().Be(301);
+        body.Data!.IsVerified.Should().BeTrue();
     }
 
     [Fact]
@@ -323,7 +323,7 @@ public class AdminRecipesEndpointIntegrationTests : IClassFixture<WebApplication
         body.Should().NotBeNull();
         body!.StatusCode.Should().Be(200);
         body.Message.Should().Be("Đã gỡ huy hiệu.");
-        body.Data.RecipeId.Should().Be(301);
-        body.Data.IsVerified.Should().BeFalse();
+        body.Data!.RecipeId.Should().Be(301);
+        body.Data!.IsVerified.Should().BeFalse();
     }
 }

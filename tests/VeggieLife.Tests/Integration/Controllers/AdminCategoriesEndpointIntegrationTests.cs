@@ -234,7 +234,7 @@ public class AdminCategoriesEndpointIntegrationTests : IClassFixture<WebApplicat
         body.Should().NotBeNull();
         body!.StatusCode.Should().Be(201);
         body.Message.Should().Be("Đã tạo danh mục.");
-        body.Data.CategoryName.Should().Be("Món hấp dưỡng sinh");
+        body.Data!.CategoryName.Should().Be("Món hấp dưỡng sinh");
         body.Data.CategoryId.Should().BeGreaterThan(0);
     }
 
@@ -290,7 +290,7 @@ public class AdminCategoriesEndpointIntegrationTests : IClassFixture<WebApplicat
         body.Should().NotBeNull();
         body!.StatusCode.Should().Be(200);
         body.Message.Should().Be("Đã cập nhật.");
-        body.Data.CategoryId.Should().Be(2);
+        body.Data!.CategoryId.Should().Be(2);
         body.Data.IsActive.Should().BeTrue();
     }
 
@@ -355,7 +355,7 @@ public class AdminCategoriesEndpointIntegrationTests : IClassFixture<WebApplicat
         body.Should().NotBeNull();
         body!.StatusCode.Should().Be(200);
         body.Message.Should().Be("Đã xóa danh mục.");
-        body.Data.MigratedRecipes.Should().Be(2);
+        body.Data!.MigratedRecipes.Should().Be(2);
         body.Data.MigratedVenues.Should().Be(1);
     }
 }
