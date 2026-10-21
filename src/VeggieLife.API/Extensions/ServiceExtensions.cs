@@ -87,6 +87,19 @@ public static class ServiceExtensions
                             if (isBlacklisted)
                             {
                                 context.Fail("Token đã bị thu hồi trong danh sách đen.");
+                                return;
+                            }
+                        }
+
+                        var userIdClaim = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                                          ?? context.Principal?.FindFirst("sub")?.Value;
+                        if (!string.IsNullOrEmpty(userIdClaim))
+                        {
+                            var isUserBlacklisted = await redis.ExistsAsync($"user_blacklist:{userIdClaim}", context.HttpContext.RequestAborted);
+                            if (isUserBlacklisted)
+                            {
+                                context.Fail("Tài khoản đã bị tạm khóa hoặc thu hồi quyền truy cập.");
+                                return;
                             }
                         }
                     }
@@ -334,7 +347,8 @@ public static class ServiceExtensions
         services.AddScoped<IProfileService, ProfileService>();
         services.AddScoped<IMasterDataService, MasterDataService>();
 
-        // Dịch vụ Quản trị hệ thống (FN-ADM-07, FN-ADM-08, FN-ADM-09)
+        // Dịch vụ Quản trị hệ thống (FN-ADM-01, FN-ADM-02, FN-ADM-03, FN-ADM-07, FN-ADM-08, FN-ADM-09)
+        services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminUserService, VeggieLife.BLL.Services.Admin.AdminUserService>();
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminCategoryService, VeggieLife.BLL.Services.Admin.AdminCategoryService>();
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminRecipeService, VeggieLife.BLL.Services.Admin.AdminRecipeService>();
 
