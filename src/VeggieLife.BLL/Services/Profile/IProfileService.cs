@@ -48,4 +48,14 @@ public interface IProfileService
     /// Xem lịch sử cân nặng theo khoảng thời gian và phân trang (FN-PROF-06).
     /// </summary>
     Task<(IReadOnlyList<WeightHistoryEntryDto> Items, PagedMeta Meta)> ListWeightHistoryAsync(int userId, DateOnly? from, DateOnly? to, int page = 1, int size = 20, CancellationToken ct = default);
+
+    /// <summary>
+    /// Vô hiệu hóa tài khoản cá nhân có thời gian ân hạn 30 ngày (FN-PROF-07).
+    /// </summary>
+    Task<DeleteCurrentUserResponseData> DeleteCurrentUserAsync(
+        int userId,
+        DeleteCurrentUserRequest request,
+        string? jti = null,
+        DateTime? tokenExpiryUtc = null,
+        CancellationToken ct = default);
 }

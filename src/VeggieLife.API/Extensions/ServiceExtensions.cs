@@ -453,6 +453,10 @@ public static class ServiceExtensions
             });
         services.AddHostedService<VeggieLife.API.BackgroundJobs.SttProcessingWorker>();
 
+        // Dịch vụ & Job nền ẩn danh hóa tài khoản xóa mềm quá hạn 30 ngày (FN-PROF-07, BR-ADM-USR-003, BR-ADM-USR-004, task S7-K7)
+        services.AddScoped<VeggieLife.BLL.Services.AccountAnonymization.IAccountAnonymizeService, VeggieLife.BLL.Services.AccountAnonymization.AccountAnonymizeService>();
+        services.AddHostedService<VeggieLife.API.BackgroundJobs.AccountAnonymizeJob>();
+
         return services;
     }
 
