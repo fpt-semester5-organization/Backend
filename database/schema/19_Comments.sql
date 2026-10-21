@@ -31,6 +31,7 @@ BEGIN
 
     CREATE NONCLUSTERED INDEX [IX_Comments_Post_ID] ON [dbo].[Comments]([Post_ID] ASC);
     CREATE NONCLUSTERED INDEX [IX_Comments_Parent_Comment_ID] ON [dbo].[Comments]([Parent_Comment_ID] ASC);
+    CREATE NONCLUSTERED INDEX [IX_Comments_Parent_SoftDeleted] ON [dbo].[Comments]([Parent_Comment_ID] ASC, [Is_Soft_Deleted] ASC);
 
     IF OBJECT_ID(N'[dbo].[Users]', N'U') IS NOT NULL
     BEGIN

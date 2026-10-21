@@ -434,6 +434,7 @@ public class FridgeService : IFridgeService
         CancellationToken ct = default)
     {
         var query = _db.FridgeInventories
+            .AsNoTracking()
             .Include(f => f.Ingredient)
             .Where(f => f.UserId == userId);
 
@@ -663,6 +664,7 @@ public class FridgeService : IFridgeService
     {
         // 1. Kiểm tra tủ lạnh ảo có ít nhất 1 nguyên liệu (PRE-1, BR-USR-08)
         var fridgeItems = await _db.FridgeInventories
+            .AsNoTracking()
             .Include(f => f.Ingredient)
             .Where(f => f.UserId == userId)
             .ToListAsync(ct);
@@ -682,6 +684,7 @@ public class FridgeService : IFridgeService
 
         // 2. Đọc hồ sơ sức khỏe & danh mục dị ứng của người dùng (FN-PROF-04, BR-SCI-04)
         var profile = await _db.HealthProfiles
+            .AsNoTracking()
             .Include(hp => hp.DietarySchool)
             .FirstOrDefaultAsync(hp => hp.UserId == userId, ct);
 
@@ -700,11 +703,13 @@ public class FridgeService : IFridgeService
         }
 
         var userAllergenIds = await _db.UserAllergies
+            .AsNoTracking()
             .Where(ua => ua.UserId == userId)
             .Select(ua => ua.AllergenId)
             .ToListAsync(ct);
 
         var allergicIngredientIds = await _db.IngredientAllergens
+            .AsNoTracking()
             .Where(ia => userAllergenIds.Contains(ia.AllergenId))
             .Select(ia => ia.IngredientId)
             .Distinct()
@@ -714,6 +719,7 @@ public class FridgeService : IFridgeService
 
         // 3. Lấy kho công thức đã duyệt (APPROVED_ACTIVE) kèm danh sách nguyên liệu
         var recipes = await _db.Recipes
+            .AsNoTracking()
             .Include(r => r.RecipeIngredients)
                 .ThenInclude(ri => ri.Ingredient)
             .Where(r => r.Status == "APPROVED_ACTIVE")

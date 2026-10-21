@@ -16,14 +16,16 @@ using VeggieLife.BLL.DTOs.Profile.Responses;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.Media;
 using VeggieLife.BLL.Services.Profile;
+using VeggieLife.BLL.Services.Email;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
+using VeggieLife.DAL.External.Google;
 using Xunit;
 
 namespace VeggieLife.Tests.Unit.Services.Profile;
 
 /// <summary>
-/// Bộ kiểm thử toàn diện cho ProfileService: Hồ sơ sức khỏe, Giới hạn khoảng giá trị, Khai báo dị ứng, Thông tin cá nhân.
+/// Bộ kiểm thử toàn diện cho ProfileService: Hồ sơ sức khỏe, Giới hạn khoảng giá trị, Khai báo dị ứng, Thông tin cá nhân, Vô hiệu hóa tài khoản (FN-PROF-07).
 /// </summary>
 public class ProfileServiceTests : IDisposable
 {
@@ -31,6 +33,8 @@ public class ProfileServiceTests : IDisposable
     private readonly Mock<IRedisService> _mockRedis;
     private readonly Mock<ILogger<ProfileService>> _mockLogger;
     private readonly Mock<IMediaService> _mockMediaService;
+    private readonly Mock<IEmailService> _mockEmailService;
+    private readonly Mock<IGoogleAuthClient> _mockGoogleAuthClient;
     private readonly ProfileService _service;
 
     public ProfileServiceTests()
@@ -44,8 +48,16 @@ public class ProfileServiceTests : IDisposable
         _mockRedis = new Mock<IRedisService>();
         _mockLogger = new Mock<ILogger<ProfileService>>();
         _mockMediaService = new Mock<IMediaService>();
+        _mockEmailService = new Mock<IEmailService>();
+        _mockGoogleAuthClient = new Mock<IGoogleAuthClient>();
 
-        _service = new ProfileService(_db, _mockRedis.Object, _mockMediaService.Object, _mockLogger.Object);
+        _service = new ProfileService(
+            _db,
+            _mockRedis.Object,
+            _mockMediaService.Object,
+            _mockLogger.Object,
+            _mockEmailService.Object,
+            _mockGoogleAuthClient.Object);
 
         SeedTestData();
     }
@@ -744,6 +756,178 @@ public class ProfileServiceTests : IDisposable
         var ex = await act.Should().ThrowAsync<AppException>();
         ex.Which.StatusCode.Should().Be(400);
         ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+    }
+
+    #endregion
+
+    #region 7. FN-PROF-07: DeleteCurrentUserAsync (Vô hiệu hóa tài khoản 30 ngày)
+
+    [Fact]
+    public async Task DeleteCurrentUserAsync_UserNotFound_ThrowsNotFound()
+    {
+        var request = new DeleteCurrentUserRequest
+        {
+            ConfirmPassword = "Password123@",
+            Reason = "Không còn nhu cầu sử dụng"
+        };
+
+        var act = async () => await _service.DeleteCurrentUserAsync(99999, request);
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrAdmNotFound);
+    }
+
+    [Fact]
+    public async Task DeleteCurrentUserAsync_PasswordAccount_WrongPassword_ThrowsUnauthorized()
+    {
+        // User 201 dùng mật khẩu
+        var user = new User
+        {
+            UserId = 201,
+            Email = "passuser@veggielife.vn",
+            FullName = "User Có Pass",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("CorrectPassword123@"),
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.Active,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync();
+
+        var request = new DeleteCurrentUserRequest
+        {
+            ConfirmPassword = "WrongPassword123@",
+            Reason = "Lý do cá nhân"
+        };
+
+        var act = async () => await _service.DeleteCurrentUserAsync(201, request);
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(401);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrAuthInvalidCredentials);
+    }
+
+    [Fact]
+    public async Task DeleteCurrentUserAsync_PasswordAccount_CorrectPassword_SetsSoftDeleted_WritesAuditLog_AndSendsEmail()
+    {
+        var user = new User
+        {
+            UserId = 202,
+            Email = "deletepass@veggielife.vn",
+            FullName = "User Xóa Pass",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("ValidPassword123@"),
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.Active,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync();
+
+        var request = new DeleteCurrentUserRequest
+        {
+            ConfirmPassword = "ValidPassword123@",
+            Reason = "Tôi muốn nghỉ một thời gian"
+        };
+
+        var response = await _service.DeleteCurrentUserAsync(
+            202,
+            request,
+            jti: "test-jti-123",
+            tokenExpiryUtc: DateTime.UtcNow.AddHours(2));
+
+        response.RestoreDeadline.Should().BeAfter(DateTime.UtcNow.AddDays(29));
+
+        var updated = await _db.Users.FindAsync(202);
+        updated!.AccountStatus.Should().Be(AccountStatuses.SoftDeleted);
+
+        var auditLog = await _db.AuditLogs.FirstOrDefaultAsync(a => a.TargetTable == "Users" && a.TargetId == "202");
+        auditLog.Should().NotBeNull();
+        auditLog!.Action.Should().Be("ACCOUNT_SOFT_DELETED");
+
+        _mockRedis.Verify(
+            r => r.SetAsync("blacklist:test-jti-123", "revoked", It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _mockEmailService.Verify(
+            e => e.SendNotificationEmailAsync(
+                "deletepass@veggielife.vn",
+                It.Is<string>(s => s.Contains("Xác nhận")),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteCurrentUserAsync_GoogleAccount_InvalidGoogleToken_ThrowsUnauthorized()
+    {
+        var user = new User
+        {
+            UserId = 203,
+            Email = "googleuser@veggielife.vn",
+            FullName = "Google User",
+            GoogleId = "google-sub-999",
+            PasswordHash = null,
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.Active,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync();
+
+        _mockGoogleAuthClient
+            .Setup(g => g.ValidateIdTokenAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((GoogleTokenPayload?)null);
+
+        var request = new DeleteCurrentUserRequest
+        {
+            GoogleIdToken = "invalid-google-token"
+        };
+
+        var act = async () => await _service.DeleteCurrentUserAsync(203, request);
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(401);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrAuthInvalidCredentials);
+    }
+
+    [Fact]
+    public async Task DeleteCurrentUserAsync_GoogleAccount_ValidGoogleToken_SetsSoftDeleted()
+    {
+        var user = new User
+        {
+            UserId = 204,
+            Email = "googlevalid@veggielife.vn",
+            FullName = "Google Valid User",
+            GoogleId = "google-sub-valid-123",
+            PasswordHash = null,
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.Active,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync();
+
+        _mockGoogleAuthClient
+            .Setup(g => g.ValidateIdTokenAsync("valid-google-token", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleTokenPayload
+            {
+                Subject = "google-sub-valid-123",
+                Email = "googlevalid@veggielife.vn",
+                EmailVerified = true
+            });
+
+        var request = new DeleteCurrentUserRequest
+        {
+            GoogleIdToken = "valid-google-token"
+        };
+
+        var response = await _service.DeleteCurrentUserAsync(204, request);
+
+        response.RestoreDeadline.Should().BeAfter(DateTime.UtcNow.AddDays(29));
+
+        var updated = await _db.Users.FindAsync(204);
+        updated!.AccountStatus.Should().Be(AccountStatuses.SoftDeleted);
     }
 
     #endregion
