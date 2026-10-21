@@ -1320,6 +1320,7 @@ public class MealPlanService : IMealPlanService
         }
 
         var plan = await _db.MealPlans
+            .AsNoTracking()
             .Include(p => p.MealSlots)
                 .ThenInclude(s => s.Recipe)
             .FirstOrDefaultAsync(p => p.PlanId == id && p.UserId == userId, ct);
@@ -1338,7 +1339,7 @@ public class MealPlanService : IMealPlanService
 
             if (!isVip)
             {
-                var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == userId, ct);
+                var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId, ct);
                 if (user != null && (string.Equals(user.Role, UserRoles.Vip, StringComparison.OrdinalIgnoreCase)
                                  || string.Equals(user.Role, UserRoles.Admin, StringComparison.OrdinalIgnoreCase)))
                 {
@@ -1452,7 +1453,7 @@ public class MealPlanService : IMealPlanService
 
         if (!isVip)
         {
-            var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == userId, ct);
+            var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId, ct);
             if (user != null && (string.Equals(user.Role, UserRoles.Vip, StringComparison.OrdinalIgnoreCase)
                              || string.Equals(user.Role, UserRoles.Admin, StringComparison.OrdinalIgnoreCase)))
             {
@@ -1469,6 +1470,7 @@ public class MealPlanService : IMealPlanService
 
         // Kiểm tra quyền sở hữu thực đơn
         var plan = await _db.MealPlans
+            .AsNoTracking()
             .Include(p => p.MealSlots)
                 .ThenInclude(s => s.Recipe)
                     .ThenInclude(r => r.RecipeIngredients)
@@ -1486,6 +1488,7 @@ public class MealPlanService : IMealPlanService
         if (includeShopping)
         {
             shoppingList = await _db.ShoppingLists
+                .AsNoTracking()
                 .Include(s => s.ShoppingListItems)
                     .ThenInclude(i => i.Ingredient)
                 .FirstOrDefaultAsync(s => s.PlanId == id, ct);

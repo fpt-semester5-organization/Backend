@@ -37,5 +37,11 @@ BEGIN
 
     CREATE NONCLUSTERED INDEX [IX_VeganVenues_Coordinates] 
     ON [dbo].[VeganVenues]([Latitude] ASC, [Longitude] ASC);
+
+    CREATE NONCLUSTERED INDEX [IX_VeganVenues_Is_Active] 
+    ON [dbo].[VeganVenues]([Is_Active] ASC);
+
+    CREATE NONCLUSTERED INDEX [IX_VeganVenues_External_Source] 
+    ON [dbo].[VeganVenues]([External_Source] ASC);
 END;
 GO

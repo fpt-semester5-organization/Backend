@@ -881,6 +881,188 @@ public class FridgeServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetRecipeSuggestions_RecipeWithAllergen_IsExcludedFromSuggestions()
+    {
+        // Arrange
+        // Seed Allergen 1 (SOY) và gán cho ingredient 14 (Đậu hũ non)
+        var allergen = new Allergen { AllergenId = 1, Code = "SOY", AllergenName = "Đậu nành" };
+        _db.Allergens.Add(allergen);
+        _db.IngredientAllergens.Add(new IngredientAllergen { IngredientId = 14, AllergenId = 1 });
+
+        // User 20 bị dị ứng Đậu nành
+        _db.UserAllergies.Add(new UserAllergy { UserId = 20, AllergenId = 1, CreatedAt = DateTime.UtcNow });
+
+        // User 20 có nguyên liệu trong tủ: Nấm rơm (12) và Đậu hũ non (14)
+        _db.FridgeInventories.AddRange(
+            new FridgeInventory { UserId = 20, IngredientId = 12, CustomItemName = "Nấm rơm", FreshnessStatus = "FRESH" },
+            new FridgeInventory { UserId = 20, IngredientId = 14, CustomItemName = "Đậu hũ non", FreshnessStatus = "FRESH" }
+        );
+
+        // Recipe 103: Canh nấm (dùng 12) -> Hợp lệ
+        // Recipe 104: Đậu hũ sốt (dùng 14) -> Bị loại do dị ứng Đậu nành
+        var r1 = new Recipe
+        {
+            RecipeId = 103,
+            CategoryId = 1,
+            Title = "Canh nấm an toàn",
+            Instructions = "B1",
+            DifficultyLevel = "EASY",
+            Status = "APPROVED_ACTIVE",
+            Source = "OFFICIAL",
+            CreatedAt = DateTime.UtcNow
+        };
+        var r2 = new Recipe
+        {
+            RecipeId = 104,
+            CategoryId = 1,
+            Title = "Đậu hũ sốt chua cay",
+            Instructions = "B1",
+            DifficultyLevel = "EASY",
+            Status = "APPROVED_ACTIVE",
+            Source = "OFFICIAL",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Recipes.AddRange(r1, r2);
+        await _db.SaveChangesAsync();
+
+        _db.RecipeIngredients.AddRange(
+            new RecipeIngredient { RecipeId = 103, IngredientId = 12, QuantityNeeded = 100, Unit = "g", IsOptional = false },
+            new RecipeIngredient { RecipeId = 104, IngredientId = 14, QuantityNeeded = 1, Unit = "miếng", IsOptional = false }
+        );
+        await _db.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetRecipeSuggestionsAsync(userId: 20, minSimilarity: 0.7, limit: 10, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Should().ContainSingle();
+        result[0].RecipeId.Should().Be(103);
+    }
+
+    [Fact]
+    public async Task GetRecipeSuggestions_RecipeWithForbiddenFoodGroup_IsExcludedFromSuggestions()
+    {
+        // Arrange
+        // Ingredient 90: Sữa bò (DAIRY)
+        var milk = new Ingredient
+        {
+            IngredientId = 90,
+            IngredientName = "Sữa bò",
+            FoodGroup = "DAIRY",
+            StandardUnit = "ml",
+            DefaultStallType = "DAIRY",
+            CaloriesPer100g = 60m
+        };
+        _db.Ingredients.Add(milk);
+
+        // User 10 thuộc DietarySchool 1 (Thuần chay - cấm DAIRY)
+        // Cho sữa vào tủ của User 10
+        _db.FridgeInventories.Add(
+            new FridgeInventory { UserId = 10, IngredientId = 90, CustomItemName = "Sữa bò", FreshnessStatus = "FRESH" }
+        );
+
+        var r = new Recipe
+        {
+            RecipeId = 105,
+            CategoryId = 1,
+            Title = "Súp sữa chay",
+            Instructions = "B1",
+            DifficultyLevel = "EASY",
+            Status = "APPROVED_ACTIVE",
+            Source = "OFFICIAL",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Recipes.Add(r);
+        await _db.SaveChangesAsync();
+
+        _db.RecipeIngredients.Add(
+            new RecipeIngredient { RecipeId = 105, IngredientId = 90, QuantityNeeded = 200, Unit = "ml", IsOptional = false }
+        );
+        await _db.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetRecipeSuggestionsAsync(userId: 10, minSimilarity: 0.7, limit: 10, CancellationToken.None);
+
+        // Assert
+        result.Should().NotContain(s => s.RecipeId == 105);
+    }
+
+    [Fact]
+    public async Task GetRecipeSuggestions_RecipeWithAllium_ExcludedWhenUserRequiresAlliumFree()
+    {
+        // Arrange
+        // User 10 có RequiresAlliumFree = true trong HealthProfile
+        // Tủ của user có Hành tây (15, IsAllium = true)
+        _db.FridgeInventories.Add(
+            new FridgeInventory { UserId = 10, IngredientId = 15, CustomItemName = "Hành tây", FreshnessStatus = "FRESH" }
+        );
+
+        var r = new Recipe
+        {
+            RecipeId = 106,
+            CategoryId = 1,
+            Title = "Hành xào tương",
+            Instructions = "B1",
+            DifficultyLevel = "EASY",
+            Status = "APPROVED_ACTIVE",
+            Source = "OFFICIAL",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Recipes.Add(r);
+        await _db.SaveChangesAsync();
+
+        _db.RecipeIngredients.Add(
+            new RecipeIngredient { RecipeId = 106, IngredientId = 15, QuantityNeeded = 1, Unit = "củ", IsOptional = false }
+        );
+        await _db.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetRecipeSuggestionsAsync(userId: 10, minSimilarity: 0.7, limit: 10, CancellationToken.None);
+
+        // Assert: Không được gợi ý công thức có ngũ vị tân
+        result.Should().NotContain(s => s.RecipeId == 106);
+    }
+
+    [Fact]
+    public async Task GetRecipeSuggestions_SimilarityBelowThreshold_IsExcludedFromSuggestions()
+    {
+        // Arrange: User 30 chỉ có 1 nguyên liệu (Nấm rơm 12)
+        _db.FridgeInventories.Add(
+            new FridgeInventory { UserId = 30, IngredientId = 12, CustomItemName = "Nấm rơm", FreshnessStatus = "FRESH" }
+        );
+
+        // Recipe 107 cần 4 nguyên liệu bắt buộc (12, 13, 14, 15). User chỉ có 12 -> 1/4 = 25% < 70% minSimilarity
+        var r = new Recipe
+        {
+            RecipeId = 107,
+            CategoryId = 1,
+            Title = "Lẩu nấm thập cẩm 4 món",
+            Instructions = "B1",
+            DifficultyLevel = "HARD",
+            Status = "APPROVED_ACTIVE",
+            Source = "OFFICIAL",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Recipes.Add(r);
+        await _db.SaveChangesAsync();
+
+        _db.RecipeIngredients.AddRange(
+            new RecipeIngredient { RecipeId = 107, IngredientId = 12, QuantityNeeded = 100, Unit = "g", IsOptional = false },
+            new RecipeIngredient { RecipeId = 107, IngredientId = 13, QuantityNeeded = 2, Unit = "quả", IsOptional = false },
+            new RecipeIngredient { RecipeId = 107, IngredientId = 14, QuantityNeeded = 1, Unit = "miếng", IsOptional = false },
+            new RecipeIngredient { RecipeId = 107, IngredientId = 15, QuantityNeeded = 1, Unit = "củ", IsOptional = false }
+        );
+        await _db.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetRecipeSuggestionsAsync(userId: 30, minSimilarity: 0.7, limit: 10, CancellationToken.None);
+
+        // Assert: Không được gợi ý vì similarity 0.25 < 0.7
+        result.Should().NotContain(s => s.RecipeId == 107);
+    }
+
+    [Fact]
     public async Task DetectIngredients_WithBoundingBox_ShouldPassThroughCoordinates()
     {
         // Arrange

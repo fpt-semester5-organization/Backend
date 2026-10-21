@@ -37,6 +37,8 @@ BEGIN
     );
 
     CREATE NONCLUSTERED INDEX [IX_ViolationReports_Status] ON [dbo].[ViolationReports]([Status] ASC);
+    CREATE NONCLUSTERED INDEX [IX_ViolationReports_Status_CreatedAt] ON [dbo].[ViolationReports]([Status] ASC, [Created_At] DESC);
+    CREATE NONCLUSTERED INDEX [IX_ViolationReports_Status_Source_Type] ON [dbo].[ViolationReports]([Status] ASC, [Report_Source] ASC, [Violation_Type] ASC);
 
     IF OBJECT_ID(N'[dbo].[Users]', N'U') IS NOT NULL
     BEGIN

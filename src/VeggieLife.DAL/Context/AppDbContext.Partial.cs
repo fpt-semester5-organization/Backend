@@ -170,6 +170,30 @@ public partial class AppDbContext
         {
             entity.Property(v => v.ExternalPlaceId).HasMaxLength(255).IsUnicode(false);
         });
+
+        // Tối ưu hóa chỉ mục hiệu năng cho các truy vấn kiểm duyệt, nguyên liệu, quán chay (Sprint 7 Performance Tuning)
+        modelBuilder.Entity<ViolationReport>(entity =>
+        {
+            entity.HasIndex(e => new { e.Status, e.CreatedAt }, "IX_ViolationReports_Status_CreatedAt");
+            entity.HasIndex(e => new { e.Status, e.ReportSource, e.ViolationType }, "IX_ViolationReports_Status_Source_Type");
+        });
+
+        modelBuilder.Entity<Comment>(entity =>
+        {
+            entity.HasIndex(e => new { e.ParentCommentId, e.IsSoftDeleted }, "IX_Comments_Parent_SoftDeleted");
+        });
+
+        modelBuilder.Entity<VeganVenue>(entity =>
+        {
+            entity.HasIndex(e => e.IsActive, "IX_VeganVenues_Is_Active");
+            entity.HasIndex(e => e.ExternalSource, "IX_VeganVenues_External_Source");
+        });
+
+        modelBuilder.Entity<Ingredient>(entity =>
+        {
+            entity.HasIndex(e => e.FoodGroup, "IX_Ingredients_Food_Group");
+            entity.HasIndex(e => e.IsAllium, "IX_Ingredients_Is_Allium");
+        });
     }
 
     /// <summary>

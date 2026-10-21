@@ -29,5 +29,11 @@ BEGIN
 
     CREATE UNIQUE NONCLUSTERED INDEX [UQ_Ingredients_Ingredient_Name] 
     ON [dbo].[Ingredients]([Ingredient_Name] ASC);
+
+    CREATE NONCLUSTERED INDEX [IX_Ingredients_Food_Group] 
+    ON [dbo].[Ingredients]([Food_Group] ASC);
+
+    CREATE NONCLUSTERED INDEX [IX_Ingredients_Is_Allium] 
+    ON [dbo].[Ingredients]([Is_Allium] ASC);
 END;
 GO

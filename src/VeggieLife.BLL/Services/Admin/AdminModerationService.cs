@@ -398,26 +398,26 @@ public class AdminModerationService : IAdminModerationService
 
     private async Task<int> CascadeSoftDeleteCommentInternalAsync(int rootCommentId, CancellationToken ct)
     {
-        var allDescendantIds = new List<int> { rootCommentId };
-        var queue = new Queue<int>();
-        queue.Enqueue(rootCommentId);
+        var allDescendantIds = new HashSet<int> { rootCommentId };
+        var currentLevel = new List<int> { rootCommentId };
 
-        while (queue.Count > 0)
+        while (currentLevel.Count > 0)
         {
-            var parentId = queue.Dequeue();
             var childIds = await _db.Comments
-                .Where(c => c.ParentCommentId == parentId && !c.IsSoftDeleted)
+                .Where(c => c.ParentCommentId.HasValue && currentLevel.Contains(c.ParentCommentId.Value) && !c.IsSoftDeleted)
                 .Select(c => c.CommentId)
                 .ToListAsync(ct);
 
+            var nextLevel = new List<int>();
             foreach (var childId in childIds)
             {
-                if (!allDescendantIds.Contains(childId))
+                if (allDescendantIds.Add(childId))
                 {
-                    allDescendantIds.Add(childId);
-                    queue.Enqueue(childId);
+                    nextLevel.Add(childId);
                 }
             }
+
+            currentLevel = nextLevel;
         }
 
         var commentsToSoftDelete = await _db.Comments
