@@ -104,6 +104,7 @@ public class AdminUserService : IAdminUserService
                 AccountStatus = u.AccountStatus,
                 CreatedAt = u.CreatedAt,
                 DietarySchoolId = u.HealthProfile != null ? u.HealthProfile.DietarySchoolId : null,
+                DietarySchoolName = u.HealthProfile != null && u.HealthProfile.DietarySchool != null ? u.HealthProfile.DietarySchool.SchoolName : null,
                 LockedUntil = u.LockedUntil,
                 CountViolationReports = u.CountViolationReports
             })
