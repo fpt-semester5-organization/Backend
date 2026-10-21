@@ -10,23 +10,28 @@ using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.DTOs.Profile.Requests;
 using VeggieLife.BLL.DTOs.Profile.Responses;
-using VeggieLife.BLL.Services.Cache;
-using VeggieLife.DAL.Context;
 using VeggieLife.BLL.Common.Responses;
+using VeggieLife.BLL.Services.Cache;
+using VeggieLife.BLL.Services.Email;
 using VeggieLife.BLL.Services.Media;
+using VeggieLife.BLL.Validators.Profile;
+using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
+using VeggieLife.DAL.External.Google;
 
 namespace VeggieLife.BLL.Services.Profile;
 
 /// <summary>
 /// Dịch vụ quản lý hồ sơ sức khỏe và dinh dưỡng người dùng.
-/// Thực thi các quy tắc nghiệp vụ: BR-USR-01, BR-USR-02, BR-USR-NUT-03, BR-SCI-03, BR-SCI-04, BR-ADM-MAS-001, BR-SYS-MAS-01, BR-PAY-SUB-02, BR-USR-MEDIA-01.
+/// Thực thi các quy tắc nghiệp vụ: BR-USR-01, BR-USR-02, BR-USR-NUT-03, BR-SCI-03, BR-SCI-04, BR-ADM-MAS-001, BR-SYS-MAS-01, BR-PAY-SUB-02, BR-USR-MEDIA-01, BR-ADM-USR-002, BR-ADM-USR-004.
 /// </summary>
 public class ProfileService : IProfileService
 {
     private readonly AppDbContext _db;
     private readonly IRedisService _redis;
     private readonly IMediaService _mediaService;
+    private readonly IEmailService? _emailService;
+    private readonly IGoogleAuthClient? _googleAuthClient;
     private readonly ILogger<ProfileService> _logger;
 
     private static readonly Regex PhoneRegex = new(@"^0(3|5|7|8|9)[0-9]{8}$", RegexOptions.Compiled);
@@ -35,12 +40,16 @@ public class ProfileService : IProfileService
         AppDbContext db,
         IRedisService redis,
         IMediaService mediaService,
-        ILogger<ProfileService> logger)
+        ILogger<ProfileService> logger,
+        IEmailService? emailService = null,
+        IGoogleAuthClient? googleAuthClient = null)
     {
         _db = db;
         _redis = redis;
         _mediaService = mediaService;
         _logger = logger;
+        _emailService = emailService;
+        _googleAuthClient = googleAuthClient;
     }
 
     /// <summary>
@@ -685,5 +694,132 @@ public class ProfileService : IProfileService
 
         var meta = new PagedMeta(page, size, total);
         return (items, meta);
+    }
+
+    /// <summary>
+    /// FN-PROF-07: Vô hiệu hóa tài khoản cá nhân có thời gian ân hạn 30 ngày.
+    /// Yêu cầu xác thực lại (mật khẩu hoặc Google ID Token), chuyển trạng thái sang SOFT_DELETED, thu hồi mọi phiên, gửi email xác nhận.
+    /// </summary>
+    public async Task<DeleteCurrentUserResponseData> DeleteCurrentUserAsync(
+        int userId,
+        DeleteCurrentUserRequest request,
+        string? jti = null,
+        DateTime? tokenExpiryUtc = null,
+        CancellationToken ct = default)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == userId, ct);
+        if (user == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrAdmNotFound, "Không tìm thấy người dùng.");
+        }
+
+        // 1. Kiểm tra tính hợp lệ dữ liệu đầu vào (FN-PROF-07)
+        DeleteCurrentUserValidator.Validate(request, user);
+
+        // 2. Xác thực lại danh tính: Mật khẩu (với tài khoản có password) hoặc Google ID Token (với tài khoản chỉ dùng Google)
+        if (!string.IsNullOrEmpty(user.PasswordHash))
+        {
+            var isPasswordValid = BCrypt.Net.BCrypt.Verify(request.ConfirmPassword, user.PasswordHash);
+            if (!isPasswordValid)
+            {
+                throw AppException.Unauthorized(
+                    ErrorCodes.ErrAuthInvalidCredentials,
+                    "Mật khẩu xác nhận không chính xác.");
+            }
+        }
+        else if (!string.IsNullOrEmpty(user.GoogleId))
+        {
+            if (_googleAuthClient == null)
+            {
+                throw AppException.ServiceUnavailable(
+                    ErrorCodes.ErrInternal,
+                    "Dịch vụ xác thực Google chưa sẵn sàng.");
+            }
+
+            var payload = await _googleAuthClient.ValidateIdTokenAsync(request.GoogleIdToken!.Trim(), ct);
+            if (payload == null || !string.Equals(payload.Subject, user.GoogleId, StringComparison.Ordinal))
+            {
+                throw AppException.Unauthorized(
+                    ErrorCodes.ErrAuthInvalidCredentials,
+                    "Xác thực Google ID Token thất bại.");
+            }
+        }
+
+        // 3. Cập nhật trạng thái tài khoản sang SOFT_DELETED (BR-ADM-USR-002, BR-ADM-USR-004)
+        user.AccountStatus = AccountStatuses.SoftDeleted;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        var restoreDeadline = DateTime.UtcNow.AddDays(30);
+
+        // 4. Ghi AuditLogs (Actor_Role = MEMBER, Action = ACCOUNT_SOFT_DELETED, Note = lý do)
+        _db.AuditLogs.Add(new AuditLog
+        {
+            ActorUserId = user.UserId,
+            ActorRole = user.Role,
+            Action = "ACCOUNT_SOFT_DELETED",
+            TargetTable = "Users",
+            TargetId = user.UserId.ToString(),
+            Note = string.IsNullOrWhiteSpace(request.Reason)
+                ? "Người dùng yêu cầu vô hiệu hóa tài khoản (ân hạn 30 ngày)."
+                : request.Reason.Trim(),
+            CreatedAt = DateTime.UtcNow
+        });
+
+        await _db.SaveChangesAsync(ct);
+
+        // 5. Thu hồi mọi refresh token và đưa jti vào blacklist (BR-AUTH-004)
+        try
+        {
+            if (!string.IsNullOrEmpty(jti) && tokenExpiryUtc.HasValue)
+            {
+                var remainingTtl = tokenExpiryUtc.Value - DateTime.UtcNow;
+                if (remainingTtl > TimeSpan.Zero)
+                {
+                    await _redis.SetAsync($"blacklist:{jti}", "revoked", remainingTtl, ct);
+                }
+            }
+
+            var userSessionsKey = $"user_sessions:{user.UserId}";
+            var sessions = await _redis.GetAsync<List<string>>(userSessionsKey, ct);
+            if (sessions != null)
+            {
+                foreach (var tokenHash in sessions)
+                {
+                    await _redis.RemoveAsync($"refresh:{tokenHash}", ct);
+                }
+            }
+            await _redis.RemoveAsync(userSessionsKey, ct);
+            await _redis.RemoveAsync($"cache:profile:{user.UserId}", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi khi thu hồi phiên Redis cho user {UserId}.", user.UserId);
+        }
+
+        // 6. Gửi email xác nhận kèm hạn chót 30 ngày
+        if (_emailService != null && !string.IsNullOrEmpty(user.Email))
+        {
+            try
+            {
+                var subject = "[VeggieLife] Xác nhận yêu cầu vô hiệu hóa tài khoản";
+                var htmlBody = $@"<p>Xin chào <strong>{user.FullName}</strong>,</p>
+<p>Hệ thống VeggieLife đã ghi nhận yêu cầu vô hiệu hóa tài khoản của bạn.</p>
+<p>Tài khoản của bạn đã được chuyển sang trạng thái tạm vô hiệu hóa (SOFT_DELETED). Mọi phiên đăng nhập hiện tại đã được thu hồi.</p>
+<p>Bạn có <strong>30 ngày</strong> (đến hết ngày <strong>{restoreDeadline:dd/MM/yyyy HH:mm:ss} UTC</strong>) để đổi ý và khôi phục tài khoản bằng cách đăng nhập lại vào hệ thống.</p>
+<p>Sau thời hạn 30 ngày này, hệ thống sẽ tự động ẩn danh hóa toàn bộ thông tin cá nhân của bạn vĩnh viễn theo quy định bảo mật.</p>
+<p>Trân trọng,<br/>Đội ngũ VeggieLife</p>";
+
+                await _emailService.SendNotificationEmailAsync(user.Email, subject, htmlBody, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Lỗi khi gửi email xác nhận vô hiệu hóa cho {Email}.", user.Email);
+            }
+        }
+
+        return new DeleteCurrentUserResponseData
+        {
+            RestoreDeadline = restoreDeadline
+        };
     }
 }

@@ -1,6 +1,10 @@
+using System;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
@@ -145,6 +149,43 @@ public class UsersController : BaseApiController
         EnsureAuthorizedMember();
         var result = await _productService.GetUserScanHistoryAsync((int)CurrentUserId!.Value, verdict, allergenOnly, page, size);
         return PagedResponse(result.Items, new PagedMeta(result.PageNumber, result.PageSize, result.TotalItems), "Lấy lịch sử quét mã vạch thành công.");
+    }
+
+    /// <summary>
+    /// FN-PROF-07: Vô hiệu hóa tài khoản cá nhân (ân hạn 30 ngày trước khi ẩn danh hóa vĩnh viễn).
+    /// </summary>
+    [HttpDelete("me")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    [ProducesResponseType(typeof(ApiResponse<DeleteCurrentUserResponseData>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> DeleteCurrentUser(
+        [FromBody] DeleteCurrentUserRequest? request,
+        CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+
+        var jti = User.FindFirstValue(JwtRegisteredClaimNames.Jti)
+                  ?? User.FindFirstValue("jti")
+                  ?? User.FindFirstValue("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/jwtid");
+
+        DateTime? expiryUtc = null;
+        var expClaim = User.FindFirstValue("exp");
+        if (long.TryParse(expClaim, out var expSeconds))
+        {
+            expiryUtc = DateTimeOffset.FromUnixTimeSeconds(expSeconds).UtcDateTime;
+        }
+
+        var result = await _profileService.DeleteCurrentUserAsync(
+            (int)CurrentUserId!.Value,
+            request ?? new DeleteCurrentUserRequest(),
+            jti,
+            expiryUtc,
+            ct);
+
+        Response.Cookies.Delete("refresh_token");
+
+        return OkResponse(result, "Tài khoản đã được vô hiệu hóa. Bạn có 30 ngày để khôi phục.");
     }
 
     /// <summary>
