@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeggieLife.BLL.Common.Constants;
@@ -261,7 +262,7 @@ public class AdminUserService : IAdminUserService
             }
         }
 
-        // 5. Ghi nhật ký kiểm toán AuditLogs (BR-ADM-SYS-002)
+        // 5. Ghi nhật ký kiểm toán AuditLogs (BR-ADM-SYS-002, ISJSON constraints)
         var auditLog = new AuditLog
         {
             ActorUserId = adminId,
@@ -269,8 +270,15 @@ public class AdminUserService : IAdminUserService
             Action = "USER_SANCTION",
             TargetTable = "Users",
             TargetId = targetUser.UserId.ToString(),
-            OldValue = oldValue,
-            NewValue = newStatus,
+            OldValue = JsonSerializer.Serialize(new { accountStatus = oldValue }),
+            NewValue = JsonSerializer.Serialize(new
+            {
+                accountStatus = newStatus,
+                action = normalizedAction,
+                lockedUntil = newLockedUntil,
+                durationDays = request.DurationDays,
+                reason = request.Reason
+            }),
             Note = $"[Hành động: {normalizedAction}] {request.Reason}",
             CreatedAt = DateTime.UtcNow
         };
