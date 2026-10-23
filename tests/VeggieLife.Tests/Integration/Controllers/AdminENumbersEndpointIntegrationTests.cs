@@ -162,7 +162,7 @@ public class AdminENumbersEndpointIntegrationTests : IClassFixture<WebApplicatio
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var envelope = await response.Content.ReadFromJsonAsync<ApiResponse<AdminENumberListItemDto>>();
         envelope.Should().NotBeNull();
-        envelope!.Data.Code.Should().Be("E120");
+        envelope!.Data!.Code.Should().Be("E120");
         envelope.Data.VeganStatus.Should().Be("NON_VEGAN");
     }
 
@@ -188,7 +188,7 @@ public class AdminENumbersEndpointIntegrationTests : IClassFixture<WebApplicatio
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var envelope = await response.Content.ReadFromJsonAsync<ApiResponse<CreateAdminENumberResponseData>>();
         envelope.Should().NotBeNull();
-        envelope!.Data.Code.Should().Be("E441");
+        envelope!.Data!.Code.Should().Be("E441");
 
         // Verify in DB
         using var scope = _factory.Services.CreateScope();
@@ -239,7 +239,7 @@ public class AdminENumbersEndpointIntegrationTests : IClassFixture<WebApplicatio
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var envelope = await response.Content.ReadFromJsonAsync<ApiResponse<UpdateAdminENumberResponseData>>();
         envelope.Should().NotBeNull();
-        envelope!.Data.Code.Should().Be("E120");
+        envelope!.Data!.Code.Should().Be("E120");
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();

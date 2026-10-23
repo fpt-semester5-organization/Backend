@@ -9250,7 +9250,7 @@ paths:
                   directionsUrl: https://www.google.com/maps/dir/?api=1&destination=10.7729,106.6983
                   openingHours:
                     mon: '08:00-21:00'
-                  source: HAPPYCOW
+                  source: GOONG
                   lastSyncedAt: '2026-10-01T00:00:00Z'
         '400':
           description: 'ERR_VALIDATION: Dữ liệu đầu vào không hợp lệ.'
@@ -11800,7 +11800,7 @@ paths:
       - ADM
       operationId: listAdminVenues
       summary: FN-ADM-14 Ẩn / hiện quán chay & đồng bộ nguồn
-      description: 'Quán chay chỉ được lấy từ Google Places và HappyCow và hiển thị trực tiếp; Admin chỉ ẩn hoặc hiện lại quán không phù hợp (sai
+      description: 'Quán chay chỉ được lấy từ Goong Places API và hiển thị trực tiếp; Admin chỉ ẩn hoặc hiện lại quán không phù hợp (sai
         địa chỉ, ngừng hoạt động, không phục vụ món chay) và kích hoạt đồng bộ nguồn dữ liệu (D92).
 
 
@@ -11822,9 +11822,8 @@ paths:
         schema:
           type: string
           enum:
-          - HAPPYCOW
-          - GOOGLE_PLACES
-        description: HAPPYCOW | GOOGLE_PLACES
+          - GOONG
+        description: GOONG
       - name: keyword
         in: query
         required: false
@@ -11862,7 +11861,7 @@ paths:
                 data:
                 - venueId: 301
                   name: Cơm chay Tâm An
-                  source: HAPPYCOW
+                  source: GOONG
                   isActive: false
                 meta: *id026
         '401':
@@ -11883,7 +11882,7 @@ paths:
       - ADM
       operationId: updateAdminVenue
       summary: FN-ADM-14 Ẩn / hiện quán chay & đồng bộ nguồn
-      description: 'Quán chay chỉ được lấy từ Google Places và HappyCow và hiển thị trực tiếp; Admin chỉ ẩn hoặc hiện lại quán không phù hợp (sai
+      description: 'Quán chay chỉ được lấy từ Goong Places API và hiển thị trực tiếp; Admin chỉ ẩn hoặc hiện lại quán không phù hợp (sai
         địa chỉ, ngừng hoạt động, không phục vụ món chay) và kích hoạt đồng bộ nguồn dữ liệu (D92).
 
 
@@ -11951,7 +11950,7 @@ paths:
       - ADM
       operationId: syncAdminVenues
       summary: FN-ADM-14 Ẩn / hiện quán chay & đồng bộ nguồn
-      description: 'Quán chay chỉ được lấy từ Google Places và HappyCow và hiển thị trực tiếp; Admin chỉ ẩn hoặc hiện lại quán không phù hợp (sai
+      description: 'Quán chay chỉ được lấy từ Goong Places API và hiển thị trực tiếp; Admin chỉ ẩn hoặc hiện lại quán không phù hợp (sai
         địa chỉ, ngừng hoạt động, không phục vụ món chay) và kích hoạt đồng bộ nguồn dữ liệu (D92).
 
 

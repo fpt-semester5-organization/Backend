@@ -103,8 +103,8 @@ public class AdminVenuesEndpointIntegrationTests : IClassFixture<WebApplicationF
         var venue1 = new VeganVenue
         {
             VenueId = 301,
-            ExternalSource = "HAPPYCOW",
-            ExternalPlaceId = "hc_301",
+            ExternalSource = "GOONG",
+            ExternalPlaceId = "goong_301",
             VenueName = "Cơm chay Tâm An",
             Address = "123 Cách Mạng Tháng Tám, Quận 3, TP.HCM",
             Latitude = 10.776m,
@@ -117,8 +117,8 @@ public class AdminVenuesEndpointIntegrationTests : IClassFixture<WebApplicationF
         var venue2 = new VeganVenue
         {
             VenueId = 302,
-            ExternalSource = "GOOGLE_PLACES",
-            ExternalPlaceId = "gp_302",
+            ExternalSource = "GOONG",
+            ExternalPlaceId = "goong_302",
             VenueName = "Ẩm Thực Chay Giác Ngộ",
             Address = "213 Hùng Vương, Quận 5, TP.HCM",
             Latitude = 10.758m,
@@ -221,7 +221,7 @@ public class AdminVenuesEndpointIntegrationTests : IClassFixture<WebApplicationF
         var activeVenue = body.Data.FirstOrDefault(v => v.VenueId == 301);
         activeVenue.Should().NotBeNull();
         activeVenue!.Name.Should().Be("Cơm chay Tâm An");
-        activeVenue.Source.Should().Be("HAPPYCOW");
+        activeVenue.Source.Should().Be("GOONG");
         activeVenue.IsActive.Should().BeTrue();
     }
 
@@ -242,12 +242,21 @@ public class AdminVenuesEndpointIntegrationTests : IClassFixture<WebApplicationF
     public async Task GetVenues_WithSourceFilter_ReturnsOnlyMatchingVenues()
     {
         var client = CreateAdminClient();
-        var response = await client.GetAsync("/api/v1/admin/venues?source=HAPPYCOW");
+        var response = await client.GetAsync("/api/v1/admin/venues?source=GOONG");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<ApiResponse<List<AdminVenueListItemDto>>>();
-        body!.Data.Should().ContainSingle();
-        body.Data[0].Source.Should().Be("HAPPYCOW");
+        body!.Data.Should().HaveCount(2);
+        body.Data.Should().AllSatisfy(v => v.Source.Should().Be("GOONG"));
+    }
+
+    [Fact]
+    public async Task GetVenues_WithInvalidSourceFilter_ReturnsBadRequest()
+    {
+        var client = CreateAdminClient();
+        var response = await client.GetAsync("/api/v1/admin/venues?source=MANUAL");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]

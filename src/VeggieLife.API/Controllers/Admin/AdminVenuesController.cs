@@ -64,7 +64,7 @@ public class AdminVenuesController : BaseApiController
     }
 
     /// <summary>
-    /// FN-ADM-14: Xếp job đồng bộ quán chay từ Google Places / HappyCow theo tỉnh/thành.
+    /// FN-ADM-14: Xếp job đồng bộ quán chay từ Goong API theo tỉnh/thành.
     /// </summary>
     [HttpPost("sync")]
     [ProducesResponseType(typeof(ApiResponse<SyncAdminVenuesResponseData>), StatusCodes.Status202Accepted)]

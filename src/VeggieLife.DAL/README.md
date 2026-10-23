@@ -67,8 +67,8 @@ VeggieLife.DAL/
 │   │   ├── SmtpSettings.cs           # Cấu hình Host, Port, User, Password, From, EnableSsl
 │   │   └── SmtpEmailException.cs     # Ngoại lệ chuẩn hóa khi lỗi kết nối mạng SMTP
 │   ├── Geo/                          # [.gitkeep] Sẽ tích hợp client tra cứu GeoIP (MaxMind)
-│   ├── Google/                       # [.gitkeep] Sẽ tích hợp Google OAuth & Google Places API
-│   ├── HappyCow/                     # [.gitkeep] Sẽ tích hợp dịch vụ tra cứu quán chay HappyCow
+│   ├── Google/                       # Client xác thực Google OAuth Token
+│   ├── Goong/                        # Client tra cứu địa điểm và đồng bộ quán chay từ Goong Maps API
 │   ├── OpenFoodFacts/                # [.gitkeep] Sẽ tích hợp dịch vụ tra cứu Barcode quốc tế
 │   └── Payments/                     # [.gitkeep] Sẽ tích hợp cổng thanh toán MoMo và VietQR
 ├── Repositories/                     # [.gitkeep] Thư mục dự phòng cho Generic Repository (Hiện tại BLL dùng trực tiếp AppDbContext)
@@ -131,8 +131,8 @@ VeggieLife.DAL/
    - **`AiService/`:** Chưa có `AiServiceClient` gọi HTTP REST / gRPC sang microservice `ai-service` (FastAPI) và `stt-service` (Cloud Run) kèm chính sách ngắt mạch dự phòng Polly (Circuit Breaker).
    - **`Email/`:** **Đã hoàn thành `SmtpEmailClient`** tích hợp giao thức SMTP (hỗ trợ TLS/SSL, mẫu email HTML thương hiệu VeggieLife và dự phòng kiểm thử).
    - **`Geo/`:** Chưa có `IpGeolocationClient` tra cứu tọa độ và mã quốc gia IP thực tế từ cơ sở dữ liệu MaxMind GeoLite2 hoặc ip-api.com.
-   - **`Google/`:** Chưa có client xác thực Google OAuth Token và client gọi Google Places API để tìm kiếm địa điểm quán ăn chay.
-   - **`HappyCow/`:** Chưa có client cào dữ liệu hoặc tích hợp với HappyCow API để làm phong phú dữ liệu nhà hàng chay.
+   - **`Google/`:** Client xác thực Google OAuth Token.
+   - **`Goong/`:** Đã triển khai client gọi Goong Maps API để tra cứu và đồng bộ địa điểm quán ăn chay.
    - **`OpenFoodFacts/`:** Chưa có client gọi API OpenFoodFacts để truy xuất thông tin sản phẩm khi quét barcode chưa có trong CSDL cục bộ.
    - **`Payments/`:** Chưa có `MoMoPaymentClient` và `VietQrPaymentClient` để tạo đơn thanh toán trực tuyến và ký số bảo mật HMAC-SHA256.
 3. **Tối ưu Hóa Chỉ Mục CSDL (Database Indexing & Full-Text Search):**
