@@ -199,7 +199,6 @@ public class PostsController : BaseApiController
     /// <returns>Danh sách bình luận dạng cây kèm metadata phân trang.</returns>
     [HttpGet("{id:int}/comments")]
     [AllowAnonymous]
-    [Tags("INT")]
     [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<CommentDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
@@ -229,7 +228,6 @@ public class PostsController : BaseApiController
     /// <returns>Dữ liệu bình luận vừa tạo.</returns>
     [HttpPost("{id:int}/comments")]
     [Authorize(Policy = PolicyNames.RequireMember)]
-    [Tags("INT")]
     [ProducesResponseType(typeof(ApiResponse<CommentDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]

@@ -33,7 +33,6 @@ public class AdminUsersController : BaseApiController
     /// FN-ADM-01: Tra cứu, tìm kiếm, lọc và phân trang danh sách người dùng trong hệ thống.
     /// </summary>
     [HttpGet]
-    [EndpointSummary("Tra cứu danh sách người dùng")]
     [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<AdminUserListItemDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
@@ -52,7 +51,6 @@ public class AdminUsersController : BaseApiController
     /// FN-ADM-02: Cập nhật trạng thái và áp dụng chế tài kỷ luật tài khoản người dùng theo thang lũy tiến.
     /// </summary>
     [HttpPut("{id:int}/status")]
-    [EndpointSummary("Đổi trạng thái và kỷ luật tài khoản người dùng")]
     [ProducesResponseType(typeof(ApiResponse<UpdateAdminUserStatusResponseData>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
@@ -73,7 +71,6 @@ public class AdminUsersController : BaseApiController
     /// FN-ADM-03: Xem tổng hợp các nội dung đã tạo và lịch sử báo cáo vi phạm của người dùng.
     /// </summary>
     [HttpGet("{id:int}/contents")]
-    [EndpointSummary("Xem nội dung và lịch sử vi phạm của người dùng")]
     [ProducesResponseType(typeof(ApiResponse<AdminUserContentsResponseData>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
