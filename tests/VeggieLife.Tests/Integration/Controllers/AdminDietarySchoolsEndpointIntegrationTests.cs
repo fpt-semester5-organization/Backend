@@ -180,7 +180,7 @@ public class AdminDietarySchoolsEndpointIntegrationTests : IClassFixture<WebAppl
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var envelope = await response.Content.ReadFromJsonAsync<ApiResponse<UpdateAdminDietarySchoolResponseData>>();
-        envelope!.Data.DietarySchoolId.Should().Be(1);
+        envelope!.Data!.DietarySchoolId.Should().Be(1);
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();

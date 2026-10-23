@@ -13,8 +13,7 @@ public static class AdminVenueValidator
 {
     private static readonly string[] ValidSources =
     {
-        "HAPPYCOW",
-        "GOOGLE_PLACES"
+        "GOONG"
     };
 
     public static void ValidateFilter(AdminVenueFilterRequest filter)
@@ -39,7 +38,7 @@ public static class AdminVenueValidator
         {
             throw AppException.BadRequest(
                 ErrorCodes.ErrValidation,
-                "Nguồn dữ liệu không hợp lệ (chấp nhận: HAPPYCOW, GOOGLE_PLACES).");
+                "Nguồn dữ liệu không hợp lệ (chấp nhận: GOONG).");
         }
     }
 

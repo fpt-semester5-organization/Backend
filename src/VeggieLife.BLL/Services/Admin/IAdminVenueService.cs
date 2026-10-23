@@ -28,7 +28,7 @@ public interface IAdminVenueService
         CancellationToken ct = default);
 
     /// <summary>
-    /// Kích hoạt xếp job đồng bộ dữ liệu quán chay từ HappyCow / Google Places (không đồng bộ thực đơn, D100).
+    /// Kích hoạt xếp job đồng bộ dữ liệu quán chay từ Goong API (không đồng bộ thực đơn, D100).
     /// </summary>
     Task<SyncAdminVenuesResponseData> SyncVenuesAsync(
         SyncAdminVenuesRequest request,
