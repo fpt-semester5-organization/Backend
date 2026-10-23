@@ -14,7 +14,7 @@ using VeggieLife.BLL.Services.Admin;
 namespace VeggieLife.API.Controllers.Admin;
 
 /// <summary>
-/// API Controller quản trị quán chay & đồng bộ nguồn bên ngoài (FN-ADM-14).
+/// API Controller quản trị quán chay và đồng bộ nguồn bên ngoài (FN-ADM-14).
 /// </summary>
 [Route("api/v1/admin/venues")]
 [Authorize(Policy = PolicyNames.RequireAdmin)]

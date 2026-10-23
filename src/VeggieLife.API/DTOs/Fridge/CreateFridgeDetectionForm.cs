@@ -9,7 +9,7 @@ namespace VeggieLife.API.DTOs.Fridge;
 public class CreateFridgeDetectionForm
 {
     /// <summary>
-    /// Tệp ảnh JPEG, PNG hoặc WEBP (độ phân giải >= 640x480, dung lượng <= 10 MB).
+    /// Tệp ảnh JPEG, PNG hoặc WEBP (độ phân giải tối thiểu 640x480, dung lượng tối đa 10 MB).
     /// </summary>
     [Required(ErrorMessage = "Vui lòng tải lên tệp hình ảnh tủ lạnh.")]
     public IFormFile Image { get; set; } = null!;

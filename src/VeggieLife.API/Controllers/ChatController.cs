@@ -72,7 +72,7 @@ public class ChatController : BaseApiController
     }
 
     /// <summary>
-    /// FN-CHAT-02: Gửi câu hỏi & nhận tư vấn dinh dưỡng kèm nguồn tham khảo và lời miễn trừ y khoa.
+    /// FN-CHAT-02: Gửi câu hỏi và nhận tư vấn dinh dưỡng kèm nguồn tham khảo và lời miễn trừ y khoa.
     /// Auth: Bearer (GUEST | MEMBER | VIP)
     /// </summary>
     [HttpPost("sessions/{id:long}/messages")]

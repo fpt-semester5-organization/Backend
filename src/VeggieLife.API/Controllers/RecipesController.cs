@@ -47,7 +47,7 @@ public class RecipesController : BaseApiController
     }
 
     /// <summary>
-    /// Tìm kiếm & lọc công thức, video công khai.
+    /// Tìm kiếm và lọc công thức, video công khai.
     /// Tra cứu công thức/video đã được duyệt (APPROVED_ACTIVE) theo từ khóa, danh mục, trường phái, nguyên liệu, thời gian nấu; có phân trang.
     /// Dùng chung cho Khách và Thành viên (D18). Không trừ hạn mức.
     /// </summary>
@@ -73,7 +73,7 @@ public class RecipesController : BaseApiController
     /// Xem chi tiết công thức.
     /// Trả chi tiết công thức đã duyệt: nguyên liệu có định lượng, các bước nấu, dinh dưỡng, video liên quan; hiển thị đầy đủ cho Khách (không làm mờ). Tăng View_Count.
     /// </summary>
-    /// <param name="id">Mã định danh công thức (> 0).</param>
+    /// <param name="id">Mã định danh công thức (lớn hơn 0).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Chi tiết công thức nấu ăn.</returns>
     [HttpGet("{id:int}")]
@@ -97,7 +97,7 @@ public class RecipesController : BaseApiController
     /// Gợi ý công thức tương đồng (cùng trường phái, chung nguyên liệu chính, nhiều lượt thả tim) và bài viết/video liên quan.
     /// Dùng chung cho Khách vãng lai và Thành viên (GUEST | MEMBER | VIP).
     /// </summary>
-    /// <param name="id">Mã định danh công thức (> 0).</param>
+    /// <param name="id">Mã định danh công thức (lớn hơn 0).</param>
     /// <param name="limit">Số lượng gợi ý (1–10, mặc định 6).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Danh sách công thức, bài viết và video liên quan.</returns>
@@ -157,7 +157,7 @@ public class RecipesController : BaseApiController
     /// Đối với công thức đã duyệt (APPROVED_ACTIVE), nếu thay đổi nội dung sẽ được kiểm duyệt AI đồng bộ trước khi ghi (D107).
     /// Nếu không qua kiểm duyệt, bản đang đăng được giữ nguyên và trả mã lỗi 422.
     /// </summary>
-    /// <param name="id">Mã định danh công thức (> 0).</param>
+    /// <param name="id">Mã định danh công thức (lớn hơn 0).</param>
     /// <param name="request">Payload thông tin cập nhật.</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Mã công thức và trạng thái sau khi cập nhật.</returns>
@@ -184,7 +184,7 @@ public class RecipesController : BaseApiController
     /// <summary>
     /// Gỡ công thức khỏi trang cá nhân (mode=archive) hoặc xóa mềm toàn hệ thống (mode=all).
     /// </summary>
-    /// <param name="id">Mã định danh công thức (> 0).</param>
+    /// <param name="id">Mã định danh công thức (lớn hơn 0).</param>
     /// <param name="mode">Chế độ gỡ/xóa: 'archive' (mặc định) hoặc 'all'.</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Phản hồi mã công thức và trạng thái sau khi gỡ/xóa.</returns>
@@ -209,7 +209,7 @@ public class RecipesController : BaseApiController
     /// <summary>
     /// Thả tim hoặc bỏ tim cho công thức nấu ăn (mỗi thành viên tối đa 1 tim, thả lần 2 = bỏ tim).
     /// </summary>
-    /// <param name="id">Mã định danh công thức (> 0).</param>
+    /// <param name="id">Mã định danh công thức (lớn hơn 0).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Trạng thái voted và tổng số vote mới nhất của công thức.</returns>
     [HttpPost("{id:int}/votes")]
@@ -240,8 +240,8 @@ public class RecipesController : BaseApiController
     /// Danh sách bình luận dạng cây (tối đa 2 cấp hiển thị) của công thức; chỉ bình luận ACTIVE và chưa xóa mềm.
     /// Khách chỉ đọc.
     /// </summary>
-    /// <param name="id">Mã công thức (> 0).</param>
-    /// <param name="page">Số trang (>= 1, mặc định 1).</param>
+    /// <param name="id">Mã công thức (lớn hơn 0).</param>
+    /// <param name="page">Số trang (tối thiểu 1, mặc định 1).</param>
     /// <param name="size">Kích thước trang (1–50, mặc định 20).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Danh sách bình luận dạng cây kèm metadata phân trang.</returns>
@@ -271,7 +271,7 @@ public class RecipesController : BaseApiController
     /// FN-COMM-02: Bình luận hoặc trả lời bình luận trên công thức nấu ăn.
     /// Thành viên bình luận hoặc trả lời một bình luận trên công thức đã duyệt; bình luận được AI quét trước khi hiển thị.
     /// </summary>
-    /// <param name="id">Mã công thức (> 0).</param>
+    /// <param name="id">Mã công thức (lớn hơn 0).</param>
     /// <param name="request">Payload nội dung bình luận (2–500 ký tự) và mã bình luận cha (nếu có).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Dữ liệu bình luận vừa tạo.</returns>
@@ -368,7 +368,7 @@ public class RecipesController : BaseApiController
     /// Khách vãng lai: bán kính 5 km, trừ 1 lượt tìm kiếm (BR-GUEST-03).
     /// Thành viên: bán kính 10 km (BR-USR-11).
     /// </summary>
-    /// <param name="id">Mã định danh công thức (> 0).</param>
+    /// <param name="id">Mã định danh công thức (lớn hơn 0).</param>
     /// <param name="lat">Vĩ độ hiện tại (-90..90).</param>
     /// <param name="lng">Kinh độ hiện tại (-180..180).</param>
     /// <param name="limit">Số lượng quán gợi ý (1..5, mặc định 5).</param>
