@@ -33,7 +33,7 @@ public class UsersController : BaseApiController
     }
 
     /// <summary>
-    /// FN-PROF-01: Xem thông tin cá nhân, chỉ số sức khỏe & danh sách dị ứng của tài khoản hiện tại.
+    /// FN-PROF-01: Xem thông tin cá nhân, chỉ số sức khỏe và danh sách dị ứng của tài khoản hiện tại.
     /// </summary>
     [HttpGet("me")]
     [Authorize(Policy = PolicyNames.RequireMember)]
@@ -57,7 +57,7 @@ public class UsersController : BaseApiController
     }
 
     /// <summary>
-    /// FN-PROF-04: Thiết lập / cập nhật hồ sơ sức khỏe & dinh dưỡng.
+    /// FN-PROF-04: Thiết lập / cập nhật hồ sơ sức khỏe và dinh dưỡng.
     /// Tự tính toán chỉ số BMI/BMR/TDEE/Calo mục tiêu và ghi nhận lịch sử cân nặng.
     /// </summary>
     [HttpPut("me/health-profile")]

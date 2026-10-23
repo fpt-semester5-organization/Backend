@@ -30,7 +30,7 @@ public class CommentsController : BaseApiController
     /// FN-COMM-03: Sửa nội dung bình luận của mình.
     /// Tác giả sửa nội dung bình luận; nội dung được AI quét lại trước khi cập nhật.
     /// </summary>
-    /// <param name="id">Mã định danh bình luận (> 0).</param>
+    /// <param name="id">Mã định danh bình luận (lớn hơn 0).</param>
     /// <param name="request">Payload nội dung mới (2–500 ký tự).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Dữ liệu bình luận sau khi cập nhật.</returns>
@@ -59,7 +59,7 @@ public class CommentsController : BaseApiController
     /// FN-COMM-03: Xóa mềm bình luận của mình.
     /// Tác giả xóa mềm bình luận của mình; kéo theo ẩn toàn bộ cây phản hồi con (Cascade Soft-Delete - BR-ADM-CMT-001).
     /// </summary>
-    /// <param name="id">Mã định danh bình luận (> 0).</param>
+    /// <param name="id">Mã định danh bình luận (lớn hơn 0).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Số lượng bình luận phản hồi con bị ẩn kèm theo.</returns>
     [HttpDelete("{id:int}")]

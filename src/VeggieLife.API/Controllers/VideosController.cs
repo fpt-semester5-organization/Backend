@@ -32,7 +32,7 @@ public class VideosController : BaseApiController
     /// </summary>
     /// <param name="file">Tệp đa phương tiện (MP4/MOV ≤ 100 MB hoặc ảnh JPEG/PNG/WEBP ≤ 5 MB).</param>
     /// <param name="postId">Mã định danh bài viết đích (cung cấp đúng 1 trong postId hoặc recipeId).</param>
-    /// <param name="recipeId">Mã định danh công thức đích (cung cấp đúng 1 trong postId hoặc recipeId, > 0).</param>
+    /// <param name="recipeId">Mã định danh công thức đích (cung cấp đúng 1 trong postId hoặc recipeId, lớn hơn 0).</param>
     /// <param name="title">Tiêu đề video (tùy chọn, tối đa 150 ký tự).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>HTTP 202 Accepted: { videoId, status: "PROCESSING" }.</returns>
@@ -81,11 +81,11 @@ public class VideosController : BaseApiController
     }
 
     /// <summary>
-    /// FN-POST-09: Xem bản phiên âm & công thức của video.
+    /// FN-POST-09: Xem bản phiên âm và công thức của video.
     /// Trả bản phiên âm (Speech-to-Text) và công thức đã trích xuất sẵn của video công khai.
     /// Khách bị trừ 1 trong 03 lượt AI dùng thử; Thành viên không giới hạn; người xem không kích hoạt bóc tách lại.
     /// </summary>
-    /// <param name="id">Mã video (> 0).</param>
+    /// <param name="id">Mã video (lớn hơn 0).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Bản phiên âm thô, công thức bóc tách và thông tin hạn mức (cho Khách).</returns>
     [HttpGet("{id:int}/transcript")]
@@ -114,7 +114,7 @@ public class VideosController : BaseApiController
     /// FN-POST-12: Lấy thông tin chi tiết siêu dữ liệu của video độc lập.
     /// Cho phép trang VideoPlayer (SCR-21) phát video trực tiếp qua /videos/:id mà không cần query param ?postId=.
     /// </summary>
-    /// <param name="id">Mã định danh video (> 0).</param>
+    /// <param name="id">Mã định danh video (lớn hơn 0).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>HTTP 200 OK: Thông tin chi tiết video, URL đa phương tiện và thông tin tác giả.</returns>
     [HttpGet("{id:int}")]
@@ -135,7 +135,7 @@ public class VideosController : BaseApiController
     /// FN-POST-10: Bóc tách công thức từ video (Whisper + Gemini).
     /// Tác vụ ngầm chạy một lần cho mỗi video do tác giả đăng: trích âm thanh → Whisper STT → bản phiên âm thô → Gemini định dạng công thức → tạo Recipes nháp.
     /// </summary>
-    /// <param name="id">Mã video của chính tác giả (> 0).</param>
+    /// <param name="id">Mã video của chính tác giả (lớn hơn 0).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>HTTP 202 Accepted: { videoId, transcriptStatus: "PENDING" }.</returns>
     [HttpPost("{id:int}/extract-recipe")]

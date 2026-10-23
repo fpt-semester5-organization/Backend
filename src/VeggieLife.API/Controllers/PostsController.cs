@@ -41,7 +41,7 @@ public class PostsController : BaseApiController
     }
 
     /// <summary>
-    /// Tìm kiếm & xem danh sách bài viết.
+    /// Tìm kiếm và xem danh sách bài viết.
     /// Danh sách bài viết chia sẻ (blog) đã duyệt, lọc theo từ khóa và tác giả, sắp xếp mới nhất/phổ biến, phân trang.
     /// Thành viên xem thêm bài PRIVATE của chính mình.
     /// </summary>
@@ -68,7 +68,7 @@ public class PostsController : BaseApiController
     /// Xem chi tiết bài viết.
     /// Trả nội dung đầy đủ bài viết, ảnh, video đính kèm và công thức đính kèm (nếu có); tăng View_Count.
     /// </summary>
-    /// <param name="id">Mã định danh bài viết (> 0).</param>
+    /// <param name="id">Mã định danh bài viết (lớn hơn 0).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Chi tiết bài viết gồm nội dung, ảnh, video, công thức đính kèm và quyền tương tác.</returns>
     [HttpGet("{id:int}")]
@@ -113,7 +113,7 @@ public class PostsController : BaseApiController
     /// <summary>
     /// Sửa bài viết của mình, gỡ khỏi cộng đồng (chuyển PRIVATE) hoặc gửi duyệt lại.
     /// </summary>
-    /// <param name="id">Mã định danh bài viết (> 0).</param>
+    /// <param name="id">Mã định danh bài viết (lớn hơn 0).</param>
     /// <param name="request">Payload thông tin cập nhật.</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Mã bài viết và trạng thái kiểm duyệt sau cập nhật.</returns>
@@ -138,7 +138,7 @@ public class PostsController : BaseApiController
     /// <summary>
     /// Xóa mềm bài viết của mình (chuyển sang trạng thái DELETED).
     /// </summary>
-    /// <param name="id">Mã định danh bài viết (> 0).</param>
+    /// <param name="id">Mã định danh bài viết (lớn hơn 0).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Phản hồi thành công không kèm payload.</returns>
     [HttpDelete("{id:int}")]
@@ -161,7 +161,7 @@ public class PostsController : BaseApiController
     /// <summary>
     /// Thả tim hoặc bỏ tim cho bài viết (mỗi thành viên tối đa 1 tim, thả lần 2 = bỏ tim).
     /// </summary>
-    /// <param name="id">Mã định danh bài viết (> 0).</param>
+    /// <param name="id">Mã định danh bài viết (lớn hơn 0).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Trạng thái voted và tổng số vote mới nhất của bài viết.</returns>
     [HttpPost("{id:int}/votes")]
@@ -192,8 +192,8 @@ public class PostsController : BaseApiController
     /// Danh sách bình luận dạng cây (tối đa 2 cấp hiển thị) của bài viết; chỉ bình luận ACTIVE và chưa xóa mềm.
     /// Khách chỉ đọc.
     /// </summary>
-    /// <param name="id">Mã bài viết (> 0).</param>
-    /// <param name="page">Số trang (>= 1, mặc định 1).</param>
+    /// <param name="id">Mã bài viết (lớn hơn 0).</param>
+    /// <param name="page">Số trang (tối thiểu 1, mặc định 1).</param>
     /// <param name="size">Kích thước trang (1–50, mặc định 20).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Danh sách bình luận dạng cây kèm metadata phân trang.</returns>
@@ -223,7 +223,7 @@ public class PostsController : BaseApiController
     /// FN-COMM-02: Bình luận hoặc trả lời bình luận trên bài viết.
     /// Thành viên bình luận hoặc trả lời một bình luận trên bài viết đã duyệt; bình luận được AI quét trước khi hiển thị.
     /// </summary>
-    /// <param name="id">Mã bài viết (> 0).</param>
+    /// <param name="id">Mã bài viết (lớn hơn 0).</param>
     /// <param name="request">Payload nội dung bình luận (2–500 ký tự) và mã bình luận cha (nếu có).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Dữ liệu bình luận vừa tạo.</returns>

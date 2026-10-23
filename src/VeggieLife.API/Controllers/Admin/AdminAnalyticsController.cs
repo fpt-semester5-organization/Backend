@@ -30,7 +30,7 @@ public class AdminAnalyticsController : BaseApiController
     }
 
     /// <summary>
-    /// FN-ADM-18: Thống kê tổng quan nền tảng (người dùng, nội dung, VIP & doanh thu, hàng đợi duyệt, chi phí AI).
+    /// FN-ADM-18: Thống kê tổng quan nền tảng (người dùng, nội dung, VIP và doanh thu, hàng đợi duyệt, chi phí AI).
     /// </summary>
     [HttpGet("overview")]
     [EndpointSummary("Thống kê tổng quan nền tảng")]

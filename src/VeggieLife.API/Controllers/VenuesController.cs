@@ -75,7 +75,7 @@ public class VenuesController : BaseApiController
     /// Hỗ trợ cả Khách (GUEST) và Thành viên (MEMBER/VIP).
     /// Quán bị ẩn trả về 404 ERR_VENUE_NOT_FOUND (BR-ADM-MAP-001).
     /// </summary>
-    /// <param name="id">Mã định danh quán ăn (> 0).</param>
+    /// <param name="id">Mã định danh quán ăn (lớn hơn 0).</param>
     /// <param name="lat">Vĩ độ hiện tại của người dùng (tùy chọn, để tính khoảng cách).</param>
     /// <param name="lng">Kinh độ hiện tại của người dùng (tùy chọn, để tính khoảng cách).</param>
     /// <param name="ct">CancellationToken.</param>

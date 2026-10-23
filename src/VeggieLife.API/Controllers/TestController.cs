@@ -19,7 +19,7 @@ using VeggieLife.DAL.Entities;
 namespace VeggieLife.API.Controllers;
 
 /// <summary>
-/// Controller kiểm thử các thành phần khung nền tảng: Chuẩn phản hồi, Mã lỗi, Phân quyền, JWT, Redis, Health & Interface Stubs.
+/// Controller kiểm thử các thành phần khung nền tảng: Chuẩn phản hồi, Mã lỗi, Phân quyền, JWT, Redis, Health và Interface Stubs.
 /// Chỉ kích hoạt trong môi trường Development nội bộ; ẩn khỏi tài liệu Swagger công khai.
 /// </summary>
 [ApiExplorerSettings(IgnoreApi = true)]
