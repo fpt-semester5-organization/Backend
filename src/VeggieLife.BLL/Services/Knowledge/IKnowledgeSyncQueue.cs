@@ -14,7 +14,17 @@ public interface IKnowledgeSyncQueue
     Task EnqueueUpsertAsync(string contentType, int contentId, CancellationToken ct = default);
 
     /// <summary>
+    /// Đưa yêu cầu nạp hoặc cập nhật vector embedding của nội dung công khai (mã định danh dạng chuỗi như E-number) vào hàng đợi xử lý nền.
+    /// </summary>
+    Task EnqueueUpsertAsync(string contentType, string sourceId, CancellationToken ct = default);
+
+    /// <summary>
     /// Đưa yêu cầu xóa vector embedding của nội dung khỏi kho tri thức vào hàng đợi xử lý nền khi bài viết/công thức bị gỡ hoặc xóa.
     /// </summary>
     Task EnqueueDeleteAsync(string contentType, int contentId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Đưa yêu cầu xóa vector embedding của nội dung khỏi kho tri thức vào hàng đợi xử lý nền (mã định danh dạng chuỗi).
+    /// </summary>
+    Task EnqueueDeleteAsync(string contentType, string sourceId, CancellationToken ct = default);
 }
