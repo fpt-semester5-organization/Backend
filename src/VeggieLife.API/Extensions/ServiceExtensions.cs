@@ -347,7 +347,7 @@ public static class ServiceExtensions
         services.AddScoped<IProfileService, ProfileService>();
         services.AddScoped<IMasterDataService, MasterDataService>();
 
-        // Dịch vụ Quản trị hệ thống (FN-ADM-01, FN-ADM-02, FN-ADM-03, FN-ADM-04, FN-ADM-05, FN-ADM-06, FN-ADM-07, FN-ADM-08, FN-ADM-09, FN-ADM-12, FN-ADM-14)
+        // Dịch vụ Quản trị hệ thống (FN-ADM-01, FN-ADM-02, FN-ADM-03, FN-ADM-04, FN-ADM-05, FN-ADM-06, FN-ADM-07, FN-ADM-08, FN-ADM-09, FN-ADM-10, FN-ADM-11, FN-ADM-12, FN-ADM-13, FN-ADM-14)
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminUserService, VeggieLife.BLL.Services.Admin.AdminUserService>();
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminCategoryService, VeggieLife.BLL.Services.Admin.AdminCategoryService>();
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminRecipeService, VeggieLife.BLL.Services.Admin.AdminRecipeService>();
@@ -355,6 +355,8 @@ public static class ServiceExtensions
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminVenueService, VeggieLife.BLL.Services.Admin.AdminVenueService>();
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminModerationService, VeggieLife.BLL.Services.Admin.AdminModerationService>();
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminSubscriptionService, VeggieLife.BLL.Services.Admin.AdminSubscriptionService>();
+        services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminDietarySchoolService, VeggieLife.BLL.Services.Admin.AdminDietarySchoolService>();
+        services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminENumberService, VeggieLife.BLL.Services.Admin.AdminENumberService>();
 
         // Cấu hình & Dịch vụ tra cứu mã vạch Open Food Facts (FN-BAR-01, FN-BAR-02)
         services.Configure<OpenFoodFactsSettings>(configuration.GetSection(OpenFoodFactsSettings.SectionName));
