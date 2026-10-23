@@ -246,7 +246,7 @@ public static class ServiceExtensions
             {
                 Title = "VeggieLife API",
                 Version = "v1",
-                Description = "Hệ sinh thái hỗ trợ lối sống thuần chay và dinh dưỡng cá nhân hóa VeggieLife - Backend API",
+                Description = "VeggieLife RESTful API Services",
                 Contact = new OpenApiContact
                 {
                     Name = "VeggieLife Dev Team",
@@ -254,11 +254,11 @@ public static class ServiceExtensions
                 }
             });
 
-            // Cấu hình nút Authorize trên giao diện Swagger
+            // Configure JWT Bearer Authorization in Swagger UI
             options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
             {
                 Name = "Authorization",
-                Description = "Nhập token JWT theo định dạng: Bearer {token}",
+                Description = "JWT Authorization header using the Bearer scheme. Example: Bearer {token}",
                 In = ParameterLocation.Header,
                 Type = SecuritySchemeType.Http,
                 Scheme = "Bearer",
@@ -279,13 +279,6 @@ public static class ServiceExtensions
                     Array.Empty<string>()
                 }
             });
-
-            var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
-            var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
-            if (File.Exists(xmlPath))
-            {
-                options.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
-            }
         });
 
         return services;

@@ -36,7 +36,6 @@ public class CommentsController : BaseApiController
     /// <returns>Dữ liệu bình luận sau khi cập nhật.</returns>
     [HttpPut("{id:int}")]
     [Authorize(Policy = PolicyNames.RequireMember)]
-    [Tags("INT")]
     [ProducesResponseType(typeof(ApiResponse<CommentDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
@@ -64,7 +63,6 @@ public class CommentsController : BaseApiController
     /// <returns>Số lượng bình luận phản hồi con bị ẩn kèm theo.</returns>
     [HttpDelete("{id:int}")]
     [Authorize(Policy = PolicyNames.RequireMember)]
-    [Tags("INT")]
     [ProducesResponseType(typeof(ApiResponse<DeleteCommentResponseData>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]

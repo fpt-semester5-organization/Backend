@@ -34,7 +34,6 @@ public class AdminAuditLogsController : BaseApiController
     /// FN-ADM-17: Tra cứu nhật ký kiểm toán theo tác nhân, hành động, bảng đối tượng và khoảng thời gian.
     /// </summary>
     [HttpGet]
-    [EndpointSummary("Tra cứu nhật ký kiểm toán")]
     [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<AdminAuditLogListItemDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]

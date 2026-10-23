@@ -33,7 +33,6 @@ public class AdminAnalyticsController : BaseApiController
     /// FN-ADM-18: Thống kê tổng quan nền tảng (người dùng, nội dung, VIP và doanh thu, hàng đợi duyệt, chi phí AI).
     /// </summary>
     [HttpGet("overview")]
-    [EndpointSummary("Thống kê tổng quan nền tảng")]
     [ProducesResponseType(typeof(ApiResponse<AdminAnalyticsOverviewResponseData>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
