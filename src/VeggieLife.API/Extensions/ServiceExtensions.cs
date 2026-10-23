@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.OpenApi.Models;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Responses;
@@ -461,6 +462,21 @@ public static class ServiceExtensions
         // Dịch vụ & Job nền ẩn danh hóa tài khoản xóa mềm quá hạn 30 ngày (FN-PROF-07, BR-ADM-USR-003, BR-ADM-USR-004, task S7-K7)
         services.AddScoped<VeggieLife.BLL.Services.AccountAnonymization.IAccountAnonymizeService, VeggieLife.BLL.Services.AccountAnonymization.AccountAnonymizeService>();
         services.AddHostedService<VeggieLife.API.BackgroundJobs.AccountAnonymizeJob>();
+
+        // Cấu hình TimeProvider hệ thống mặc định (hỗ trợ mock/đồng hồ giả trong kiểm thử)
+        services.TryAddSingleton(TimeProvider.System);
+
+        // 1. Quét đơn thanh toán chờ quá 5 phút sang hết hạn (FN-SUB-02, BR-PAY-TXN-01, task S7-H4)
+        services.AddScoped<VeggieLife.BLL.Services.Subscriptions.IPaymentExpiryService, VeggieLife.BLL.Services.Subscriptions.PaymentExpiryService>();
+        services.AddHostedService<VeggieLife.API.BackgroundJobs.PaymentExpiryJob>();
+
+        // 2. Hạ thành viên VIP đã hết hạn về thành viên thường (FN-SUB-04, BR-PAY-SUB-02, task S7-H4)
+        services.AddScoped<VeggieLife.BLL.Services.Subscriptions.IVipExpiryService, VeggieLife.BLL.Services.Subscriptions.VipExpiryService>();
+        services.AddHostedService<VeggieLife.API.BackgroundJobs.VipExpiryJob>();
+
+        // 3. Đánh giá chất lượng AI và cảnh báo suy thoái mô hình (FN-CHAT-06, BR-ADM-AI-004, task S7-H4)
+        services.AddScoped<VeggieLife.BLL.Services.AI.IModelDriftAlertService, VeggieLife.BLL.Services.AI.ModelDriftAlertService>();
+        services.AddHostedService<VeggieLife.API.BackgroundJobs.ModelDriftJob>();
 
         return services;
     }
