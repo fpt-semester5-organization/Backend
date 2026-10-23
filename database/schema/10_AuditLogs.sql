@@ -32,6 +32,8 @@ BEGIN
 
     CREATE NONCLUSTERED INDEX [IX_AuditLogs_Actor_User_ID] ON [dbo].[AuditLogs]([Actor_User_ID] ASC);
     CREATE NONCLUSTERED INDEX [IX_AuditLogs_Target] ON [dbo].[AuditLogs]([Target_Table] ASC, [Target_ID] ASC);
+    CREATE NONCLUSTERED INDEX [IX_AuditLogs_Created_At] ON [dbo].[AuditLogs]([Created_At] DESC);
+    CREATE NONCLUSTERED INDEX [IX_AuditLogs_Action] ON [dbo].[AuditLogs]([Action] ASC);
 
     IF OBJECT_ID(N'[dbo].[Users]', N'U') IS NOT NULL
     BEGIN

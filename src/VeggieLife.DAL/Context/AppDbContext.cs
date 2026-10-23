@@ -152,6 +152,10 @@ public partial class AppDbContext : DbContext
 
             entity.HasIndex(e => new { e.TargetTable, e.TargetId }, "IX_AuditLogs_Target");
 
+            entity.HasIndex(e => e.CreatedAt, "IX_AuditLogs_Created_At");
+
+            entity.HasIndex(e => e.Action, "IX_AuditLogs_Action");
+
             entity.Property(e => e.AuditId).HasColumnName("Audit_ID");
             entity.Property(e => e.Action)
                 .HasMaxLength(50)
