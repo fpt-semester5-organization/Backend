@@ -532,8 +532,8 @@ BEGIN
         (1, 'ADMIN', 'APPROVE_RECIPE', 'Recipes', '103', N'{"status":"PENDING_REVIEW"}', N'{"status":"APPROVED_ACTIVE"}', N'Phê duyệt công thức Mì xào nấm rau củ giòn ngọt', DATEADD(DAY, -46, SYSDATETIME())),
         (1, 'ADMIN', 'APPROVE_RECIPE', 'Recipes', '104', N'{"status":"PENDING_REVIEW"}', N'{"status":"APPROVED_ACTIVE"}', N'Phê duyệt món Cà tím nướng mỡ hành sốt tương', DATEADD(DAY, -45, SYSDATETIME())),
         (1, 'ADMIN', 'APPROVE_RECIPE', 'Recipes', '105', N'{"status":"PENDING_REVIEW"}', N'{"status":"APPROVED_ACTIVE"}', N'Phê duyệt món Đậu hũ non sốt nấm đông cô', DATEADD(DAY, -44, SYSDATETIME())),
-        (1, 'ADMIN', 'APPROVE_VENUE', 'VeganVenues', '101', N'{"isVerified":false}', N'{"isVerified":true}', N'Xác thực nhà hàng chay Kashew Cheese', DATEADD(DAY, -43, SYSDATETIME())),
-        (1, 'ADMIN', 'APPROVE_VENUE', 'VeganVenues', '102', N'{"isVerified":false}', N'{"isVerified":true}', N'Xác thực nhà hàng chay Pi Vegetarian Bistro', DATEADD(DAY, -42, SYSDATETIME())),
+        (1, 'ADMIN', 'APPROVE_VENUE', 'VeganVenues', '7', N'{"isVerified":false}', N'{"isVerified":true}', N'Xác thực nhà hàng chay Ý Basilico', DATEADD(DAY, -43, SYSDATETIME())),
+        (1, 'ADMIN', 'APPROVE_VENUE', 'VeganVenues', '9', N'{"isVerified":false}', N'{"isVerified":true}', N'Xác thực nhà hàng chay Lẩu Chay Nấm Rơm Nam Bộ', DATEADD(DAY, -42, SYSDATETIME())),
         (1, 'ADMIN', 'REJECT_REPORT', 'ViolationReports', '1002', N'{"status":"PENDING"}', N'{"status":"REJECT"}', N'Bác báo cáo vi phạm không chính xác', DATEADD(DAY, -41, SYSDATETIME())),
         (1, 'ADMIN', 'RESOLVE_REPORT', 'ViolationReports', '1001', N'{"status":"PENDING"}', N'{"status":"APPROVE"}', N'Đã xử lý xóa bài viết quảng cáo rác', DATEADD(DAY, -40, SYSDATETIME())),
         (4, 'VIP', 'CREATE_RECIPE', 'Recipes', '110', NULL, N'{"title":"Bún riêu chay"}', N'Tạo công thức món bún riêu', DATEADD(DAY, -39, SYSDATETIME())),
@@ -2587,26 +2587,12 @@ SET IDENTITY_INSERT dbo.VeganVenues ON;
 MERGE INTO dbo.VeganVenues AS target
 USING (
     VALUES
-        (7, 'GOOGLE_PLACES', 'GP_VN_SGN_007', N'Nhà Hàng Chay Ý Basilico', N'45 Hai Bà Trưng, Bến Nghé, Quận 1, TP. Hồ Chí Minh', 10.778210, 106.700140, 4.8, 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"02838221234"}', DATEADD(DAY, -65, SYSDATETIME())),
-        (8, 'GOONG', 'GOONG_SGN_008', N'Quán Chay Hương Sen Miền Tây', N'123 Nguyễn Thị Thập, Tân Phú, Quận 7, TP. Hồ Chí Minh', 10.741210, 106.715240, 4.5, 'https://images.unsplash.com/photo-1543007630-9710e4a00a20?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"0908123456"}', DATEADD(DAY, -60, SYSDATETIME())),
-        (9, 'GOOGLE_PLACES', 'GP_VN_SGN_009', N'Lẩu Chay Nấm Rơm Nam Bộ', N'56 Lê Văn Sỹ, Phường 11, Quận Phú Nhuận, TP. Hồ Chí Minh', 10.793210, 106.674310, 4.6, 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"02839912345"}', DATEADD(DAY, -58, SYSDATETIME())),
-        (10, 'HAPPYCOW', 'HC_VN_SGN_010', N'Buffet Chay Dưỡng Sinh Mandala', N'110 Sư Vạn Hạnh, Phường 12, Quận 10, TP. Hồ Chí Minh', 10.771210, 106.669810, 4.7, 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=800&q=80', 1, 1, '{"priceRange":"120.000đ - 180.000đ"}', DATEADD(DAY, -55, SYSDATETIME())),
-        (11, 'GOONG', 'GOONG_HAN_011', N'Bún Chay Hoa Chuối Phố Cổ', N'22 Hàng Buồm, Hoàn Kiếm, Hà Nội', 21.035210, 105.851240, 4.6, 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=800&q=80', 1, 1, '{"city":"Hà Nội"}', DATEADD(DAY, -52, SYSDATETIME())),
-        (12, 'HAPPYCOW', 'HC_VN_HAN_012', N'Cơm Niêu Chay Tứ Xuyên', N'88 Trần Hưng Đạo, Hoàn Kiếm, Hà Nội', 21.022140, 105.844310, 4.7, 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80', 1, 1, '{"city":"Hà Nội"}', DATEADD(DAY, -50, SYSDATETIME())),
-        (13, 'GOOGLE_PLACES', 'GP_VN_PQC_013', N'Lẩu Nấm Chay Tiêu Xanh', N'34 Đường 30 Tháng 4, Dương Đông, Phú Quốc, Kiên Giang', 10.218540, 103.965410, 4.8, 'https://images.unsplash.com/photo-1505253758473-96b301b5c81d?auto=format&fit=crop&w=800&q=80', 1, 1, '{"city":"Phú Quốc"}', DATEADD(DAY, -48, SYSDATETIME())),
-        (14, 'HAPPYCOW', 'HC_VN_SGN_014', N'Green Burger & Healthy Vegan', N'15 Thảo Điền, TP. Thủ Đức, TP. Hồ Chí Minh', 10.804520, 106.735410, 4.9, 'https://images.unsplash.com/photo-1520072959219-c595dc870360?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"0918123456"}', DATEADD(DAY, -45, SYSDATETIME())),
-        (15, 'GOONG', 'GOONG_SGN_015', N'Hủ Tiếu Mì Chay Chợ Lớn', N'234 An Dương Vương, Phường 4, Quận 5, TP. Hồ Chí Minh', 10.755410, 106.671240, 4.4, 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"02838334455"}', DATEADD(DAY, -42, SYSDATETIME())),
-        (16, 'GOOGLE_PLACES', 'GP_VN_HOI_016', N'Mì Quảng Chay Phố Hội', N'78 Nguyễn Huệ, Cẩm Châu, Hội An, Quảng Nam', 15.880210, 108.331240, 4.7, 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80', 1, 1, '{"city":"Hội An"}', DATEADD(DAY, -40, SYSDATETIME())),
-        (17, 'HAPPYCOW', 'HC_VN_HAN_017', N'Cơm Chay Văn Phòng Thực Dưỡng', N'52 Lê Đại Hành, Hai Bà Trưng, Hà Nội', 21.011240, 105.848520, 4.5, 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80', 1, 1, '{"city":"Hà Nội"}', DATEADD(DAY, -38, SYSDATETIME())),
-        (18, 'GOONG', 'GOONG_SGN_018', N'Lẩu Mắm Chay Đất Phương Nam', N'99 Phan Xích Long, Phường 2, Phú Nhuận, TP. Hồ Chí Minh', 10.798540, 106.691240, 4.6, 'https://images.unsplash.com/photo-1505253758473-96b301b5c81d?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"0933221100"}', DATEADD(DAY, -35, SYSDATETIME())),
-        (101, 'HAPPYCOW', 'HC_VN_SGN_001', N'Nhà hàng Chay Kashew Thảo Điền', N'14 Trần Ngọc Diện, Thảo Điền, Quận 2, TP. Hồ Chí Minh', 10.803450, 106.732140, 4.8, 'https://res.cloudinary.com/swrsuenp/image/upload/v1792252798/veggielife/venues/kashew_cheese.jpg', 1, 1, '{"phone":"02836208888","website":"https://kashewcheese.com"}', DATEADD(DAY, -60, SYSDATETIME())),
-        (102, 'HAPPYCOW', 'HC_VN_SGN_002', N'Pi Vegetarian Bistro', N'19 Võ Văn Tần, Phường 6, Quận 3, TP. Hồ Chí Minh', 10.776520, 106.692340, 4.7, 'https://res.cloudinary.com/swrsuenp/image/upload/v1792252804/veggielife/venues/pi_vegetarian.jpg', 1, 1, '{"phone":"0938888888","openHours":"10:00 - 22:00"}', DATEADD(DAY, -50, SYSDATETIME())),
-        (103, 'GOOGLE_PLACES', 'GP_VN_SGN_003', N'Lẩu Nấm Chay An Nhiên', N'81 Phạm Ngũ Lão, Phường 3, Quận Gò Vấp, TP. Hồ Chí Minh', 10.826540, 106.685410, 4.6, 'https://res.cloudinary.com/swrsuenp/image/upload/v1792252837/veggielife/venues/lau_nam_an_nhien.jpg', 1, 1, '{"phone":"02838945678"}', DATEADD(DAY, -45, SYSDATETIME())),
-        (104, 'GOONG', 'GOONG_SGN_004', N'Cơm Chay Nàng Gấm', N'73 Lê Quang Định, Phường 14, Quận Bình Thạnh, TP. Hồ Chí Minh', 10.801240, 106.698540, 4.5, 'https://res.cloudinary.com/swrsuenp/image/upload/v1792252841/veggielife/venues/com_chay_nang_gam.jpg', 1, 1, '{"phone":"0903123456"}', DATEADD(DAY, -40, SYSDATETIME())),
-        (105, 'GOOGLE_PLACES', 'GP_VN_SGN_005', N'Nhà hàng Buffet Chay D''Gemma', N'5B Phổ Quang, Phường 2, Quận Tân Bình, TP. Hồ Chí Minh', 10.808720, 106.669810, 4.9, 'https://res.cloudinary.com/swrsuenp/image/upload/v1792252845/veggielife/venues/buffet_chay_dgemma.jpg', 1, 1, '{"priceRange":"150.000đ - 220.000đ"}', DATEADD(DAY, -35, SYSDATETIME())),
-        (106, 'HAPPYCOW', 'HC_VN_SGN_006', N'Nhà hàng Chay Bếp Xanh An Duyên', N'10 Nguyễn Tri Phương, Phường 6, Quận 5, TP. Hồ Chí Minh', 10.753410, 106.668720, 4.6, 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"02838555555"}', DATEADD(DAY, -30, SYSDATETIME())),
-        (107, 'GOONG', 'GOONG_SGN_007', N'Quán Cơm Chay Thiện Duyên', N'24 Tôn Thất Thiệp, Bến Nghé, Quận 1, TP. Hồ Chí Minh', 10.773210, 106.703410, 4.4, 'https://images.unsplash.com/photo-1543007630-9710e4a00a20?auto=format&fit=crop&w=800&q=80', 1, 1, '{"priceRange":"35.000đ - 50.000đ"}', DATEADD(DAY, -25, SYSDATETIME())),
-        (108, 'HAPPYCOW', 'HC_VN_HAN_008', N'Sadhu Vegetarian Restaurant Hanoi', N'87 Lý Thường Kiệt, Cửa Nam, Hoàn Kiếm, Hà Nội', 21.023410, 105.842310, 4.8, 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80', 1, 1, '{"city":"Hà Nội"}', DATEADD(DAY, -20, SYSDATETIME()))
+        (7, 'GOONG', 'z7hFZ6Qvo2qRugtnaHubzrt2JXRfaPvoj5BPUYdqYcCmzw1qX4CEQbuWZ0Zq_LbMuJFLImpriMq5qS9SXkKUirWoTF5sQoT_iKhKTW14iOG-kh5Fbx6YiIi6MTV4sH_PI', N'Nhà Hàng Chay Ý Basilico', N'45 Hai Bà Trưng, Bến Nghé, Quận 1, TP. Hồ Chí Minh', 10.778210, 106.700140, 4.8, 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"02838221234"}', DATEADD(DAY, -65, SYSDATETIME())),
+        (9, 'GOONG', 'AkuyeqybryfYIU66EkQmeYHfYcTnlUoJ8foFlOKOa4G5Oh1clq1ORm3qBVxG0bqD1Y5Y4Kphvs717n1tdtFKs7XmHeQisCYbXer5IXJ5unvd7hFMIqAiOnnmsWyOeCeXe', N'Lẩu Chay Nấm Rơm Nam Bộ', N'56 Lê Văn Sỹ, Phường 11, Quận Phú Nhuận, TP. Hồ Chí Minh', 10.793210, 106.674310, 4.6, 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80', 1, 1, '{"phone":"02839912345"}', DATEADD(DAY, -58, SYSDATETIME())),
+        (13, 'GOONG', 'rhLbYnjEexyEhVE7eFCm4nnYYF-1fZd-eK97HrbVnFVLrnOw2wuumCUlk3atbkqZq9iElLVRgC1-Ubzcr2znxXVRb1mb9a6oWc8H_TYBqnmZrlRkZuUGfi2i9WLVyQwTP', N'Lẩu Nấm Chay Tiêu Xanh', N'34 Đường 30 Tháng 4, Dương Đông, Phú Quốc, Kiên Giang', 10.218540, 103.965410, 4.8, 'https://images.unsplash.com/photo-1505253758473-96b301b5c81d?auto=format&fit=crop&w=800&q=80', 1, 1, '{"city":"Phú Quốc"}', DATEADD(DAY, -48, SYSDATETIME())),
+        (16, 'GOONG', 'dVtzapCT1LThDiDsxkHCRnnijT1e7vfmjeHNcB6bVnaNv1lQl8GG4ulyPeyCUBo7XXLJYFaxauHNsiyh-mdmwkUGOHhtNscbZeW1Ue1N5mZrmhHkCpg6OonmGZCW2DuT-', N'Mì Quảng Chay Phố Hội', N'78 Nguyễn Huệ, Cẩm Châu, Hội An, Quảng Nam', 15.880210, 108.331240, 4.7, 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80', 1, 1, '{"city":"Hội An"}', DATEADD(DAY, -40, SYSDATETIME())),
+        (103, 'GOONG', 'bhlHi0ORMWterWkAsG-e3mfI2JIG7QzQ3ape87nwoqJJskKdPixuzjG6UeT-lfGyMb75HIL_wRI1ryVMpp22K13K_IEqncZ7lhq5YTI5-jmrnlEsYuKKejmkYQzOOvPXO', N'Lẩu Nấm Chay An Nhiên', N'81 Phạm Ngũ Lão, Phường 3, Quận Gò Vấp, TP. Hồ Chí Minh', 10.826540, 106.685410, 4.6, 'https://res.cloudinary.com/swrsuenp/image/upload/v1792252837/veggielife/venues/lau_nam_an_nhien.jpg', 1, 1, '{"phone":"02838945678"}', DATEADD(DAY, -45, SYSDATETIME())),
+        (105, 'GOONG', 'tkmBqKiGElVgm0kYrWemSWO4zSOtT4xBjKhrIIQQ8ombDPV6ktG6tdWZGWSO0E7r3YLVrH4NmhNtlikkkroS--lURUT2uuJjAYKRSRoSLdO1hnkESsoSUhGNgSTm2E__E', N'Nhà hàng Buffet Chay D''Gemma', N'5B Phổ Quang, Phường 2, Quận Tân Bình, TP. Hồ Chí Minh', 10.808720, 106.669810, 4.9, 'https://res.cloudinary.com/swrsuenp/image/upload/v1792252845/veggielife/venues/buffet_chay_dgemma.jpg', 1, 1, '{"priceRange":"150.000đ - 220.000đ"}', DATEADD(DAY, -35, SYSDATETIME()))
 ) AS source (Venue_ID, External_Source, External_Place_ID, Venue_Name, Address, Latitude, Longitude, Rating, Thumbnail_Url, Is_Fully_Vegan, Is_Active, Raw_Origin_JSON, Created_At)
 ON target.Venue_ID = source.Venue_ID
 WHEN MATCHED THEN
@@ -2620,26 +2606,12 @@ GO
 MERGE INTO dbo.VenueCategories AS target
 USING (
     VALUES
-        (14, 101, 1, SYSDATETIME()),
-        (8, 102, 1, SYSDATETIME()),
-        (9, 103, 1, SYSDATETIME()),
-        (8, 104, 1, SYSDATETIME()),
-        (1, 105, 1, SYSDATETIME()),
-        (8, 106, 1, SYSDATETIME()),
-        (8, 107, 1, SYSDATETIME()),
-        (9, 108, 1, SYSDATETIME()),
         (14, 7, 1, SYSDATETIME()),
-        (8, 8, 1, SYSDATETIME()),
         (9, 9, 1, SYSDATETIME()),
-        (1, 10, 1, SYSDATETIME()),
-        (8, 11, 1, SYSDATETIME()),
-        (8, 12, 1, SYSDATETIME()),
         (9, 13, 1, SYSDATETIME()),
-        (14, 14, 1, SYSDATETIME()),
-        (8, 15, 1, SYSDATETIME()),
         (8, 16, 1, SYSDATETIME()),
-        (1, 17, 1, SYSDATETIME()),
-        (9, 18, 1, SYSDATETIME())
+        (9, 103, 1, SYSDATETIME()),
+        (1, 105, 1, SYSDATETIME())
 ) AS source (Category_ID, Venue_ID, Is_Primary, Assigned_At)
 ON target.Category_ID = source.Category_ID AND target.Venue_ID = source.Venue_ID
 WHEN NOT MATCHED THEN
@@ -2650,35 +2622,14 @@ SET IDENTITY_INSERT dbo.VenueMenuItems ON;
 MERGE INTO dbo.VenueMenuItems AS target
 USING (
     VALUES
-        (1001, 101, N'Bánh mì Phô mai hạt điều Kashew', 95000, N'Phô mai lên men thủ công từ hạt điều hữu cơ', 'https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=400&q=80', 1),
-        (1002, 102, N'Cơm chiên lá é nấm rừng Pi', 85000, N'Hương thơm độc đáo từ lá é tươi miền Trung', 'https://images.unsplash.com/photo-1603133872878-684f208fb84b?auto=format&fit=crop&w=400&q=80', 1),
         (1003, 103, N'Lẩu nấm An Nhiên đặc biệt', 289000, N'Set lẩu nấm 4 người gồm 8 loại nấm quý', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80', 1),
         (1004, 105, N'Vé Buffet chay hơn 60 món D''Gemma', 189000, N'Thưởng thức trọn vẹn ẩm thực chay Á - Âu', 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=400&q=80', 1),
-        (1005, 101, N'Salad hạt phô mai bơ tỏi Kashew', 120000, N'Rau hữu cơ sốt phô mai lên men', 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=400&q=80', 0),
-        (1006, 102, N'Cà tím nướng mỡ hành sốt tương cay', 65000, N'Món ăn kèm đưa cơm đặc sản', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80', 0),
         (1007, 103, N'Chả giò nấm An Nhiên', 75000, N'Cuốn nấm hương, mộc nhĩ giòn rụm', 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=400&q=80', 0),
-        (1008, 104, N'Phở chay gia truyền Hà Nội', 65000, N'Nước dùng ninh từ củ quả và hoa hồi thanh ngọt', 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=400&q=80', 1),
-        (1009, 104, N'Bún chả chay nấm đùi gà', 70000, N'Chả nấm nướng than hoa thơm lừng', 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=400&q=80', 0),
-        (1010, 106, N'Bún bò Huế chay sa tế', 60000, N'Cay nồng sa tế sả ớt, chả lụa chay', 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=400&q=80', 1),
-        (1011, 106, N'Bánh bột lọc chay nhân đậu xanh', 45000, N'Bánh dẻo dai ăn kèm nước mắm chay', 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=400&q=80', 0),
-        (1012, 107, N'Cơm tấm sườn nấm rim mật mía', 55000, N'Sườn chay từ đậu nành rim mật ngọt đậm đà', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80', 1),
-        (1013, 107, N'Canh khổ qua nhồi đậu hũ chay', 40000, N'Món canh thanh nhiệt giải độc ngày hè', 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=400&q=80', 0),
-        (1014, 108, N'Lẩu Thái tomyum chay chua cay', 250000, N'Nước lẩu cốt dừa lá chanh Thái thơm nồng', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80', 1),
-        (1015, 108, N'Gỏi ngó sen tôm chay ngũ sắc', 80000, N'Ngó sen giòn ngâm chua ngọt khai vị', 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=400&q=80', 0),
         (1016, 7, N'Pizza chay nấm truffle sốt kem hạt điều', 175000, N'Đế bánh men chua tự nhiên nướng củi', 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=400&q=80', 1),
         (1017, 7, N'Mì Ý sốt pesto rau húng tây', 135000, N'Sốt hạt thông và dầu oliu nguyên chất', 'https://images.unsplash.com/photo-1608897013039-887f21d8c804?auto=format&fit=crop&w=400&q=80', 0),
-        (1018, 8, N'Bánh xèo miền Tây nhân củ hũ dừa', 75000, N'Vỏ bánh mỏng giòn ăn cùng rau rừng Tây Ninh', 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=400&q=80', 1),
         (1019, 9, N'Lẩu chao môn nấm rơm', 220000, N'Vị béo ngậy đặc trưng từ chao môn lên men', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80', 1),
-        (1020, 10, N'Buffet chay trưa hơn 40 món dưỡng sinh', 149000, N'Đa dạng các món chay dân dã 3 miền', 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=400&q=80', 1),
-        (1021, 11, N'Bún riêu cua đồng chay hoa chuối', 55000, N'Riêu nấu từ đậu phụ non béo ngậy ngọt tự nhiên', 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=400&q=80', 1),
-        (1022, 12, N'Cơm niêu đậu hũ sốt Tứ Xuyên', 85000, N'Cơm cháy giòn rụm sốt cay nồng thảo mộc', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80', 1),
         (1023, 13, N'Lẩu nấm tiêu xanh Phú Quốc', 260000, N'Ấm nồng vị tiêu tươi kết hợp 6 loại nấm', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80', 1),
-        (1024, 14, N'Burger đậu gà quinoa sốt bơ béo', 115000, N'Bánh kẹp dinh dưỡng giàu protein cho gymer', 'https://images.unsplash.com/photo-1520072959219-c595dc870360?auto=format&fit=crop&w=400&q=80', 1),
-        (1025, 15, N'Hủ tiếu mì sa tế chay Chợ Lớn', 65000, N'Nước sốt sánh mịn đậm đà hương vị Hoa kiều', 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=400&q=80', 1),
         (1026, 16, N'Mì Quảng chay sợi nghệ sườn nấm', 60000, N'Bánh tráng nướng mè giòn rụm đậu phộng rang', 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=400&q=80', 1),
-        (1027, 17, N'Set cơm văn phòng thực dưỡng 4 món', 50000, N'Cơm gạo lứt muối mè canh rong biển đậu hũ', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80', 1),
-        (1028, 18, N'Lẩu mắm chay rau đắng miền Tây', 240000, N'Mắm đậu nành ủ men tự nhiên thơm dịu', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80', 1),
-        (1029, 101, N'Sữa hạt điều nguyên chất không đường', 45000, N'Ép lạnh tươi mỗi ngày từ hạt điều Bình Phước', 'https://images.unsplash.com/photo-1556881286-fc6915169721?auto=format&fit=crop&w=400&q=80', 0),
         (1030, 105, N'Chè hạt sen long nhãn tráng miệng', 35000, N'Vị ngọt thanh từ đường phèn tự nhiên', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80', 0)
 ) AS source (Item_ID, Venue_ID, Dish_Name, Price_VND, Description, Image_Url, Is_Signature)
 ON target.Item_ID = source.Item_ID

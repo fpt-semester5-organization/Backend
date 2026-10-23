@@ -59,8 +59,8 @@ public class AdminVenueServiceTests : IDisposable
             new VeganVenue
             {
                 VenueId = 1,
-                ExternalSource = "HAPPYCOW",
-                ExternalPlaceId = "hc_001",
+                ExternalSource = "GOONG",
+                ExternalPlaceId = "goong_001",
                 VenueName = "Nhà hàng Chay Thiền Tâm",
                 Address = "123 Nam Kỳ Khởi Nghĩa, Q.3, TP.HCM",
                 Latitude = 10.78m,
@@ -71,8 +71,8 @@ public class AdminVenueServiceTests : IDisposable
             new VeganVenue
             {
                 VenueId = 2,
-                ExternalSource = "GOOGLE_PLACES",
-                ExternalPlaceId = "gp_002",
+                ExternalSource = "GOONG",
+                ExternalPlaceId = "goong_002",
                 VenueName = "Quán Cơm Chay Bồ Đề",
                 Address = "456 Lê Văn Việt, TP.Thủ Đức",
                 Latitude = 10.84m,
@@ -125,17 +125,33 @@ public class AdminVenueServiceTests : IDisposable
     {
         var request = new AdminVenueFilterRequest
         {
-            Source = "GOOGLE_PLACES",
+            Source = "GOONG",
             Page = 1,
             Size = 10
         };
 
         var (items, meta) = await _service.GetVenuesAsync(request);
 
-        meta.Total.Should().Be(1);
-        items.Should().HaveCount(1);
-        items[0].VenueId.Should().Be(2);
-        items[0].Source.Should().Be("GOOGLE_PLACES");
+        meta.Total.Should().Be(2);
+        items.Should().HaveCount(2);
+        items.Should().AllSatisfy(x => x.Source.Should().Be("GOONG"));
+    }
+
+    [Fact]
+    public async Task GetVenuesAsync_FilterByInvalidSource_ThrowsBadRequest()
+    {
+        var request = new AdminVenueFilterRequest
+        {
+            Source = "MANUAL",
+            Page = 1,
+            Size = 10
+        };
+
+        var act = async () => await _service.GetVenuesAsync(request);
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
     }
 
     [Fact]

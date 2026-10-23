@@ -186,7 +186,7 @@ public class VenuesControllerTests
             IsFullyVegan = true,
             Categories = new List<string> { "Cơm chay" },
             DirectionsUrl = "https://www.google.com/maps/dir/?api=1&destination=10.7729,106.6983",
-            Source = "HAPPYCOW"
+            Source = "GOONG"
         };
 
         _mockVenueService.Setup(s => s.GetVenueDetailAsync(venueId, null, null, It.IsAny<CancellationToken>()))
