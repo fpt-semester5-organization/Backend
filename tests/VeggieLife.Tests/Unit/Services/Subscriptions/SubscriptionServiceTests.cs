@@ -789,4 +789,126 @@ public class SubscriptionServiceTests
         result.EndsAt.Should().BeNull();
         result.Transactions.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task HandlePayOsWebhookAsync_WhenDataIsNull_ReturnsSuccessfully()
+    {
+        var (_, service, _, _, _) = CreateTestHarness();
+        var webhook = new PayOS.Models.Webhooks.Webhook
+        {
+            Code = "00",
+            Description = "Webhook URL confirmed",
+            Success = true,
+            Data = null!,
+            Signature = "test-sig"
+        };
+
+        var act = () => service.HandlePayOsWebhookAsync(webhook);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task HandlePayOsWebhookAsync_ValidSuccess_ActivatesVip()
+    {
+        var (db, service, _, redis, _) = CreateTestHarness();
+        var now = DateTime.UtcNow;
+
+        var user = new User { UserId = 50, Email = "payos@veggielife.vn", Role = UserRoles.Member, FullName = "PayOS User", AccountStatus = "ACTIVE", CreatedAt = now };
+        var plan = new SubscriptionPlan { PlanId = 1, AdminId = 1, PlanName = "VIP 1 Tháng", Price = 49000, DurationDays = 30, IsActive = true, CreatedAt = now };
+        var tx = new PaymentTransaction
+        {
+            TransactionId = 5001,
+            PlanId = 1,
+            UserId = 50,
+            GatewayProvider = "VIETQR",
+            PartnerTransactionCode = "VL_998877",
+            AmountVnd = 49000,
+            TransactionStatus = "PENDING",
+            SignatureHash = "",
+            CreatedAt = now,
+            StartsAt = now,
+            EndsAt = now.AddDays(30)
+        };
+
+        db.Users.Add(user);
+        db.SubscriptionPlans.Add(plan);
+        db.PaymentTransactions.Add(tx);
+        await db.SaveChangesAsync();
+
+        var webhookData = new PayOS.Models.Webhooks.WebhookData
+        {
+            OrderCode = 998877,
+            Amount = 49000,
+            Description = "VL 998877",
+            Code = "00",
+            Reference = "REF998877"
+        };
+        var webhook = new PayOS.Models.Webhooks.Webhook
+        {
+            Code = "00",
+            Description = "Success",
+            Success = true,
+            Data = webhookData,
+            Signature = "sig"
+        };
+
+        await service.HandlePayOsWebhookAsync(webhook);
+
+        var updatedTx = await db.PaymentTransactions.FindAsync(5001L);
+        updatedTx!.TransactionStatus.Should().Be("SUCCESS");
+
+        var updatedUser = await db.Users.FindAsync(50);
+        updatedUser!.Role.Should().Be("VIP");
+    }
+
+    [Fact]
+    public async Task HandlePayOsWebhookAsync_AmountMismatch_ThrowsConflict()
+    {
+        var (db, service, _, _, _) = CreateTestHarness();
+        var now = DateTime.UtcNow;
+
+        var user = new User { UserId = 51, Email = "payos2@veggielife.vn", Role = UserRoles.Member, FullName = "User 2", AccountStatus = "ACTIVE", CreatedAt = now };
+        var plan = new SubscriptionPlan { PlanId = 1, AdminId = 1, PlanName = "VIP 1 Tháng", Price = 49000, DurationDays = 30, IsActive = true, CreatedAt = now };
+        var tx = new PaymentTransaction
+        {
+            TransactionId = 5002,
+            PlanId = 1,
+            UserId = 51,
+            GatewayProvider = "VIETQR",
+            PartnerTransactionCode = "VL_887766",
+            AmountVnd = 49000,
+            TransactionStatus = "PENDING",
+            SignatureHash = "",
+            CreatedAt = now,
+            StartsAt = now,
+            EndsAt = now.AddDays(30)
+        };
+
+        db.Users.Add(user);
+        db.SubscriptionPlans.Add(plan);
+        db.PaymentTransactions.Add(tx);
+        await db.SaveChangesAsync();
+
+        var webhookData = new PayOS.Models.Webhooks.WebhookData
+        {
+            OrderCode = 887766,
+            Amount = 10000, // Nhận thiếu tiền
+            Description = "VL 887766",
+            Code = "00"
+        };
+        var webhook = new PayOS.Models.Webhooks.Webhook
+        {
+            Code = "00",
+            Description = "Success",
+            Success = true,
+            Data = webhookData,
+            Signature = "sig"
+        };
+
+        var act = () => service.HandlePayOsWebhookAsync(webhook);
+
+        await act.Should().ThrowAsync<AppException>()
+            .Where(ex => ex.ErrorCode == ErrorCodes.ErrPayAmountMismatch);
+    }
 }

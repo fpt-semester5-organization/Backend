@@ -38,4 +38,11 @@ public interface ISubscriptionService
     Task<CurrentUserSubscriptionResponseDto> GetCurrentUserSubscriptionAsync(
         int userId,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Tiếp nhận và xử lý Webhook tự động từ PayOS VietQR Napas247 (xác thực chữ ký ChecksumKey HMAC-SHA256, tự động kích hoạt VIP).
+    /// </summary>
+    Task HandlePayOsWebhookAsync(
+        PayOS.Models.Webhooks.Webhook webhook,
+        CancellationToken ct = default);
 }

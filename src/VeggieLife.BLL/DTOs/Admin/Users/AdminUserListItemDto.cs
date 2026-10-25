@@ -26,4 +26,9 @@ public class AdminUserListItemDto
     public DateTime? LockedUntil { get; set; }
 
     public int CountViolationReports { get; set; }
+
+    /// <summary>
+    /// Thời điểm hết hạn gói VIP (nếu đang là VIP).
+    /// </summary>
+    public DateTime? VipEndsAt { get; set; }
 }

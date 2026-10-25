@@ -27,6 +27,44 @@ public class AdminPaymentsController : BaseApiController
     }
 
     /// <summary>
+    /// FN-ADM-13: Tra cứu, tìm kiếm, lọc và phân trang danh sách giao dịch nạp VIP trong hệ thống.
+    /// </summary>
+    [HttpGet]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<AdminPaymentTransactionItemDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ListPayments(
+        [FromQuery] AdminPaymentListFilterRequest filter,
+        CancellationToken ct)
+    {
+        EnsureAdmin();
+        var (items, meta) = await _subscriptionService.GetPaymentTransactionsAsync(filter, ct);
+        return PagedResponse(items, meta, "OK");
+    }
+
+    /// <summary>
+    /// FN-ADM-13: Duyệt thanh toán thủ công giao dịch (MoMo / VietQR) khi tiền đã về tài khoản ngân hàng.
+    /// Kích hoạt VIP cho người dùng, ghi AuditLog.
+    /// </summary>
+    [HttpPost("{id:long}/approve")]
+    [ProducesResponseType(typeof(ApiResponse<ApproveAdminPaymentResponseData>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ApprovePayment(
+        [FromRoute] long id,
+        CancellationToken ct)
+    {
+        var adminId = EnsureAdmin();
+        var result = await _subscriptionService.ApprovePaymentAsync(id, adminId, ct);
+        return OkResponse(result, "Đã duyệt thanh toán thành công.");
+    }
+
+    /// <summary>
     /// FN-ADM-13: Đối soát hoặc hoàn tiền giao dịch thanh toán khiếu nại (bù hạn VIP hoặc hoàn tiền).
     /// Mỗi giao dịch chỉ được đối soát đúng 1 lần (BR-ADM-PAY-002, BR-ADM-SYS-002).
     /// </summary>

@@ -8,15 +8,19 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
+using PayOS;
+using PayOS.Models.V2.PaymentRequests;
+
 namespace VeggieLife.BLL.Services.Payment;
 
 /// <summary>
-/// Triển khai dịch vụ tích hợp cổng MoMo / VietQR (môi trường thử/sandbox) kèm xác thực chữ ký HMAC-SHA256 (BR-PAY-TXN-01, BR-PAY-TXN-02).
+/// Triển khai dịch vụ tích hợp cổng MoMo / VietQR (PayOS thật & sandbox) kèm xác thực chữ ký HMAC-SHA256 (BR-PAY-TXN-01, BR-PAY-TXN-02).
 /// </summary>
 public class PaymentGatewayServiceStub : IPaymentGatewayService
 {
     private readonly IConfiguration _configuration;
     private readonly ILogger<PaymentGatewayServiceStub> _logger;
+    private readonly PayOSClient? _payOSClient;
 
     public PaymentGatewayServiceStub(
         IConfiguration configuration,
@@ -24,7 +28,30 @@ public class PaymentGatewayServiceStub : IPaymentGatewayService
     {
         _configuration = configuration;
         _logger = logger;
+
+        var clientId = _configuration["Payment:PayOS:ClientId"];
+        var apiKey = _configuration["Payment:PayOS:ApiKey"];
+        var checksumKey = _configuration["Payment:PayOS:ChecksumKey"];
+
+        if (!string.IsNullOrWhiteSpace(clientId) &&
+            !string.IsNullOrWhiteSpace(apiKey) &&
+            !string.IsNullOrWhiteSpace(checksumKey) &&
+            !clientId.Contains("ĐIỀN_") &&
+            !clientId.Contains("YOUR_"))
+        {
+            try
+            {
+                _payOSClient = new PayOSClient(clientId.Trim(), apiKey.Trim(), checksumKey.Trim());
+                _logger.LogInformation("[PaymentGatewayServiceStub] Khởi tạo thành công PayOSClient với ClientId {ClientId}", clientId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[PaymentGatewayServiceStub] Không thể khởi tạo PayOSClient");
+            }
+        }
     }
+
+    public PayOSClient? GetPayOSClient() => _payOSClient;
 
     public Task<PaymentCheckoutResult> CreateMoMoPaymentAsync(
         long transactionId,
@@ -51,7 +78,7 @@ public class PaymentGatewayServiceStub : IPaymentGatewayService
         return Task.FromResult(result);
     }
 
-    public Task<PaymentCheckoutResult> CreateVietQrPaymentAsync(
+    public async Task<PaymentCheckoutResult> CreateVietQrPaymentAsync(
         long transactionId,
         decimal amountVnd,
         string orderInfo,
@@ -62,20 +89,64 @@ public class PaymentGatewayServiceStub : IPaymentGatewayService
             transactionId, amountVnd, orderInfo);
 
         var bankId = _configuration["Payment:VietQR:BankId"] ?? "MB";
-        var accountNo = _configuration["Payment:VietQR:AccountNo"] ?? "0987654321";
+        var accountNo = _configuration["Payment:VietQR:AccountNo"] ?? "0865736967";
         var accountName = _configuration["Payment:VietQR:AccountName"] ?? "VEGGIELIFE";
 
-        // Chuẩn mã QR theo Napas 247 VietQR
-        var qrUrl = $"https://img.vietqr.io/image/{bankId}-{accountNo}-compact2.png?amount={(long)amountVnd}&addInfo={Uri.EscapeDataString(orderInfo)}&accountName={Uri.EscapeDataString(accountName)}";
+        // Chuẩn mã QR fallback theo Napas 247 VietQR
+        var defaultQrUrl = $"https://img.vietqr.io/image/{bankId}-{accountNo}-compact2.png?amount={(long)amountVnd}&addInfo={Uri.EscapeDataString(orderInfo)}&accountName={Uri.EscapeDataString(accountName)}";
 
-        var result = new PaymentCheckoutResult
+        if (_payOSClient != null)
+        {
+            try
+            {
+                // Trích xuất số orderCode cho PayOS (yêu cầu số nguyên dương long <= 9007199254740991)
+                long orderCodeNum;
+                var digits = new string(orderInfo.Where(char.IsDigit).ToArray());
+                if (long.TryParse(digits, out var parsed) && parsed > 0 && parsed <= 9007199254740991L)
+                {
+                    orderCodeNum = parsed;
+                }
+                else
+                {
+                    orderCodeNum = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 1000000000;
+                }
+
+                // Description tối đa 25 ký tự trên PayOS
+                var desc = $"VL {orderCodeNum}";
+                if (desc.Length > 25) desc = desc[..25];
+
+                var request = new CreatePaymentLinkRequest
+                {
+                    OrderCode = orderCodeNum,
+                    Amount = (long)amountVnd,
+                    Description = desc,
+                    CancelUrl = "https://veggielife.vn/payment/cancel",
+                    ReturnUrl = "https://veggielife.vn/payment/success"
+                };
+
+                var payOsRes = await _payOSClient.PaymentRequests.CreateAsync(request);
+                _logger.LogInformation("[PaymentGatewayServiceStub] Đã tạo thành công link thanh toán PayOS: PaymentLinkId={PaymentLinkId}, OrderCode={OrderCode}, CheckoutUrl={CheckoutUrl}",
+                    payOsRes.PaymentLinkId, orderCodeNum, payOsRes.CheckoutUrl);
+
+                return new PaymentCheckoutResult
+                {
+                    PartnerTransactionId = payOsRes.PaymentLinkId ?? orderCodeNum.ToString(),
+                    PaymentUrl = payOsRes.CheckoutUrl,
+                    QrCodeUrl = defaultQrUrl
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[PaymentGatewayServiceStub] Không thể gọi API PayOS, tự động chuyển về VietQR fallback.");
+            }
+        }
+
+        return new PaymentCheckoutResult
         {
             PartnerTransactionId = partnerTransId,
-            PaymentUrl = qrUrl,
-            QrCodeUrl = qrUrl
+            PaymentUrl = defaultQrUrl,
+            QrCodeUrl = defaultQrUrl
         };
-
-        return Task.FromResult(result);
     }
 
     public string CreateSignature(string gateway, IDictionary<string, string> requestData)

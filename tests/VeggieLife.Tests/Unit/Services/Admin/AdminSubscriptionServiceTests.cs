@@ -470,4 +470,128 @@ public class AdminSubscriptionServiceTests
         ex.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
         ex.StatusCode.Should().Be(400);
     }
+
+    // ==========================================
+    // 5. GET PAYMENT TRANSACTIONS
+    // ==========================================
+
+    [Fact]
+    public async Task GetPaymentTransactionsAsync_NoFilter_ReturnsAllTransactionsPaged()
+    {
+        // Arrange
+        var filter = new AdminPaymentListFilterRequest { Page = 1, Size = 10 };
+
+        // Act
+        var (items, meta) = await _service.GetPaymentTransactionsAsync(filter);
+
+        // Assert
+        items.Should().NotBeNull();
+        items.Should().HaveCount(2);
+        meta.Total.Should().Be(2);
+
+        var pendingItem = items.First(x => x.TransactionId == 1001);
+        pendingItem.CanApprove.Should().BeTrue();
+        pendingItem.CanReconcile.Should().BeTrue();
+
+        var successItem = items.First(x => x.TransactionId == 1002);
+        successItem.CanApprove.Should().BeFalse();
+        successItem.CanReconcile.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetPaymentTransactionsAsync_FilterByStatus_ReturnsMatchingOnly()
+    {
+        // Arrange
+        var filter = new AdminPaymentListFilterRequest { Page = 1, Size = 10, Status = "PENDING" };
+
+        // Act
+        var (items, meta) = await _service.GetPaymentTransactionsAsync(filter);
+
+        // Assert
+        items.Should().HaveCount(1);
+        items[0].TransactionId.Should().Be(1001);
+        meta.Total.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetPaymentTransactionsAsync_FilterByKeyword_ReturnsMatching()
+    {
+        // Arrange (Mã đơn VL_20261022_0001)
+        var filter = new AdminPaymentListFilterRequest { Page = 1, Size = 10, Keyword = "VL_20261022_0001" };
+
+        // Act
+        var (items, meta) = await _service.GetPaymentTransactionsAsync(filter);
+
+        // Assert
+        items.Should().HaveCount(1);
+        items[0].TransactionId.Should().Be(1001);
+    }
+
+    // ==========================================
+    // 6. APPROVE PAYMENT
+    // ==========================================
+
+    [Fact]
+    public async Task ApprovePaymentAsync_PendingTransaction_SuccessfullyActivatesVipAndUpdatesStatus()
+    {
+        // Act (Duyệt đơn 1001 đang PENDING của user 2)
+        var result = await _service.ApprovePaymentAsync(1001, AdminId);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.TransactionId.Should().Be(1001);
+        result.Status.Should().Be("SUCCESS");
+        result.VipEndsAt.Should().BeAfter(DateTime.UtcNow);
+
+        var txn = await _db.PaymentTransactions.FindAsync(1001L);
+        txn!.TransactionStatus.Should().Be("SUCCESS");
+        txn.CompletedAt.Should().NotBeNull();
+
+        var user = await _db.Users.FindAsync(2);
+        user!.Role.Should().Be(UserRoles.Vip);
+
+        // Kiểm tra xóa cache
+        _mockRedis.Verify(r => r.RemoveAsync("vip_status:2", default), Times.Once);
+        _mockRedis.Verify(r => r.RemoveAsync("cache:profile:2", default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ApprovePaymentAsync_AlreadySuccessTransaction_ThrowsConflict()
+    {
+        // Act & Assert (Đơn 1002 đã SUCCESS)
+        var ex = await Assert.ThrowsAsync<AppException>(() =>
+            _service.ApprovePaymentAsync(1002, AdminId));
+
+        ex.ErrorCode.Should().Be(ErrorCodes.ErrPayOrderAlreadySuccess);
+        ex.StatusCode.Should().Be(409);
+    }
+
+    [Fact]
+    public async Task ApprovePaymentAsync_RefundedTransaction_ThrowsConflict()
+    {
+        // Arrange: hoàn tiền đơn 1002 trước
+        await _service.ReconcilePaymentAsync(1002, new ReconcileAdminPaymentRequest
+        {
+            Action = "REFUND",
+            Reason = "Hoàn tiền cho người dùng yêu cầu."
+        }, AdminId);
+
+        // Act & Assert (Cố tình duyệt đơn đã bị REFUNDED)
+        var ex = await Assert.ThrowsAsync<AppException>(() =>
+            _service.ApprovePaymentAsync(1002, AdminId));
+
+        ex.ErrorCode.Should().Be(ErrorCodes.ErrPayOrderRefunded);
+        ex.StatusCode.Should().Be(409);
+    }
+
+    [Fact]
+    public async Task ApprovePaymentAsync_NonExistentTransaction_ThrowsNotFound()
+    {
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<AppException>(() =>
+            _service.ApprovePaymentAsync(99999, AdminId));
+
+        ex.ErrorCode.Should().Be(ErrorCodes.ErrAdmNotFound);
+        ex.StatusCode.Should().Be(404);
+    }
 }

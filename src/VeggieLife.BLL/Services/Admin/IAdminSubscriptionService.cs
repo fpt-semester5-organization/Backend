@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.Admin.Subscriptions;
 
 namespace VeggieLife.BLL.Services.Admin;
@@ -39,6 +40,21 @@ public interface IAdminSubscriptionService
     Task<ReconcileAdminPaymentResponseData> ReconcilePaymentAsync(
         long transactionId,
         ReconcileAdminPaymentRequest request,
+        int adminId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Tra cứu, tìm kiếm, lọc và phân trang danh sách giao dịch nạp VIP (FN-ADM-13).
+    /// </summary>
+    Task<(IReadOnlyList<AdminPaymentTransactionItemDto> Items, PagedMeta Meta)> GetPaymentTransactionsAsync(
+        AdminPaymentListFilterRequest filter,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Duyệt thanh toán thủ công giao dịch MoMo / VietQR (FN-ADM-13).
+    /// </summary>
+    Task<ApproveAdminPaymentResponseData> ApprovePaymentAsync(
+        long transactionId,
         int adminId,
         CancellationToken ct = default);
 }
