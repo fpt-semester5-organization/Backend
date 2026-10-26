@@ -3353,6 +3353,95 @@ components:
       - statusCode
       - message
       - data
+    CancelPendingSubscriptionResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            cancelled:
+              type: boolean
+            message:
+              type: string
+      required:
+      - statusCode
+      - message
+      - data
+    PayOsWebhookRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Mã trạng thái webhook ('00' là thành công)
+        desc:
+          type: string
+          description: Mô tả trạng thái webhook
+        success:
+          type: boolean
+          description: Trạng thái thành công
+        data:
+          type: object
+          properties:
+            orderCode:
+              type: integer
+              format: int64
+              description: Mã đơn hàng trên PayOS
+            amount:
+              type: integer
+              format: int64
+              description: Số tiền thanh toán (VNĐ)
+            description:
+              type: string
+              description: Nội dung thanh toán chuyển khoản
+            accountNumber:
+              type: string
+              description: Số tài khoản nhận tiền
+            reference:
+              type: string
+              description: Mã tham chiếu giao dịch ngân hàng
+            transactionDateTime:
+              type: string
+              description: Thời gian giao dịch ngân hàng
+            currency:
+              type: string
+              description: Loại tiền tệ (VND)
+            paymentLinkId:
+              type: string
+              description: ID link thanh toán PayOS
+            code:
+              type: string
+            desc:
+              type: string
+          required:
+          - orderCode
+          - amount
+          - description
+        signature:
+          type: string
+          description: Chữ ký số HMAC-SHA256 tính từ dữ liệu giao dịch bằng ChecksumKey
+      required:
+      - code
+      - desc
+      - data
+      - signature
+    PayOsWebhookResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+        message:
+          type: string
+        data:
+          type: object
+          nullable: true
+      required:
+      - statusCode
+      - message
+      - data
     HandlePaymentIpnRequest:
       type: object
       properties:
@@ -9935,7 +10024,7 @@ paths:
       operationId: checkoutSubscription
       summary: FN-SUB-02 Thanh toán gói VIP (MoMo / VietQR)
       description: 'Tạo đơn nâng cấp VIP: ghi PaymentTransactions ở trạng thái PENDING (kèm Starts_At/Ends_At dự kiến của kỳ VIP), ký số và gọi
-        cổng MoMo hoặc VietQR để lấy liên kết/mã QR thanh toán; đơn tự hết hạn sau 5 phút.
+        cổng MoMo hoặc VietQR/PayOS để lấy liên kết/mã QR thanh toán; đơn tự hết hạn sau 5 phút. Nếu phát hiện đơn PENDING cũ đã bị hủy trên PayOS hoặc hết hạn, hệ thống tự động giải phóng để tạo đơn mới ngay lập tức.
 
 
         Auth: Bearer (MEMBER | VIP).'
@@ -10010,6 +10099,51 @@ paths:
             example:
               planId: 1
               gateway: MOMO
+  /subscriptions/cancel-pending:
+    post:
+      tags:
+      - PAY
+      operationId: cancelPendingSubscription
+      summary: FN-SUB-02 Hủy đơn chờ thanh toán
+      description: 'Hủy đơn thanh toán PENDING của người dùng hiện tại để giải phóng và tạo đơn thanh toán mới ngay lập tức mà không cần chờ 5 phút.
+
+
+        Auth: Bearer (MEMBER | VIP).'
+      x-fn-id: FN-SUB-02
+      x-status: Approved
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Đã hủy đơn chờ thanh toán thành công.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelPendingSubscriptionResponse'
+              example:
+                statusCode: 200
+                message: Đã hủy đơn chờ thanh toán thành công. Bạn có thể tiến hành tạo đơn mới.
+                data:
+                  cancelled: true
+                  message: Đã hủy đơn chờ thanh toán thành công. Bạn có thể tiến hành tạo đơn mới.
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_GUEST_PERSONALIZATION_RESTRICTED: Khách vãng lai không thể thực hiện thao tác này (FN-AUTH-03).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: 'ERR_SYS_DATABASE_UNAVAILABLE: Không kết nối được SQL Server.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /payments/{gateway}/ipn:
     post:
       tags:
@@ -10086,6 +10220,82 @@ paths:
               amount: 49000
               resultCode: 0
               signature: 5f2d…
+  /payments/payos/webhook:
+    post:
+      tags:
+      - PAY
+      operationId: handlePayOsWebhook
+      summary: FN-SUB-03 Tiếp nhận webhook tự động từ PayOS VietQR
+      description: 'Endpoint nhận webhook thông báo thanh toán tự động VietQR Napas247 từ PayOS; xác thực chữ ký HMAC-SHA256 (ChecksumKey), kích hoạt VIP bất biến (idempotent), hỗ trợ thời gian ân hạn 30 phút cho đơn trễ (grace period).
+
+
+        Auth: Chữ ký số HMAC-SHA256 ChecksumKey của PayOS (không dùng JWT).'
+      x-fn-id: FN-SUB-03
+      x-status: Approved
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayOsWebhookRequest'
+            example:
+              code: '00'
+              desc: success
+              success: true
+              data:
+                orderCode: 123456789
+                amount: 19000
+                description: VL 123456789
+                accountNumber: '0123456789'
+                reference: MBVCB.123456789
+                transactionDateTime: '2026-10-26 14:00:00'
+                currency: VND
+                paymentLinkId: pl_abc123
+                code: '00'
+                desc: success
+              signature: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+      responses:
+        '200':
+          description: Webhook processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayOsWebhookResponse'
+              example:
+                statusCode: 200
+                message: Webhook processed successfully
+                data: null
+        '400':
+          description: 'ERR_VALIDATION: Dữ liệu webhook không hợp lệ.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: 'ERR_PAY_INVALID_SIGNATURE: Chữ ký webhook PayOS không hợp lệ.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'ERR_PAY_ORDER_NOT_FOUND: Không tìm thấy giao dịch tương ứng.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: 'ERR_PAY_ORDER_EXPIRED: Giao dịch đã hết hạn ngoài thời gian ân hạn.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: 'ERR_PAY_AMOUNT_MISMATCH: Số tiền thanh toán không khớp đơn hàng.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /users/me/subscription:
     get:
       tags:
