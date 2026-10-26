@@ -55,6 +55,19 @@ public class SubscriptionsController : BaseApiController
     }
 
     /// <summary>
+    /// Hủy đơn thanh toán đang chờ của người dùng để giải phóng và tạo đơn mới (FN-SUB-02).
+    /// Auth: Bearer (MEMBER | VIP).
+    /// </summary>
+    [HttpPost("/api/v1/subscriptions/cancel-pending")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    public async Task<IActionResult> CancelPendingSubscription(CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+        var result = await _subscriptionService.CancelPendingSubscriptionAsync((int)CurrentUserId!.Value, ct);
+        return OkResponse(result, result.Message);
+    }
+
+    /// <summary>
     /// FN-SUB-04: Xem trạng thái VIP của tôi và lịch sử giao dịch.
     /// Auth: Bearer (MEMBER | VIP).
     /// </summary>

@@ -8,8 +8,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
+using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.Admin.Subscriptions;
 using VeggieLife.BLL.Services.Cache;
+using VeggieLife.BLL.Services.Email;
+using VeggieLife.BLL.Validators.Admin;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
 
@@ -24,15 +27,18 @@ public class AdminSubscriptionService : IAdminSubscriptionService
     private readonly AppDbContext _db;
     private readonly IRedisService _redis;
     private readonly ILogger<AdminSubscriptionService> _logger;
+    private readonly IEmailService? _emailService;
 
     public AdminSubscriptionService(
         AppDbContext db,
         IRedisService redis,
-        ILogger<AdminSubscriptionService> logger)
+        ILogger<AdminSubscriptionService> logger,
+        IEmailService? emailService = null)
     {
         _db = db;
         _redis = redis;
         _logger = logger;
+        _emailService = emailService;
     }
 
     /// <summary>
@@ -387,10 +393,11 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             "Admin #{AdminId} đã đối soát giao dịch #{TransactionId} ({Action}): Status {OldStatus} -> {NewStatus}, EndsAt {OldEndsAt} -> {NewEndsAt}. Lý do: {Reason}",
             adminId, transaction.TransactionId, action, oldStatus, transaction.TransactionStatus, oldEndsAt, transaction.EndsAt, reason);
 
-        // Xóa cache Redis vip_status:{userId} và plans_cache
+        // Xóa cache Redis vip_status:{userId}, cache:profile:{userId} và plans_cache
         try
         {
             await _redis.RemoveAsync($"vip_status:{transaction.UserId}", ct);
+            await _redis.RemoveAsync($"cache:profile:{transaction.UserId}", ct);
             await _redis.RemoveAsync("plans_cache", ct);
         }
         catch (Exception ex)
@@ -403,6 +410,235 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             TransactionId = transaction.TransactionId,
             Status = transaction.TransactionStatus,
             VipEndsAt = transaction.EndsAt
+        };
+    }
+
+    /// <summary>
+    /// FN-ADM-13: Tra cứu, tìm kiếm, lọc và phân trang danh sách giao dịch nạp VIP (mới nhất lên đầu).
+    /// </summary>
+    public async Task<(IReadOnlyList<AdminPaymentTransactionItemDto> Items, PagedMeta Meta)> GetPaymentTransactionsAsync(
+        AdminPaymentListFilterRequest filter,
+        CancellationToken ct = default)
+    {
+        var (fromDate, toDate) = AdminPaymentValidator.ValidateFilter(filter);
+
+        var query = _db.PaymentTransactions
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Include(pt => pt.User)
+            .Include(pt => pt.Plan)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(filter.Status))
+        {
+            var status = filter.Status.Trim().ToUpperInvariant();
+            query = query.Where(pt => pt.TransactionStatus == status);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Gateway))
+        {
+            var gateway = filter.Gateway.Trim().ToUpperInvariant();
+            query = query.Where(pt => pt.GatewayProvider == gateway);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Keyword))
+        {
+            var keyword = filter.Keyword.Trim();
+            query = query.Where(pt =>
+                pt.PartnerTransactionCode.Contains(keyword) ||
+                (pt.User != null && pt.User.Email.Contains(keyword)) ||
+                (pt.User != null && pt.User.FullName.Contains(keyword)));
+        }
+
+        if (fromDate.HasValue)
+        {
+            var fromUtc = fromDate.Value.Date;
+            query = query.Where(pt => pt.CreatedAt >= fromUtc);
+        }
+
+        if (toDate.HasValue)
+        {
+            var toUtc = toDate.Value.Date.AddDays(1);
+            query = query.Where(pt => pt.CreatedAt < toUtc);
+        }
+
+        var total = await query.CountAsync(ct);
+
+        var pagedList = await query
+            .OrderByDescending(pt => pt.CreatedAt)
+            .Skip((filter.Page - 1) * filter.Size)
+            .Take(filter.Size)
+            .ToListAsync(ct);
+
+        var pagedIds = pagedList.Select(pt => pt.TransactionId.ToString()).ToList();
+        var reconciledIds = await _db.AuditLogs
+            .AsNoTracking()
+            .Where(a => a.TargetTable == "PaymentTransactions" &&
+                        pagedIds.Contains(a.TargetId) &&
+                        a.Action == "PAYMENT_RECONCILE")
+            .Select(a => a.TargetId)
+            .ToListAsync(ct);
+        var reconciledSet = new HashSet<string>(reconciledIds);
+
+        var items = pagedList.Select(pt =>
+        {
+            var isRefunded = string.Equals(pt.TransactionStatus, "REFUNDED", StringComparison.OrdinalIgnoreCase);
+            var isAlreadyReconciled = isRefunded || reconciledSet.Contains(pt.TransactionId.ToString());
+
+            var canApprove = !string.Equals(pt.TransactionStatus, "SUCCESS", StringComparison.OrdinalIgnoreCase) &&
+                             !isRefunded;
+
+            var canReconcile = !isAlreadyReconciled;
+
+            return new AdminPaymentTransactionItemDto
+            {
+                TransactionId = pt.TransactionId,
+                PartnerTransactionCode = pt.PartnerTransactionCode,
+                UserId = pt.UserId,
+                UserEmail = pt.User?.Email ?? string.Empty,
+                UserFullName = pt.User?.FullName ?? string.Empty,
+                PlanId = pt.PlanId,
+                PlanName = pt.Plan?.PlanName ?? string.Empty,
+                PlanDurationDays = pt.Plan?.DurationDays ?? 0,
+                GatewayProvider = pt.GatewayProvider,
+                AmountVnd = (long)pt.AmountVnd,
+                TransactionStatus = pt.TransactionStatus,
+                CreatedAt = pt.CreatedAt,
+                CompletedAt = pt.CompletedAt,
+                StartsAt = pt.StartsAt,
+                EndsAt = pt.EndsAt,
+                ReceiptUrl = pt.ReceiptUrl,
+                CanApprove = canApprove,
+                CanReconcile = canReconcile
+            };
+        }).ToList();
+
+        var meta = new PagedMeta(filter.Page, filter.Size, total);
+        return (items, meta);
+    }
+
+    /// <summary>
+    /// FN-ADM-13: Duyệt thanh toán thủ công giao dịch MoMo / VietQR (PENDING, EXPIRED, FAILED).
+    /// Kích hoạt gói VIP, ghi AuditLog và xóa cache liên quan.
+    /// </summary>
+    public async Task<ApproveAdminPaymentResponseData> ApprovePaymentAsync(
+        long transactionId,
+        int adminId,
+        CancellationToken ct = default)
+    {
+        var transaction = await _db.PaymentTransactions
+            .IgnoreQueryFilters()
+            .Include(pt => pt.Plan)
+            .Include(pt => pt.User)
+            .FirstOrDefaultAsync(pt => pt.TransactionId == transactionId, ct);
+
+        if (transaction == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrAdmNotFound, "Giao dịch không tồn tại.");
+        }
+
+        if (string.Equals(transaction.TransactionStatus, "SUCCESS", StringComparison.OrdinalIgnoreCase))
+        {
+            throw AppException.Conflict(ErrorCodes.ErrPayOrderAlreadySuccess, "Giao dịch đã được thanh toán thành công trước đó.");
+        }
+
+        if (string.Equals(transaction.TransactionStatus, "REFUNDED", StringComparison.OrdinalIgnoreCase))
+        {
+            throw AppException.Conflict(ErrorCodes.ErrPayOrderRefunded, "Giao dịch đã bị hoàn tiền, không thể duyệt.");
+        }
+
+        var now = DateTime.UtcNow;
+        var oldStatus = transaction.TransactionStatus;
+        int durationDays = transaction.Plan?.DurationDays ?? 30;
+
+        var activeMaxEndsAt = await _db.PaymentTransactions
+            .Where(pt => pt.UserId == transaction.UserId &&
+                         pt.TransactionId != transaction.TransactionId &&
+                         pt.TransactionStatus == "SUCCESS" &&
+                         pt.EndsAt > now)
+            .MaxAsync(pt => (DateTime?)pt.EndsAt, ct);
+
+        DateTime startsAt = activeMaxEndsAt.HasValue && activeMaxEndsAt.Value > now
+            ? activeMaxEndsAt.Value
+            : now;
+
+        DateTime endsAt = startsAt.AddDays(durationDays);
+        endsAt = new DateTime(endsAt.Year, endsAt.Month, endsAt.Day, 23, 59, 59, DateTimeKind.Utc);
+
+        transaction.TransactionStatus = "SUCCESS";
+        transaction.CompletedAt = now;
+        transaction.StartsAt = startsAt;
+        transaction.EndsAt = endsAt;
+
+        var user = transaction.User ?? await _db.Users.FirstOrDefaultAsync(u => u.UserId == transaction.UserId, ct);
+        if (user != null && !string.Equals(user.Role, UserRoles.Admin, StringComparison.OrdinalIgnoreCase))
+        {
+            user.Role = UserRoles.Vip;
+            user.UpdatedAt = now;
+        }
+
+        _db.AuditLogs.Add(new AuditLog
+        {
+            ActorUserId = adminId,
+            ActorRole = UserRoles.Admin,
+            Action = "PAYMENT_APPROVE",
+            TargetTable = "PaymentTransactions",
+            TargetId = transaction.TransactionId.ToString(),
+            OldValue = JsonSerializer.Serialize(new { status = oldStatus }),
+            NewValue = JsonSerializer.Serialize(new
+            {
+                status = "SUCCESS",
+                gateway = transaction.GatewayProvider,
+                startsAt = startsAt.ToString("O"),
+                endsAt = endsAt.ToString("O")
+            }),
+            Note = $"Admin #{adminId} duyệt thanh toán thủ công giao dịch #{transaction.TransactionId} ({transaction.PartnerTransactionCode}) qua {transaction.GatewayProvider}.",
+            CreatedAt = now
+        });
+
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Admin #{AdminId} đã duyệt thanh toán thủ công giao dịch #{TransactionId}: Status {OldStatus} -> SUCCESS, StartsAt {StartsAt}, EndsAt {EndsAt}",
+            adminId, transaction.TransactionId, oldStatus, startsAt, endsAt);
+
+        try
+        {
+            await _redis.RemoveAsync($"vip_status:{transaction.UserId}", ct);
+            await _redis.RemoveAsync($"cache:profile:{transaction.UserId}", ct);
+            await _redis.RemoveAsync("plans_cache", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi khi xóa bộ nhớ đệm Redis sau khi duyệt giao dịch #{TransactionId}.", transaction.TransactionId);
+        }
+
+        if (_emailService != null && user != null && !string.IsNullOrEmpty(user.Email))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _emailService.SendOtpEmailAsync(
+                        user.Email,
+                        $"Giao dịch #{transaction.TransactionId} thành công",
+                        "PAYMENT_RECEIPT");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Không thể gửi email biên lai cho người dùng {UserId}", user.UserId);
+                }
+            });
+        }
+
+        return new ApproveAdminPaymentResponseData
+        {
+            TransactionId = transaction.TransactionId,
+            PartnerTransactionCode = transaction.PartnerTransactionCode,
+            UserId = transaction.UserId,
+            Status = transaction.TransactionStatus,
+            VipStartsAt = startsAt,
+            VipEndsAt = endsAt
         };
     }
 

@@ -395,4 +395,127 @@ public class AdminSubscriptionsEndpointIntegrationTests : IClassFixture<WebAppli
         var error = await response.Content.ReadFromJsonAsync<ApiErrorResponse>();
         error!.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
     }
+
+    // ==========================================
+    // 5. GET /api/v1/admin/payments
+    // ==========================================
+
+    [Fact]
+    public async Task ListPayments_AsAdmin_Returns200OKWithPagedEnvelope()
+    {
+        var client = _factory.CreateClient();
+        var token = GenerateJwtToken(1, UserRoles.Admin);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await client.GetAsync("/api/v1/admin/payments?page=1&size=10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadFromJsonAsync<ApiResponse<List<AdminPaymentTransactionItemDto>>>();
+        content.Should().NotBeNull();
+        content!.StatusCode.Should().Be(200);
+        content.Data.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task ListPayments_AsNonAdmin_Returns403Forbidden()
+    {
+        var client = _factory.CreateClient();
+        var token = GenerateJwtToken(2, UserRoles.Member);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await client.GetAsync("/api/v1/admin/payments");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    // ==========================================
+    // 6. POST /api/v1/admin/payments/{id}/approve
+    // ==========================================
+
+    [Fact]
+    public async Task ApprovePayment_AsAdmin_PendingTransaction_Returns200OKAndActivatesVip()
+    {
+        // Seed new pending transaction 3002
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!await db.PaymentTransactions.AnyAsync(pt => pt.TransactionId == 3002))
+            {
+                db.PaymentTransactions.Add(new PaymentTransaction
+                {
+                    TransactionId = 3002,
+                    PlanId = 1,
+                    UserId = 2,
+                    GatewayProvider = "VIETQR",
+                    PartnerTransactionCode = "VL_20261022_3002",
+                    AmountVnd = 49000,
+                    TransactionStatus = "PENDING",
+                    SignatureHash = "sig_3002",
+                    CreatedAt = DateTime.UtcNow.AddMinutes(-10),
+                    StartsAt = DateTime.UtcNow,
+                    EndsAt = DateTime.UtcNow.AddDays(30)
+                });
+                await db.SaveChangesAsync();
+            }
+        }
+
+        var client = _factory.CreateClient();
+        var token = GenerateJwtToken(1, UserRoles.Admin);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await client.PostAsync("/api/v1/admin/payments/3002/approve", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadFromJsonAsync<ApiResponse<ApproveAdminPaymentResponseData>>();
+        content.Should().NotBeNull();
+        content!.Data!.Status.Should().Be("SUCCESS");
+
+        // Verify in DB
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var txn = await db.PaymentTransactions.FindAsync(3002L);
+            txn!.TransactionStatus.Should().Be("SUCCESS");
+
+            var user = await db.Users.FindAsync(2);
+            user!.Role.Should().Be(UserRoles.Vip);
+        }
+    }
+
+    [Fact]
+    public async Task ApprovePayment_AlreadySuccess_Returns409Conflict()
+    {
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!await db.PaymentTransactions.AnyAsync(pt => pt.TransactionId == 3003))
+            {
+                db.PaymentTransactions.Add(new PaymentTransaction
+                {
+                    TransactionId = 3003,
+                    PlanId = 1,
+                    UserId = 2,
+                    GatewayProvider = "VIETQR",
+                    PartnerTransactionCode = "VL_20261022_3003",
+                    AmountVnd = 49000,
+                    TransactionStatus = "SUCCESS",
+                    SignatureHash = "sig_3003",
+                    CreatedAt = DateTime.UtcNow.AddMinutes(-10),
+                    StartsAt = DateTime.UtcNow,
+                    EndsAt = DateTime.UtcNow.AddDays(30)
+                });
+                await db.SaveChangesAsync();
+            }
+        }
+
+        var client = _factory.CreateClient();
+        var token = GenerateJwtToken(1, UserRoles.Admin);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await client.PostAsync("/api/v1/admin/payments/3003/approve", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var error = await response.Content.ReadFromJsonAsync<ApiErrorResponse>();
+        error!.ErrorCode.Should().Be(ErrorCodes.ErrPayOrderAlreadySuccess);
+    }
 }

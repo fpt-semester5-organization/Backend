@@ -35,4 +35,18 @@ public class PaymentsController : BaseApiController
         await _subscriptionService.HandlePaymentIpnAsync(gateway, request, ct);
         return Ok(new ApiResponse<object?>(200, "OK", null));
     }
+
+    /// <summary>
+    /// Webhook nhận thông báo giao dịch chuyển khoản VietQR tự động từ PayOS.
+    /// Auth: Chữ ký số HMAC-SHA256 (ChecksumKey của PayOS).
+    /// </summary>
+    [HttpPost("/api/v1/payments/payos/webhook")]
+    [AllowAnonymous]
+    public async Task<IActionResult> HandlePayOsWebhook(
+        [FromBody] PayOS.Models.Webhooks.Webhook webhook,
+        CancellationToken ct)
+    {
+        await _subscriptionService.HandlePayOsWebhookAsync(webhook, ct);
+        return Ok(new ApiResponse<object?>(200, "Webhook processed successfully", null));
+    }
 }

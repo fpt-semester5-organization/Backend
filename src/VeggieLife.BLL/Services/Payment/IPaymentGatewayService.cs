@@ -52,4 +52,9 @@ public interface IPaymentGatewayService
     /// Tạo chữ ký số HMAC-SHA256 từ dữ liệu yêu cầu IPN theo khóa bí mật của cổng.
     /// </summary>
     string CreateSignature(string gateway, IDictionary<string, string> requestData);
+
+    /// <summary>
+    /// Lấy instance PayOSClient nếu đã cấu hình PayOS.
+    /// </summary>
+    PayOS.PayOSClient? GetPayOSClient();
 }

@@ -154,16 +154,58 @@ public class SubscriptionService : ISubscriptionService
         var now = DateTime.UtcNow;
         var pendingCutoff = now.AddMinutes(-5);
 
-        var hasPending = await _db.PaymentTransactions
-            .AnyAsync(pt => pt.UserId == userId &&
-                            pt.TransactionStatus == "PENDING" &&
-                            pt.CreatedAt >= pendingCutoff, ct);
+        var pendingTx = await _db.PaymentTransactions
+            .Where(pt => pt.UserId == userId &&
+                         pt.TransactionStatus == "PENDING" &&
+                         pt.CreatedAt >= pendingCutoff)
+            .OrderByDescending(pt => pt.CreatedAt)
+            .FirstOrDefaultAsync(ct);
 
-        if (hasPending)
+        if (pendingTx != null)
         {
-            throw AppException.Conflict(
-                ErrorCodes.ErrPaymentPendingExists,
-                "Đang có đơn chờ thanh toán chưa hết hạn.");
+            // Tự động kiểm tra trạng thái trên PayOS:
+            // Nếu người dùng đã bấm 'Hủy' trên trang PayOS, PayOS đánh dấu CANCELLED,
+            // ta lập tức giải phóng đơn để người dùng không bị kẹt 5 phút.
+            if (string.Equals(pendingTx.GatewayProvider, "VIETQR", StringComparison.OrdinalIgnoreCase))
+            {
+                var payOsClient = _paymentGateway.GetPayOSClient();
+                if (payOsClient != null)
+                {
+                    var orderCodeToLog = pendingTx.PartnerTransactionCode;
+                    try
+                    {
+                        var digits = new string(pendingTx.PartnerTransactionCode.Where(char.IsDigit).ToArray());
+                        var paymentLinkId = !string.IsNullOrWhiteSpace(pendingTx.SignatureHash) 
+                            ? pendingTx.SignatureHash 
+                            : digits;
+
+                        if (!string.IsNullOrWhiteSpace(paymentLinkId))
+                        {
+                            var info = await payOsClient.PaymentRequests.GetAsync(paymentLinkId);
+                            var statusStr = info != null ? info.Status.ToString() : null;
+                            if (string.Equals(statusStr, "CANCELLED", StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(statusStr, "EXPIRED", StringComparison.OrdinalIgnoreCase))
+                            {
+                                pendingTx.TransactionStatus = statusStr!.ToUpperInvariant();
+                                pendingTx.CompletedAt = now;
+                                await _db.SaveChangesAsync(ct);
+                                pendingTx = null; // Đã hủy bên PayOS, cho phép tạo đơn mới ngay lập tức!
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "[CheckoutSubscriptionAsync] Không thể kiểm tra trạng thái đơn PayOS {OrderCode}", orderCodeToLog);
+                    }
+                }
+            }
+
+            if (pendingTx != null)
+            {
+                throw AppException.Conflict(
+                    ErrorCodes.ErrPaymentPendingExists,
+                    "Đang có đơn chờ thanh toán chưa hết hạn.");
+            }
         }
 
         // 5. Tính thời gian bắt đầu và kết thúc dự kiến của kỳ VIP:
@@ -182,11 +224,9 @@ public class SubscriptionService : ISubscriptionService
         // BR-PAY-SUB-02: Gói thuê bao VIP tự động hết hạn vào 23:59:59 của ngày kết thúc chu kỳ thanh toán
         endsAt = new DateTime(endsAt.Year, endsAt.Month, endsAt.Day, 23, 59, 59, DateTimeKind.Utc);
 
-        // 6. Sinh mã đơn hàng duy nhất theo định dạng VL_{yyyyMMdd}_{ticks}_{random}
-        var dateStr = now.ToString("yyyyMMdd");
-        var randomSuffix = Random.Shared.Next(100, 999);
-        var uniqueTicks = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 1000000;
-        var orderCode = $"VL_{dateStr}_{uniqueTicks:D6}_{randomSuffix}";
+        // 6. Sinh mã đơn hàng duy nhất theo định dạng VL_{payOsOrderCode} tương thích PayOS (dưới 9007199254740991)
+        long payOsOrderCode = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var orderCode = $"VL_{payOsOrderCode}";
 
         // 7. Gọi cổng thanh toán lấy liên kết hoặc mã QR
         PaymentCheckoutResult checkoutResult;
@@ -460,14 +500,15 @@ public class SubscriptionService : ISubscriptionService
 
         await _db.SaveChangesAsync(ct);
 
-        // Làm mới cache VIP của người dùng: Xóa vip_status:{userId}
+        // Làm mới cache VIP của người dùng: Xóa vip_status:{userId} và cache:profile:{userId}
         try
         {
             await _redis.RemoveAsync($"vip_status:{user.UserId}", ct);
+            await _redis.RemoveAsync($"cache:profile:{user.UserId}", ct);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[HandlePaymentIpnAsync] Không thể xóa cache vip_status:{UserId}", user.UserId);
+            _logger.LogWarning(ex, "[HandlePaymentIpnAsync] Không thể xóa cache vip_status hoặc profile cho user {UserId}", user.UserId);
         }
 
         // Gửi email biên lai bất đồng bộ (fire-and-forget)
@@ -486,6 +527,221 @@ public class SubscriptionService : ISubscriptionService
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[HandlePaymentIpnAsync] Không thể gửi email biên lai cho người dùng {UserId}", user.UserId);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Tiếp nhận và xử lý Webhook tự động từ PayOS VietQR Napas247 (xác thực chữ ký ChecksumKey HMAC-SHA256, tự động kích hoạt VIP).
+    /// </summary>
+    public async Task HandlePayOsWebhookAsync(
+        PayOS.Models.Webhooks.Webhook webhook,
+        CancellationToken ct = default)
+    {
+        if (webhook == null)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Webhook data không hợp lệ.");
+        }
+
+        // 1. Xác thực chữ ký số bằng PayOS SDK nếu có PayOSClient
+        var payOsClient = _paymentGateway.GetPayOSClient();
+        if (payOsClient != null)
+        {
+            try
+            {
+                await payOsClient.Webhooks.VerifyAsync(webhook);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[HandlePayOsWebhookAsync] Chữ ký Webhook PayOS không hợp lệ: Signature={Signature}", webhook.Signature);
+                throw AppException.Unauthorized(ErrorCodes.ErrPayInvalidSignature, "Chữ ký PayOS không hợp lệ.");
+            }
+        }
+
+        // 2. Kiểm tra nếu là webhook ping xác thực URL của PayOS Dashboard
+        if (webhook.Data == null)
+        {
+            _logger.LogInformation("[HandlePayOsWebhookAsync] Nhận Webhook ping xác thực URL thành công từ PayOS.");
+            return;
+        }
+
+        var orderCodeStr = webhook.Data.OrderCode.ToString();
+
+        // 3. Tìm giao dịch trong DB theo PartnerTransactionCode
+        var transaction = await _db.PaymentTransactions
+            .Include(pt => pt.Plan)
+            .Include(pt => pt.User)
+            .FirstOrDefaultAsync(pt =>
+                pt.PartnerTransactionCode == orderCodeStr ||
+                pt.PartnerTransactionCode == $"VL_{orderCodeStr}" ||
+                pt.PartnerTransactionCode.EndsWith(orderCodeStr), ct);
+
+        if (transaction == null)
+        {
+            // Nếu là đơn test từ hệ thống hoặc ping test Webhook trên Dashboard PayOS
+            if (webhook.Data.OrderCode <= 1000 ||
+                (webhook.Data.Description?.Contains("test", StringComparison.OrdinalIgnoreCase) ?? false))
+            {
+                _logger.LogInformation("[HandlePayOsWebhookAsync] Bỏ qua đơn test PayOS: {OrderCode}, Description: {Description}",
+                    webhook.Data.OrderCode, webhook.Data.Description);
+                return;
+            }
+
+            throw AppException.NotFound(ErrorCodes.ErrPayOrderNotFound, "Không tìm thấy giao dịch tương ứng với đơn hàng.");
+        }
+
+        // 4. Cơ chế bất biến (Idempotent Consumer, BR-PAY-TXN-02):
+        if (string.Equals(transaction.TransactionStatus, "SUCCESS", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("[HandlePayOsWebhookAsync] Giao dịch {OrderCode} đã được xử lý SUCCESS trước đó (Idempotent). Bỏ qua không cộng hạn lần hai.", transaction.PartnerTransactionCode);
+            return;
+        }
+
+        // 5. Kiểm tra nếu đơn hàng đã bị hủy hoặc xử lý trước đó
+        var isExpired = string.Equals(transaction.TransactionStatus, "EXPIRED", StringComparison.OrdinalIgnoreCase);
+        var isPending = string.Equals(transaction.TransactionStatus, "PENDING", StringComparison.OrdinalIgnoreCase);
+
+        if (!isPending && !isExpired)
+        {
+            throw AppException.Conflict(ErrorCodes.ErrPayOrderExpired, "Giao dịch đã kết thúc hoặc không ở trạng thái hợp lệ để xử lý.");
+        }
+
+        var now = DateTime.UtcNow;
+
+        // Nếu đơn hàng đã bị EXPIRED, kiểm tra thời gian ân hạn (Grace Period 30 phút tính từ lúc tạo đơn)
+        if (isExpired)
+        {
+            var isWithinGracePeriod = transaction.CreatedAt >= now.AddMinutes(-30);
+            if (!isWithinGracePeriod)
+            {
+                // Giao dịch thanh toán trễ bất thường (> 30 phút kể từ lúc tạo đơn).
+                // Không tự động lên VIP để chống trục lợi/rủi ro tranh chấp giá.
+                // Lưu AuditLog chuyển sang hàng đợi Admin Reconcile (COMPENSATE hoặc REFUND).
+                _logger.LogWarning("[HandlePayOsWebhookAsync] GIAO DỊCH BẤT THƯỜNG / CHUYỂN TIỀN TRỄ: Giao dịch {OrderCode} đã EXPIRED quá 30 phút (tạo lúc {CreatedAt:yyyy-MM-dd HH:mm:ss} UTC). PayOS báo nhận {Amount} VND. Không tự động lên VIP, chuyển sang hàng đợi Admin Reconcile.",
+                    transaction.PartnerTransactionCode, transaction.CreatedAt, webhook.Data.Amount);
+
+                _db.AuditLogs.Add(new AuditLog
+                {
+                    ActorUserId = transaction.UserId,
+                    ActorRole = "SYSTEM",
+                    Action = "PAYOS_LATE_PAYMENT_DETECTED",
+                    TargetTable = "PaymentTransactions",
+                    TargetId = transaction.PartnerTransactionCode,
+                    NewValue = JsonSerializer.Serialize(new
+                    {
+                        transactionId = transaction.TransactionId,
+                        orderCode = transaction.PartnerTransactionCode,
+                        amount = webhook.Data.Amount,
+                        reference = webhook.Data.Reference,
+                        createdAt = transaction.CreatedAt,
+                        receivedAt = now
+                    }),
+                    Note = $"Thanh toán trễ quá 30 phút ({ (now - transaction.CreatedAt).TotalMinutes:F1} phút). Tiền đã vào tài khoản PayOS, chuyển sang hàng đợi Admin Reconcile để xem xét COMPENSATE hoặc REFUND.",
+                    CreatedAt = now
+                });
+
+                await _db.SaveChangesAsync(ct);
+                return;
+            }
+
+            _logger.LogInformation("[HandlePayOsWebhookAsync] Giao dịch {OrderCode} trước đó bị EXPIRED do quá hạn 5 phút nhưng nằm trong Grace Period 30 phút ({ElapsedMinutes:F1} phút). Tự động phục hồi và xử lý kích hoạt VIP.",
+                transaction.PartnerTransactionCode, (now - transaction.CreatedAt).TotalMinutes);
+        }
+
+        // 6. Đối soát số tiền
+        if (webhook.Data.Amount < (long)transaction.AmountVnd)
+        {
+            _logger.LogError("[HandlePayOsWebhookAsync] CẢNH BÁO ADMIN: Số tiền không khớp đơn hàng {OrderCode}. Nhận: {Received}, Kỳ vọng: {Expected}",
+                transaction.PartnerTransactionCode, webhook.Data.Amount, transaction.AmountVnd);
+            throw AppException.Conflict(ErrorCodes.ErrPayAmountMismatch, "Số tiền thanh toán không khớp đơn hàng.");
+        }
+
+        // 7. Kiểm tra mã kết quả từ PayOS (code "00" = thành công)
+        if (!string.Equals(webhook.Data.Code, "00", StringComparison.OrdinalIgnoreCase))
+        {
+            transaction.TransactionStatus = "FAILED";
+            transaction.CompletedAt = now;
+            await _db.SaveChangesAsync(ct);
+            return;
+        }
+
+        // 8. Cập nhật trạng thái SUCCESS
+        transaction.TransactionStatus = "SUCCESS";
+        transaction.CompletedAt = now;
+        transaction.SignatureHash = webhook.Signature ?? string.Empty;
+
+        // 9. Kích hoạt hoặc gia hạn VIP (BR-PAY-SUB-01, BR-PAY-SUB-02)
+        var user = transaction.User;
+        var plan = transaction.Plan;
+        DateTime startsAt;
+        DateTime endsAt;
+
+        if (string.Equals(user.Role, "VIP", StringComparison.OrdinalIgnoreCase) && transaction.EndsAt > now)
+        {
+            startsAt = transaction.StartsAt;
+            endsAt = transaction.EndsAt.AddDays(plan.DurationDays);
+        }
+        else
+        {
+            startsAt = now;
+            endsAt = now.AddDays(plan.DurationDays);
+            user.Role = "VIP";
+        }
+
+        endsAt = new DateTime(endsAt.Year, endsAt.Month, endsAt.Day, 23, 59, 59, DateTimeKind.Utc);
+        transaction.StartsAt = startsAt;
+        transaction.EndsAt = endsAt;
+
+        // 10. Ghi AuditLog
+        _db.AuditLogs.Add(new AuditLog
+        {
+            ActorUserId = user.UserId,
+            ActorRole = user.Role,
+            Action = "PAYOS_IPN_SUCCESS",
+            TargetTable = "PaymentTransactions",
+            TargetId = transaction.PartnerTransactionCode,
+            NewValue = JsonSerializer.Serialize(new
+            {
+                transactionId = transaction.TransactionId,
+                amount = transaction.AmountVnd,
+                planId = plan.PlanId,
+                vipStartsAt = startsAt,
+                vipEndsAt = endsAt,
+                reference = webhook.Data.Reference
+            }),
+            Note = $"Thanh toán PayOS VietQR tự động thành công cho đơn {transaction.PartnerTransactionCode}. Kích hoạt VIP đến {endsAt:yyyy-MM-dd HH:mm:ss} UTC.",
+            CreatedAt = now
+        });
+
+        await _db.SaveChangesAsync(ct);
+
+        // 11. Xóa cache Redis vip_status:{userId} và cache:profile:{userId}
+        try
+        {
+            await _redis.RemoveAsync($"vip_status:{user.UserId}", ct);
+            await _redis.RemoveAsync($"cache:profile:{user.UserId}", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[HandlePayOsWebhookAsync] Không thể xóa cache vip_status hoặc profile cho user {UserId}", user.UserId);
+        }
+
+        // 12. Gửi email biên lai (fire-and-forget)
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(user.Email))
+                {
+                    await _emailService.SendOtpEmailAsync(
+                        user.Email,
+                        $"Giao dịch #{transaction.TransactionId} thành công qua PayOS VietQR",
+                        "PAYMENT_RECEIPT");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[HandlePayOsWebhookAsync] Không thể gửi email biên lai cho người dùng {UserId}", user.UserId);
             }
         });
     }
@@ -573,5 +829,54 @@ public class SubscriptionService : ISubscriptionService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Hủy đơn thanh toán đang chờ của người dùng để giải phóng và cho phép tạo đơn mới ngay lập tức.
+    /// </summary>
+    public async Task<CancelPendingSubscriptionResponseDto> CancelPendingSubscriptionAsync(
+        int userId,
+        CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        var pendingCutoff = now.AddMinutes(-5);
+
+        var pendingTx = await _db.PaymentTransactions
+            .Where(pt => pt.UserId == userId &&
+                         pt.TransactionStatus == "PENDING" &&
+                         pt.CreatedAt >= pendingCutoff)
+            .OrderByDescending(pt => pt.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        if (pendingTx == null)
+        {
+            return new CancelPendingSubscriptionResponseDto
+            {
+                Cancelled = false,
+                Message = "Không có đơn chờ thanh toán nào cần hủy."
+            };
+        }
+
+        pendingTx.TransactionStatus = "CANCELLED";
+        pendingTx.CompletedAt = now;
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation("[CancelPendingSubscriptionAsync] Người dùng {UserId} đã hủy đơn chờ {TxId} ({PartnerCode})",
+            userId, pendingTx.TransactionId, pendingTx.PartnerTransactionCode);
+
+        try
+        {
+            await _redis.RemoveAsync($"cache:user_sub:{userId}", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[CancelPendingSubscriptionAsync] Không thể xóa cache Redis cho user {UserId}", userId);
+        }
+
+        return new CancelPendingSubscriptionResponseDto
+        {
+            Cancelled = true,
+            Message = "Đã hủy đơn chờ thanh toán thành công. Bạn có thể tiến hành tạo đơn mới."
+        };
     }
 }

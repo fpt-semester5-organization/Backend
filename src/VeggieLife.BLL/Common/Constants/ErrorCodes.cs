@@ -102,6 +102,8 @@ public static class ErrorCodes
     public const string ErrPayInvalidSignature = "ERR_PAY_INVALID_SIGNATURE";
     public const string ErrPayOrderExpired = "ERR_PAY_ORDER_EXPIRED";
     public const string ErrPayOrderNotFound = "ERR_PAY_ORDER_NOT_FOUND";
+    public const string ErrPayOrderAlreadySuccess = "ERR_PAY_ORDER_ALREADY_SUCCESS";
+    public const string ErrPayOrderRefunded = "ERR_PAY_ORDER_REFUNDED";
     public const string ErrPlanDuplicate = "ERR_PLAN_DUPLICATE";
     public const string ErrPlanNotFound = "ERR_PLAN_NOT_FOUND";
 

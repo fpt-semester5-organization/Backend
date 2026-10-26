@@ -107,7 +107,12 @@ public class AdminUserService : IAdminUserService
                 DietarySchoolId = u.HealthProfile != null ? u.HealthProfile.DietarySchoolId : null,
                 DietarySchoolName = u.HealthProfile != null && u.HealthProfile.DietarySchool != null ? u.HealthProfile.DietarySchool.SchoolName : null,
                 LockedUntil = u.LockedUntil,
-                CountViolationReports = u.CountViolationReports
+                CountViolationReports = u.CountViolationReports,
+                VipEndsAt = u.PaymentTransactions
+                    .Where(pt => pt.TransactionStatus == "SUCCESS" && pt.EndsAt > DateTime.UtcNow)
+                    .OrderByDescending(pt => pt.EndsAt)
+                    .Select(pt => (DateTime?)pt.EndsAt)
+                    .FirstOrDefault()
             })
             .ToListAsync(ct);
 
