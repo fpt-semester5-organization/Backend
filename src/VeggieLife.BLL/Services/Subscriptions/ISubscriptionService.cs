@@ -45,4 +45,11 @@ public interface ISubscriptionService
     Task HandlePayOsWebhookAsync(
         PayOS.Models.Webhooks.Webhook webhook,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Hủy đơn thanh toán đang chờ của người dùng để giải phóng và cho phép tạo đơn mới ngay lập tức.
+    /// </summary>
+    Task<CancelPendingSubscriptionResponseDto> CancelPendingSubscriptionAsync(
+        int userId,
+        CancellationToken ct = default);
 }

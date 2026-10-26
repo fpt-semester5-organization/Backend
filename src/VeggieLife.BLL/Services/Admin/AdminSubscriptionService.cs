@@ -393,10 +393,11 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             "Admin #{AdminId} đã đối soát giao dịch #{TransactionId} ({Action}): Status {OldStatus} -> {NewStatus}, EndsAt {OldEndsAt} -> {NewEndsAt}. Lý do: {Reason}",
             adminId, transaction.TransactionId, action, oldStatus, transaction.TransactionStatus, oldEndsAt, transaction.EndsAt, reason);
 
-        // Xóa cache Redis vip_status:{userId} và plans_cache
+        // Xóa cache Redis vip_status:{userId}, cache:profile:{userId} và plans_cache
         try
         {
             await _redis.RemoveAsync($"vip_status:{transaction.UserId}", ct);
+            await _redis.RemoveAsync($"cache:profile:{transaction.UserId}", ct);
             await _redis.RemoveAsync("plans_cache", ct);
         }
         catch (Exception ex)

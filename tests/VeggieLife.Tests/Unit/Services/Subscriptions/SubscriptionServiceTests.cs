@@ -366,6 +366,49 @@ public class SubscriptionServiceTests
     }
 
     [Fact]
+    public async Task CancelPendingSubscriptionAsync_WhenPendingExists_CancelsSuccessfully()
+    {
+        var (db, service, _, _, _) = CreateTestHarness();
+
+        db.PaymentTransactions.Add(new PaymentTransaction
+        {
+            TransactionId = 2001,
+            PlanId = 1,
+            UserId = 100,
+            GatewayProvider = "VIETQR",
+            PartnerTransactionCode = "VL_PENDING_2001",
+            AmountVnd = 19000,
+            TransactionStatus = "PENDING",
+            SignatureHash = "sig_2001",
+            CreatedAt = DateTime.UtcNow.AddMinutes(-1),
+            StartsAt = DateTime.UtcNow,
+            EndsAt = DateTime.UtcNow.AddDays(7)
+        });
+        await db.SaveChangesAsync();
+
+        var res = await service.CancelPendingSubscriptionAsync(100);
+
+        res.Should().NotBeNull();
+        res.Cancelled.Should().BeTrue();
+
+        var tx = await db.PaymentTransactions.FindAsync(2001L);
+        tx.Should().NotBeNull();
+        tx!.TransactionStatus.Should().Be("CANCELLED");
+        tx.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task CancelPendingSubscriptionAsync_WhenNoPendingExists_ReturnsFalse()
+    {
+        var (db, service, _, _, _) = CreateTestHarness();
+
+        var res = await service.CancelPendingSubscriptionAsync(100);
+
+        res.Should().NotBeNull();
+        res.Cancelled.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task CheckoutSubscriptionAsync_WhenUserHasActiveVip_ChainsStartsAtToPreviousEndsAt()
     {
         var (db, service, _, _, _) = CreateTestHarness();
@@ -910,5 +953,120 @@ public class SubscriptionServiceTests
 
         await act.Should().ThrowAsync<AppException>()
             .Where(ex => ex.ErrorCode == ErrorCodes.ErrPayAmountMismatch);
+    }
+
+    [Fact]
+    public async Task HandlePayOsWebhookAsync_WhenExpired_RecoversAndActivatesVip()
+    {
+        var (db, service, _, redis, _) = CreateTestHarness();
+        var now = DateTime.UtcNow;
+
+        var user = new User { UserId = 52, Email = "payos_expired@veggielife.vn", Role = UserRoles.Member, FullName = "Expired User", AccountStatus = "ACTIVE", CreatedAt = now };
+        var plan = new SubscriptionPlan { PlanId = 1, AdminId = 1, PlanName = "VIP 1 Tháng", Price = 49000, DurationDays = 30, IsActive = true, CreatedAt = now };
+        var tx = new PaymentTransaction
+        {
+            TransactionId = 5003,
+            PlanId = 1,
+            UserId = 52,
+            GatewayProvider = "VIETQR",
+            PartnerTransactionCode = "VL_776655",
+            AmountVnd = 49000,
+            TransactionStatus = "EXPIRED",
+            SignatureHash = "",
+            CreatedAt = now.AddMinutes(-10),
+            StartsAt = now.AddMinutes(-10),
+            EndsAt = now.AddDays(30)
+        };
+
+        db.Users.Add(user);
+        db.SubscriptionPlans.Add(plan);
+        db.PaymentTransactions.Add(tx);
+        await db.SaveChangesAsync();
+
+        var webhookData = new PayOS.Models.Webhooks.WebhookData
+        {
+            OrderCode = 776655,
+            Amount = 49000,
+            Description = "VL 776655",
+            Code = "00",
+            Reference = "REF776655"
+        };
+        var webhook = new PayOS.Models.Webhooks.Webhook
+        {
+            Code = "00",
+            Description = "Success",
+            Success = true,
+            Data = webhookData,
+            Signature = "sig"
+        };
+
+        await service.HandlePayOsWebhookAsync(webhook);
+
+        var updatedTx = await db.PaymentTransactions.FindAsync(5003L);
+        updatedTx!.TransactionStatus.Should().Be("SUCCESS");
+
+        var updatedUser = await db.Users.FindAsync(52);
+        updatedUser!.Role.Should().Be("VIP");
+    }
+
+    [Fact]
+    public async Task HandlePayOsWebhookAsync_WhenExpiredOver30Minutes_DoesNotActivateVip_LogsAuditForAdminReconcile()
+    {
+        var (db, service, _, redis, _) = CreateTestHarness();
+        var now = DateTime.UtcNow;
+
+        var user = new User { UserId = 53, Email = "payos_late@veggielife.vn", Role = UserRoles.Member, FullName = "Late User", AccountStatus = "ACTIVE", CreatedAt = now };
+        var plan = new SubscriptionPlan { PlanId = 1, AdminId = 1, PlanName = "VIP 1 Tháng", Price = 49000, DurationDays = 30, IsActive = true, CreatedAt = now };
+        var tx = new PaymentTransaction
+        {
+            TransactionId = 5004,
+            PlanId = 1,
+            UserId = 53,
+            GatewayProvider = "VIETQR",
+            PartnerTransactionCode = "VL_112233",
+            AmountVnd = 49000,
+            TransactionStatus = "EXPIRED",
+            SignatureHash = "",
+            CreatedAt = now.AddMinutes(-45), // Quá 45 phút (> 30 phút grace period)
+            StartsAt = now.AddMinutes(-45),
+            EndsAt = now.AddDays(30)
+        };
+
+        db.Users.Add(user);
+        db.SubscriptionPlans.Add(plan);
+        db.PaymentTransactions.Add(tx);
+        await db.SaveChangesAsync();
+
+        var webhookData = new PayOS.Models.Webhooks.WebhookData
+        {
+            OrderCode = 112233,
+            Amount = 49000,
+            Description = "VL 112233",
+            Code = "00",
+            Reference = "REF112233"
+        };
+        var webhook = new PayOS.Models.Webhooks.Webhook
+        {
+            Code = "00",
+            Description = "Success",
+            Success = true,
+            Data = webhookData,
+            Signature = "sig"
+        };
+
+        await service.HandlePayOsWebhookAsync(webhook);
+
+        // Transaction phải giữ nguyên EXPIRED, KHÔNG lên SUCCESS
+        var updatedTx = await db.PaymentTransactions.FindAsync(5004L);
+        updatedTx!.TransactionStatus.Should().Be("EXPIRED");
+
+        // Role người dùng KHÔNG được nâng cấp lên VIP
+        var updatedUser = await db.Users.FindAsync(53);
+        updatedUser!.Role.Should().Be(UserRoles.Member);
+
+        // Hệ thống ghi AuditLog để Admin vào Reconcile đối soát
+        var audit = await db.AuditLogs.FirstOrDefaultAsync(a => a.TargetId == "VL_112233" && a.Action == "PAYOS_LATE_PAYMENT_DETECTED");
+        audit.Should().NotBeNull();
+        audit!.Note.Should().Contain("Admin Reconcile");
     }
 }
