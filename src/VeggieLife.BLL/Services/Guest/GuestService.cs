@@ -22,6 +22,7 @@ public class GuestService : IGuestService
     private readonly IIpGeolocationService _geoService;
     private readonly GuestSecuritySettings _securitySettings;
     private readonly ILogger<GuestService> _logger;
+    private readonly VeggieLife.BLL.Services.Settings.ISystemSettingService? _settingService;
 
     public const int DefaultChatbotTrialLimit = 3;
     public const int DefaultFridgeVisionTrialLimit = 3;
@@ -36,13 +37,15 @@ public class GuestService : IGuestService
         IJwtTokenService jwtTokenService,
         IOptions<GuestSecuritySettings> securitySettings,
         ILogger<GuestService> logger,
-        IIpGeolocationService? geoService = null)
+        IIpGeolocationService? geoService = null,
+        VeggieLife.BLL.Services.Settings.ISystemSettingService? settingService = null)
     {
         _redisService = redisService;
         _jwtTokenService = jwtTokenService;
         _securitySettings = securitySettings.Value;
         _logger = logger;
         _geoService = geoService ?? new IpGeolocationService(redisService, Microsoft.Extensions.Logging.Abstractions.NullLogger<IpGeolocationService>.Instance);
+        _settingService = settingService;
     }
 
     public async Task<CreateAnonymousSessionResponse> CreateAnonymousSessionAsync(
@@ -127,13 +130,17 @@ public class GuestService : IGuestService
 
         var resetAt = DateTime.UtcNow.Date.AddDays(1).ToString("yyyy-MM-ddTHH:mm:ssZ");
 
+        var chatbotLimit = _settingService != null
+            ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_GUEST", DefaultChatbotTrialLimit, ct)
+            : DefaultChatbotTrialLimit;
+
         return new GetGuestQuotaResponse
         {
             Chatbot = new GuestQuotaItemDto
             {
                 Used = (int)chatbotUsed,
-                Limit = DefaultChatbotTrialLimit,
-                Remaining = Math.Max(0, DefaultChatbotTrialLimit - (int)chatbotUsed)
+                Limit = chatbotLimit,
+                Remaining = Math.Max(0, chatbotLimit - (int)chatbotUsed)
             },
             FridgeVision = new GuestQuotaItemDto
             {

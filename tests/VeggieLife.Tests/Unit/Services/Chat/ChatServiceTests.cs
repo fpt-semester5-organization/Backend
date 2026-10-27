@@ -16,6 +16,7 @@ using VeggieLife.BLL.DTOs.Surveys.Requests;
 using VeggieLife.BLL.Services.AI;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.Chat;
+using VeggieLife.BLL.Services.Settings;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
 using Xunit;
@@ -205,6 +206,36 @@ public class ChatServiceTests
         var ex = (await act.Should().ThrowAsync<AppException>()).Which;
         ex.StatusCode.Should().Be(403);
         ex.ErrorCode.Should().Be(ErrorCodes.ErrQuotaAiExceeded);
+    }
+
+    [Fact]
+    public async Task CreateSession_Guest_WhenAdminConfiguredDynamicQuota_RespectsDynamicLimit()
+    {
+        // Arrange: Admin cấu hình hạn mức khách là 5 lượt thay vì mặc định 3
+        var mockSettings = new Mock<ISystemSettingService>();
+        mockSettings.Setup(s => s.GetIntSettingAsync("CHAT_LIMIT_DAILY_GUEST", 3, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(5);
+
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        var dbContext = new AppDbContext(options);
+        var redis = new InMemoryTestRedisService();
+        var aiMock = new Mock<IAiServiceClient>();
+        var service = new ChatService(dbContext, redis, aiMock.Object, NullLogger<ChatService>.Instance, mockSettings.Object);
+
+        var guestUuid = Guid.NewGuid().ToString();
+        // Khách đã dùng 3 lượt (vẫn còn hạn ngạch vì hạn mức mới là 5)
+        await redis.SetAsync($"guest_quota:ai:{guestUuid}", 3L);
+
+        var request = new CreateChatSessionRequest { Title = "Phiên mới khi hạn mức là 5" };
+
+        // Act
+        var result = await service.CreateSessionAsync(null, guestUuid, request);
+
+        // Assert: Tạo phiên thành công vì 3 < 5
+        result.Should().NotBeNull();
+        result.SessionId.Should().BeGreaterThan(0);
     }
 
     [Fact]

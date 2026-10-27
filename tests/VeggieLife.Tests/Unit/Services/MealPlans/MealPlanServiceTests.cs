@@ -13,6 +13,7 @@ using VeggieLife.BLL.DTOs.MealPlans.Requests;
 using VeggieLife.BLL.DTOs.MealPlans.Responses;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.MealPlans;
+using VeggieLife.BLL.Services.Settings;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
 using VeggieLife.DAL.External.AiService;
@@ -33,6 +34,7 @@ public class MealPlanServiceTests : IDisposable
     private readonly AppDbContext _db;
     private readonly Mock<IAiServiceClient> _mockAiClient;
     private readonly Mock<IRedisService> _mockRedis;
+    private readonly Mock<ISystemSettingService> _mockSettingService;
     private readonly Mock<ILogger<MealPlanService>> _mockLogger;
     private readonly MealPlanService _service;
 
@@ -45,6 +47,7 @@ public class MealPlanServiceTests : IDisposable
         _db = new AppDbContext(options);
         _mockAiClient = new Mock<IAiServiceClient>();
         _mockRedis = new Mock<IRedisService>();
+        _mockSettingService = new Mock<ISystemSettingService>();
         _mockLogger = new Mock<ILogger<MealPlanService>>();
 
         // Mặc định Redis không bị khóa
@@ -55,10 +58,20 @@ public class MealPlanServiceTests : IDisposable
         _mockRedis.Setup(r => r.RemoveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
+        // Mặc định trả về giá trị fallback truyền vào cho SystemSettings
+        _mockSettingService.Setup(s => s.GetIntSettingAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string key, int defaultValue, CancellationToken ct) => defaultValue);
+        _mockSettingService.Setup(s => s.GetDecimalSettingAsync(It.IsAny<string>(), It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string key, decimal defaultValue, CancellationToken ct) => defaultValue);
+        _mockSettingService.Setup(s => s.GetStringSettingAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string key, string defaultValue, CancellationToken ct) => defaultValue);
+        _mockSettingService.Setup(s => s.GetBoolSettingAsync(It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string key, bool defaultValue, CancellationToken ct) => defaultValue);
+
         // Mặc định Circuit Breaker đóng
         _mockAiClient.Setup(c => c.IsCircuitOpen).Returns(false);
 
-        _service = new MealPlanService(_db, _mockAiClient.Object, _mockRedis.Object, _mockLogger.Object);
+        _service = new MealPlanService(_db, _mockAiClient.Object, _mockRedis.Object, _mockSettingService.Object, _mockLogger.Object);
 
         SeedMasterDataAndRecipes();
     }
@@ -752,6 +765,45 @@ public class MealPlanServiceTests : IDisposable
 
         var activeLog = await _db.AuditLogs.FirstOrDefaultAsync(l => l.TargetId == "508" && l.Note == "ACTIVE");
         activeLog.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task UpdateMealPlanSlotAsync_WhenAdminConfiguredDynamicSwapLimit_RespectsDynamicLimitFromSystemSettings()
+    {
+        // ARRANGE: Admin cấu hình hạn mức đổi món DRAFT thành 5 lần thay vì mặc định 21
+        _mockSettingService.Setup(s => s.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(5);
+
+        var userId = 5081;
+        _db.Users.Add(new User { UserId = userId, Email = "user5081@test.com", FullName = "User 5081", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        _db.HealthProfiles.Add(new HealthProfile { UserId = userId, DietarySchoolId = 1, Gender = "MALE", DateOfBirth = new DateOnly(1992, 5, 5), HeightCm = 170m, CurrentWeightKg = 65m, BmiValue = 22.5m, BmrKcal = 1500m, TdeeKcal = 2000m, TargetDailyCalories = 2000m, RegionPreference = "MIEN_NAM", HealthGoal = "MAINTAIN" });
+        var plan = CreateTestMealPlan(5081, userId, "DRAFT");
+        var slot = await _db.MealSlots.FirstAsync(s => s.PlanId == 5081);
+
+        // Đã dùng 5 lần
+        for (int i = 1; i <= 5; i++)
+        {
+            _db.AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = userId,
+                ActorRole = UserRoles.Member,
+                Action = "MEAL_SLOT_SWAPPED",
+                TargetTable = "MealPlans",
+                TargetId = "5081",
+                Note = "DRAFT",
+                CreatedAt = DateTime.UtcNow.AddMinutes(-i)
+            });
+        }
+        await _db.SaveChangesAsync();
+
+        var request = new UpdateMealPlanSlotRequest { SwapReason = "Thử đổi lần thứ 6 khi hạn mức là 5" };
+
+        // ACT & ASSERT: Lần thứ 6 phải bị từ chối với thông báo động "Hết 5 lần đổi/chỉnh sửa của giai đoạn hiện tại (DRAFT)."
+        var act = () => _service.UpdateMealPlanSlotAsync(5081, slot.SlotId, userId, UserRoles.Member, request);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrQuotaMealSwapExceeded);
+        ex.Which.Message.Should().Contain("Hết 5 lần đổi/chỉnh sửa của giai đoạn hiện tại (DRAFT).");
     }
 
     [Fact]
