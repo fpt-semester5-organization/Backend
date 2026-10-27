@@ -4615,6 +4615,71 @@ components:
       - statusCode
       - message
       - data
+    SystemSettingDto:
+      type: object
+      properties:
+        settingKey:
+          type: string
+        settingValue:
+          type: string
+        defaultValue:
+          type: string
+        dataType:
+          type: string
+        category:
+          type: string
+        description:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: integer
+          nullable: true
+      required:
+      - settingKey
+      - settingValue
+      - defaultValue
+      - dataType
+      - category
+      - updatedAt
+    UpdateSystemSettingRequest:
+      type: object
+      required:
+      - settingValue
+      properties:
+        settingValue:
+          type: string
+          maxLength: 500
+    SystemSettingListResponse:
+      type: object
+      required:
+      - statusCode
+      - message
+      - data
+      properties:
+        statusCode:
+          type: integer
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SystemSettingDto'
+    SystemSettingDetailResponse:
+      type: object
+      required:
+      - statusCode
+      - message
+      - data
+      properties:
+        statusCode:
+          type: integer
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/SystemSettingDto'
 tags:
 - name: AUTH
   description: Phiên Khách & Xác thực
@@ -12555,3 +12620,169 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /admin/settings:
+    get:
+      tags:
+      - ADM
+      summary: Lấy danh sách cấu hình hệ thống
+      description: 'Lấy toàn bộ tham số cấu hình hệ thống hoặc lọc theo phân nhóm (?category=MEAL_PLAN, AI_QUOTA, LLMOPS, COMMUNITY). Yêu cầu quyền ADMIN.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: category
+        in: query
+        required: false
+        schema:
+          type: string
+        description: 'Phân nhóm cấu hình: MEAL_PLAN, AI_QUOTA, LLMOPS, COMMUNITY'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemSettingListResponse'
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_ADM_FORBIDDEN: Claim role khác ADMIN.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/settings/{key}:
+    get:
+      tags:
+      - ADM
+      summary: Chi tiết tham số cấu hình hệ thống
+      description: 'Lấy thông tin chi tiết một tham số cấu hình theo SettingKey. Yêu cầu quyền ADMIN.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Khóa cấu hình (SettingKey)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemSettingDetailResponse'
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_ADM_FORBIDDEN: Claim role khác ADMIN.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'ERR_ADM_NOT_FOUND: Không tìm thấy cấu hình hệ thống với khóa được chỉ định.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      tags:
+      - ADM
+      summary: Cập nhật giá trị tham số cấu hình hệ thống
+      description: 'Cập nhật giá trị một tham số cấu hình từ Admin Dashboard. Hệ thống sẽ kiểm tra kiểu dữ liệu (INT, DECIMAL, BOOLEAN, STRING), kiểm tra khoảng 0-100% nếu là tham số phần trăm, ghi nhận AuditLog và xóa cache Redis tương ứng. Yêu cầu quyền ADMIN.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Khóa cấu hình (SettingKey)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSystemSettingRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemSettingDetailResponse'
+        '400':
+          description: 'ERR_VALIDATION: Định dạng giá trị không hợp lệ hoặc vượt ngưỡng phần trăm cho phép.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_ADM_FORBIDDEN: Claim role khác ADMIN.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'ERR_ADM_NOT_FOUND: Không tìm thấy cấu hình hệ thống với khóa được chỉ định.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/settings/{key}/reset:
+    post:
+      tags:
+      - ADM
+      summary: Khôi phục cấu hình về giá trị mặc định ban đầu
+      description: 'Khôi phục giá trị của tham số cấu hình về giá trị mặc định ban đầu (DefaultValue) được định nghĩa trong hệ thống. Ghi nhận AuditLog và xóa cache Redis. Yêu cầu quyền ADMIN.'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Khóa cấu hình (SettingKey)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemSettingDetailResponse'
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_ADM_FORBIDDEN: Claim role khác ADMIN.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'ERR_ADM_NOT_FOUND: Không tìm thấy cấu hình hệ thống với khóa được chỉ định.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
