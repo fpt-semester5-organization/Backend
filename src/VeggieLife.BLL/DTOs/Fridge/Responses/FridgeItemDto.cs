@@ -24,4 +24,19 @@ public class FridgeItemDto
     /// Trạng thái độ tươi: FRESH | NON-FRESH.
     /// </summary>
     public string FreshnessStatus { get; set; } = "FRESH";
+
+    /// <summary>
+    /// Định lượng hiển thị (ví dụ: "nửa trái", "3 ký", "500g").
+    /// </summary>
+    public string? Quantity { get; set; }
+
+    /// <summary>
+    /// Số lượng số học của nguyên liệu (ví dụ: 0.5, 3.0, 500).
+    /// </summary>
+    public decimal? Amount { get; set; }
+
+    /// <summary>
+    /// Đơn vị đo lường (ví dụ: "trái", "kg", "g", "bó").
+    /// </summary>
+    public string? Unit { get; set; }
 }

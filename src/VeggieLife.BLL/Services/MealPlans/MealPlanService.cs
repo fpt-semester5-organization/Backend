@@ -122,6 +122,8 @@ public class MealPlanService : IMealPlanService
                 .Include(r => r.Category)
                 .Include(r => r.RecipeIngredients)
                     .ThenInclude(ri => ri.Ingredient)
+                .Include(r => r.Posts)
+                    .ThenInclude(p => p.Votes)
                 .Where(r => r.Status == "APPROVED_ACTIVE")
                 .ToListAsync(ct);
 
@@ -877,7 +879,9 @@ public class MealPlanService : IMealPlanService
                     RecipeId = recipe.RecipeId,
                     Title = recipe.Title,
                     CaloriesKcal = recipe.CaloriesKcal,
-                    ImageUrl = recipe.ImageUrl
+                    ImageUrl = recipe.ImageUrl,
+                    CookTimeMinutes = recipe.CookTimeMinutes,
+                    VoteCount = recipe.Posts?.SelectMany(p => p.Votes).Count() ?? 0
                 } : null
             };
         }).ToList();
@@ -942,6 +946,8 @@ public class MealPlanService : IMealPlanService
         var plan = await _db.MealPlans
             .Include(p => p.MealSlots)
                 .ThenInclude(ms => ms.Recipe)
+                    .ThenInclude(r => r.Posts)
+                        .ThenInclude(p => p.Votes)
             .FirstOrDefaultAsync(p => p.PlanId == id && p.UserId == userId, ct);
 
         if (plan == null)
@@ -969,19 +975,37 @@ public class MealPlanService : IMealPlanService
         var slots = plan.MealSlots
             .OrderBy(s => dayOrder.GetValueOrDefault(s.DayOfWeek, 99))
             .ThenBy(s => mealOrder.GetValueOrDefault(s.MealType, 99))
-            .Select(s => new MealSlotDto
+            .Select(s =>
             {
-                SlotId = s.SlotId,
-                DayOfWeek = s.DayOfWeek,
-                MealType = s.MealType,
-                IsCompleted = s.IsCompleted,
-                Recipe = s.Recipe != null ? new MealSlotRecipeDto
+                MealSlotSwapNote? note = null;
+                if (!string.IsNullOrWhiteSpace(s.Notes) && s.Notes.TrimStart().StartsWith("{"))
                 {
-                    RecipeId = s.Recipe.RecipeId,
-                    Title = s.Recipe.Title,
-                    CaloriesKcal = s.Recipe.CaloriesKcal,
-                    ImageUrl = s.Recipe.ImageUrl
-                } : null
+                    try
+                    {
+                        note = JsonSerializer.Deserialize<MealSlotSwapNote>(s.Notes);
+                    }
+                    catch { }
+                }
+
+                return new MealSlotDto
+                {
+                    SlotId = s.SlotId,
+                    DayOfWeek = s.DayOfWeek,
+                    MealType = s.MealType,
+                    IsCompleted = s.IsCompleted,
+                    Recipe = s.Recipe != null ? new MealSlotRecipeDto
+                    {
+                        RecipeId = s.Recipe.RecipeId,
+                        Title = s.Recipe.Title,
+                        CaloriesKcal = s.Recipe.CaloriesKcal,
+                        ImageUrl = s.Recipe.ImageUrl,
+                        CookTimeMinutes = s.Recipe.CookTimeMinutes,
+                        VoteCount = s.Recipe.Posts?.SelectMany(p => p.Votes).Count() ?? 0
+                    } : null,
+                    SwapCount = note?.SwapCount ?? 0,
+                    PreviousRecipe = note?.PreviousRecipe,
+                    OriginalRecipe = note?.OriginalRecipe
+                };
             })
             .ToList();
 
@@ -1188,6 +1212,8 @@ public class MealPlanService : IMealPlanService
         var allCandidates = await _db.Recipes
             .Include(r => r.RecipeIngredients)
                 .ThenInclude(ri => ri.Ingredient)
+            .Include(r => r.Posts)
+                .ThenInclude(p => p.Votes)
             .Where(r => r.Status == "APPROVED_ACTIVE" && !excludedIds.Contains(r.RecipeId))
             .ToListAsync(ct);
 
@@ -1212,6 +1238,34 @@ public class MealPlanService : IMealPlanService
         var newRecipe = substituteCandidates[0];
         slot.RecipeId = newRecipe.RecipeId;
 
+        MealSlotSwapNote? existingNote = null;
+        if (!string.IsNullOrWhiteSpace(slot.Notes) && slot.Notes.TrimStart().StartsWith("{"))
+        {
+            try
+            {
+                existingNote = JsonSerializer.Deserialize<MealSlotSwapNote>(slot.Notes);
+            }
+            catch { }
+        }
+
+        var oldRecipeDto = new MealSlotRecipeDto
+        {
+            RecipeId = oldRecipe.RecipeId,
+            Title = oldRecipe.Title,
+            CaloriesKcal = oldRecipe.CaloriesKcal,
+            ImageUrl = oldRecipe.ImageUrl,
+            CookTimeMinutes = oldRecipe.CookTimeMinutes,
+            VoteCount = oldRecipe.Posts?.SelectMany(p => p.Votes).Count() ?? 0
+        };
+
+        var swapNote = new MealSlotSwapNote
+        {
+            SwapCount = (existingNote?.SwapCount ?? 0) + 1,
+            PreviousRecipe = oldRecipeDto,
+            OriginalRecipe = existingNote?.OriginalRecipe ?? oldRecipeDto
+        };
+        slot.Notes = JsonSerializer.Serialize(swapNote);
+
         var auditLog = new AuditLog
         {
             ActorUserId = userId,
@@ -1219,8 +1273,8 @@ public class MealPlanService : IMealPlanService
             Action = "MEAL_SLOT_SWAPPED",
             TargetTable = "MealPlans",
             TargetId = id.ToString(),
-            OldValue = JsonSerializer.Serialize(new { recipeId = oldRecipe.RecipeId }),
-            NewValue = JsonSerializer.Serialize(new { recipeId = newRecipe.RecipeId }),
+            OldValue = JsonSerializer.Serialize(new { recipeId = oldRecipe.RecipeId, title = oldRecipe.Title, caloriesKcal = oldRecipe.CaloriesKcal }),
+            NewValue = JsonSerializer.Serialize(new { recipeId = newRecipe.RecipeId, title = newRecipe.Title, caloriesKcal = newRecipe.CaloriesKcal }),
             Note = currentPhase,
             CreatedAt = DateTime.UtcNow
         };
@@ -1243,8 +1297,13 @@ public class MealPlanService : IMealPlanService
                     RecipeId = newRecipe.RecipeId,
                     Title = newRecipe.Title,
                     CaloriesKcal = newRecipe.CaloriesKcal,
-                    ImageUrl = newRecipe.ImageUrl
-                }
+                    ImageUrl = newRecipe.ImageUrl,
+                    CookTimeMinutes = newRecipe.CookTimeMinutes,
+                    VoteCount = newRecipe.Posts?.SelectMany(p => p.Votes).Count() ?? 0
+                },
+                SwapCount = swapNote.SwapCount,
+                PreviousRecipe = swapNote.PreviousRecipe,
+                OriginalRecipe = swapNote.OriginalRecipe
             },
             SwapsRemaining = swapsRemaining
         };
@@ -1502,5 +1561,12 @@ public class MealPlanService : IMealPlanService
         }
 
         return MealPlanPdfExporter.GeneratePdf(plan, shoppingList, includePlan, includeShopping);
+    }
+
+    private class MealSlotSwapNote
+    {
+        public int SwapCount { get; set; }
+        public MealSlotRecipeDto? PreviousRecipe { get; set; }
+        public MealSlotRecipeDto? OriginalRecipe { get; set; }
     }
 }

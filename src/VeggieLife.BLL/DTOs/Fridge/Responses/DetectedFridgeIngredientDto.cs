@@ -30,6 +30,24 @@ public class DetectedFridgeIngredientDto
     public string FreshnessStatus { get; set; } = "FRESH";
 
     /// <summary>
+    /// Định lượng hoặc số lượng ước tính từ ảnh (ví dụ: "nửa trái", "3 quả", "500g", "1 bó", "3kg").
+    /// </summary>
+    [JsonPropertyName("quantity")]
+    public string? Quantity { get; set; }
+
+    /// <summary>
+    /// Giá trị số học của định lượng (ví dụ: 0.5, 3.0, 500.0).
+    /// </summary>
+    [JsonPropertyName("amount")]
+    public decimal? Amount { get; set; }
+
+    /// <summary>
+    /// Đơn vị đo lường tương ứng (ví dụ: "trái", "quả", "kg", "g", "bó", "củ").
+    /// </summary>
+    [JsonPropertyName("unit")]
+    public string? Unit { get; set; }
+
+    /// <summary>
     /// Tọa độ hộp bao [ymin, xmin, ymax, xmax] trong thang đo 0..1000 chuẩn hóa từ Gemini Vision.
     /// </summary>
     [JsonPropertyName("box2d")]

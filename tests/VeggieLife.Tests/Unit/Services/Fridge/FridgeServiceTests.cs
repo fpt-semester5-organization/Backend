@@ -1168,6 +1168,192 @@ public class FridgeServiceTests : IDisposable
         result.Warnings.Any(w => w.Contains("nguồn gốc động vật")).Should().BeTrue();
     }
 
+    [Fact]
+    public async Task DetectIngredients_WhenImageIsNotAFridge_ThrowsBadRequest_AndDoesNotDeductQuota()
+    {
+        // Arrange
+        using var stream = CreateValidPngStream(800, 600);
+        var input = new FridgeDetectionInputDto
+        {
+            ImageStream = stream,
+            FileName = "photo.png",
+            FileLength = stream.Length,
+            ContentType = "image/png"
+        };
+
+        _mockAiClient.Setup(c => c.DetectFridgeIngredientsAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiFridgeDetectionResult
+            {
+                IsValidFridge = false,
+                RejectionReason = "Hình ảnh không phải là tủ lạnh có chứa nguyên liệu thực phẩm. Vui lòng chụp hoặc chọn lại ảnh khác.",
+                Items = new List<AiDetectedItemDto>()
+            });
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<AppException>(() =>
+            _service.DetectIngredientsAsync(input, userId: 1, userRole: "MEMBER", guestUuid: null));
+
+        ex.StatusCode.Should().Be(400);
+        ex.Message.Should().Contain("không phải là tủ lạnh");
+
+        // Quota không bị trừ
+        var today = DateTime.UtcNow.Date;
+        var quotaLogs = await _db.AiquotaLogs.CountAsync(l => l.UserId == 1 && l.CreatedAt >= today);
+        quotaLogs.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task DetectIngredients_WithQuantities_ExtractsAndSavesQuantityCorrectly()
+    {
+        // Arrange
+        using var stream = CreateValidPngStream(800, 600);
+        var input = new FridgeDetectionInputDto
+        {
+            ImageStream = stream,
+            FileName = "fridge.png",
+            FileLength = stream.Length,
+            ContentType = "image/png"
+        };
+
+        _mockAiClient.Setup(c => c.DetectFridgeIngredientsAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiFridgeDetectionResult
+            {
+                IsValidFridge = true,
+                Items = new List<AiDetectedItemDto>
+                {
+                    new()
+                    {
+                        Name = "Nấm rơm",
+                        FreshnessStatus = "FRESH",
+                        Quantity = "500g",
+                        Amount = 500m,
+                        Unit = "g",
+                        Box2D = new List<int> { 100, 100, 300, 300 }
+                    }
+                }
+            });
+
+        // Act
+        var result = await _service.DetectIngredientsAsync(input, userId: 2, userRole: "MEMBER", guestUuid: null);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Detected.Should().HaveCount(1);
+        result.Detected[0].Quantity.Should().Be("500g");
+        result.Detected[0].Amount.Should().Be(500m);
+        result.Detected[0].Unit.Should().Be("g");
+
+        // Kiểm tra trong DB
+        var savedItem = await _db.FridgeInventories.FirstOrDefaultAsync(f => f.UserId == 2 && f.IngredientId == 12);
+        savedItem.Should().NotBeNull();
+        savedItem!.CustomItemName.Should().Contain("500g");
+    }
+
+    [Fact]
+    public async Task GetRecipeSuggestions_WhenIngredientHasInsufficientQuantity_ReportsInsufficientAndWarning()
+    {
+        // Arrange
+        var userId = 50;
+
+        // Tủ lạnh chỉ có "nửa trái" (0.5 trái) bí đỏ / cà chua
+        _db.FridgeInventories.Add(new FridgeInventory
+        {
+            UserId = userId,
+            IngredientId = 13, // Cà chua
+            CustomItemName = "Cà chua (nửa trái)",
+            FreshnessStatus = "FRESH"
+        });
+
+        // Công thức yêu cầu 2 trái cà chua
+        var recipe = new Recipe
+        {
+            RecipeId = 88,
+            Title = "Canh cà chua đậu hũ",
+            Instructions = "Nấu canh cà chua",
+            DifficultyLevel = "EASY",
+            Source = "VEGGIELIFE",
+            Status = "APPROVED_ACTIVE",
+            Servings = 2,
+            RecipeIngredients = new List<RecipeIngredient>
+            {
+                new()
+                {
+                    RecipeId = 88,
+                    IngredientId = 13,
+                    QuantityNeeded = 2m,
+                    Unit = "trái",
+                    IsOptional = false
+                }
+            }
+        };
+        _db.Recipes.Add(recipe);
+        await _db.SaveChangesAsync();
+
+        // Act
+        var suggestions = await _service.GetRecipeSuggestionsAsync(userId, minSimilarity: 0.7);
+
+        // Assert
+        suggestions.Should().NotBeEmpty();
+        var sug = suggestions.First(s => s.RecipeId == 88);
+        sug.IsQuantityFullyMatched.Should().BeFalse();
+        sug.HasInsufficientIngredients.Should().BeTrue();
+        sug.InsufficientIngredients.Should().HaveCount(1);
+        sug.InsufficientIngredients[0].Name.Should().Be("Cà chua");
+        sug.InsufficientIngredients[0].Message.Should().Contain("chưa đủ định lượng");
+        sug.QuantityMessages.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task GetRecipeSuggestions_WhenIngredientHasSufficientQuantity_MarksAsFullyMatched()
+    {
+        // Arrange
+        var userId = 60;
+
+        // Tủ lạnh có 3 ký / 3 trái cà chua
+        _db.FridgeInventories.Add(new FridgeInventory
+        {
+            UserId = userId,
+            IngredientId = 13,
+            CustomItemName = "Cà chua (3 trái)",
+            FreshnessStatus = "FRESH"
+        });
+
+        // Công thức cần 1 trái (số định lượng cần bằng hoặc ít hơn trong tủ)
+        var recipe = new Recipe
+        {
+            RecipeId = 89,
+            Title = "Salad cà chua",
+            Instructions = "Trộn salad",
+            DifficultyLevel = "EASY",
+            Source = "VEGGIELIFE",
+            Status = "APPROVED_ACTIVE",
+            Servings = 1,
+            RecipeIngredients = new List<RecipeIngredient>
+            {
+                new()
+                {
+                    RecipeId = 89,
+                    IngredientId = 13,
+                    QuantityNeeded = 1m,
+                    Unit = "trái",
+                    IsOptional = false
+                }
+            }
+        };
+        _db.Recipes.Add(recipe);
+        await _db.SaveChangesAsync();
+
+        // Act
+        var suggestions = await _service.GetRecipeSuggestionsAsync(userId, minSimilarity: 0.7);
+
+        // Assert
+        suggestions.Should().NotBeEmpty();
+        var sug = suggestions.First(s => s.RecipeId == 89);
+        sug.IsQuantityFullyMatched.Should().BeTrue();
+        sug.HasInsufficientIngredients.Should().BeFalse();
+        sug.InsufficientIngredients.Should().BeEmpty();
+    }
+
     // =========================================================================
     // HÀM BỔ TRỢ TẠO LUỒNG ẢNH HỢP LỆ VỚI HEADER CHUẨN
     // =========================================================================

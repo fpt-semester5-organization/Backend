@@ -222,4 +222,40 @@ public class AiServiceClientFridgeTests
         // Assert
         result.Should().BeNull();
     }
+
+    [Fact]
+    public async Task DetectFridgeIngredientsAsync_WhenNotAFridge_ParsesIsValidFridgeAndRejectionReason()
+    {
+        // Arrange
+        var jsonResponse = """
+        {
+            "isValidFridge": false,
+            "rejectionReason": "Hình ảnh không phải là tủ lạnh có chứa nguyên liệu thực phẩm. Vui lòng chụp hoặc chọn lại ảnh khác.",
+            "items": [],
+            "usage": {
+                "model": "gemini-2.5-flash",
+                "promptTokens": 50,
+                "completionTokens": 10,
+                "latencyMs": 300,
+                "temperature": 0.2
+            }
+        }
+        """;
+
+        var (client, _) = CreateClientWithHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(jsonResponse, Encoding.UTF8, "application/json")
+        });
+
+        using var ms = new MemoryStream(new byte[] { 0xFF, 0xD8, 0xFF });
+
+        // Act
+        var result = await client.DetectFridgeIngredientsAsync(ms, "image/jpeg");
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.IsValidFridge.Should().BeFalse();
+        result.RejectionReason.Should().Contain("không phải là tủ lạnh");
+        result.Items.Should().BeEmpty();
+    }
 }

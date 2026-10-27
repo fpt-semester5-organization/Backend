@@ -26,4 +26,19 @@ public class MealSlotDto
     /// Thông tin công thức món ăn.
     /// </summary>
     public MealSlotRecipeDto? Recipe { get; set; }
+
+    /// <summary>
+    /// Số lần bữa ăn này đã được đổi món.
+    /// </summary>
+    public int SwapCount { get; set; }
+
+    /// <summary>
+    /// Thông tin công thức món ăn trước khi đổi gần nhất.
+    /// </summary>
+    public MealSlotRecipeDto? PreviousRecipe { get; set; }
+
+    /// <summary>
+    /// Thông tin công thức món ăn ban đầu (trước khi có bất kỳ lần đổi nào).
+    /// </summary>
+    public MealSlotRecipeDto? OriginalRecipe { get; set; }
 }

@@ -8,6 +8,12 @@ namespace VeggieLife.DAL.External.AiService;
 /// </summary>
 public class AiFridgeDetectionResult
 {
+    [JsonPropertyName("isValidFridge")]
+    public bool IsValidFridge { get; set; } = true;
+
+    [JsonPropertyName("rejectionReason")]
+    public string? RejectionReason { get; set; }
+
     public bool Success { get; set; } = true;
     public List<AiDetectedItemDto> Items { get; set; } = new();
     public int TokensConsumed { get; set; } = 250;
@@ -25,6 +31,15 @@ public class AiDetectedItemDto
     public string? FoodGroup { get; set; }
     public bool IsAnimalProduct { get; set; }
     public bool IsRedMeat { get; set; }
+
+    [JsonPropertyName("quantity")]
+    public string? Quantity { get; set; }
+
+    [JsonPropertyName("amount")]
+    public decimal? Amount { get; set; }
+
+    [JsonPropertyName("unit")]
+    public string? Unit { get; set; }
 
     /// <summary>
     /// Tọa độ hộp bao [ymin, xmin, ymax, xmax] trong thang đo 0..1000 từ Gemini Vision.

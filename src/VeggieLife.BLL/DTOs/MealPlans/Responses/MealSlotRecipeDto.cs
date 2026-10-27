@@ -9,4 +9,6 @@ public class MealSlotRecipeDto
     public string Title { get; set; } = null!;
     public decimal CaloriesKcal { get; set; }
     public string? ImageUrl { get; set; }
+    public int CookTimeMinutes { get; set; }
+    public int VoteCount { get; set; }
 }
