@@ -4615,7 +4615,7 @@ components:
       - statusCode
       - message
       - data
-    SystemSettingDto:
+    AdminSettingDto:
       type: object
       properties:
         settingKey:
@@ -4644,7 +4644,7 @@ components:
       - dataType
       - category
       - updatedAt
-    UpdateSystemSettingRequest:
+    UpdateAdminSettingRequest:
       type: object
       required:
       - settingValue
@@ -4652,7 +4652,7 @@ components:
         settingValue:
           type: string
           maxLength: 500
-    SystemSettingListResponse:
+    ListAdminSettingsResponse:
       type: object
       required:
       - statusCode
@@ -4666,8 +4666,8 @@ components:
         data:
           type: array
           items:
-            $ref: '#/components/schemas/SystemSettingDto'
-    SystemSettingDetailResponse:
+            $ref: '#/components/schemas/AdminSettingDto'
+    GetAdminSettingResponse:
       type: object
       required:
       - statusCode
@@ -4679,7 +4679,7 @@ components:
         message:
           type: string
         data:
-          $ref: '#/components/schemas/SystemSettingDto'
+          $ref: '#/components/schemas/AdminSettingDto'
 tags:
 - name: AUTH
   description: Phiên Khách & Xác thực
@@ -12624,8 +12624,14 @@ paths:
     get:
       tags:
       - ADM
-      summary: Lấy danh sách cấu hình hệ thống
-      description: 'Lấy toàn bộ tham số cấu hình hệ thống hoặc lọc theo phân nhóm (?category=MEAL_PLAN, AI_QUOTA, LLMOPS, COMMUNITY). Yêu cầu quyền ADMIN.'
+      operationId: listAdminSettings
+      summary: FN-ADM-19 Quản lý cấu hình tham số hệ thống
+      description: 'Quản trị tập trung các tham số cấu hình hệ thống: hạn mức thực đơn, hạn ngạch AI, ngưỡng kiểm duyệt, cấu hình mô hình LLM. Lọc theo phân nhóm (?category=MEAL_PLAN, AI_QUOTA, LLMOPS, COMMUNITY, GENERAL).
+
+
+        Auth: Bearer (ADMIN).'
+      x-fn-id: FN-ADM-19
+      x-status: Approved
       security:
       - bearerAuth: []
       parameters:
@@ -12634,14 +12640,40 @@ paths:
         required: false
         schema:
           type: string
-        description: 'Phân nhóm cấu hình: MEAL_PLAN, AI_QUOTA, LLMOPS, COMMUNITY'
+          enum:
+          - MEAL_PLAN
+          - AI_QUOTA
+          - LLMOPS
+          - COMMUNITY
+          - GENERAL
+        description: 'Phân nhóm cấu hình: MEAL_PLAN, AI_QUOTA, LLMOPS, COMMUNITY, GENERAL'
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SystemSettingListResponse'
+                $ref: '#/components/schemas/ListAdminSettingsResponse'
+              example:
+                statusCode: 200
+                message: OK
+                data:
+                - settingKey: MEAL_SWAP_DAILY_LIMIT
+                  settingValue: '21'
+                  defaultValue: '21'
+                  dataType: INT
+                  category: MEAL_PLAN
+                  description: Hạn mức số lần đổi món trong một tuần
+                  updatedAt: '2026-10-28T00:00:00Z'
+                  updatedBy: 1
+                - settingKey: MEAL_SWAP_CALORIE_TOLERANCE_PERCENT
+                  settingValue: '15'
+                  defaultValue: '15'
+                  dataType: INT
+                  category: MEAL_PLAN
+                  description: Dung sai calo cho phép khi đổi món (%)
+                  updatedAt: '2026-10-28T00:00:00Z'
+                  updatedBy: 1
         '401':
           description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
           content:
@@ -12658,8 +12690,14 @@ paths:
     get:
       tags:
       - ADM
-      summary: Chi tiết tham số cấu hình hệ thống
-      description: 'Lấy thông tin chi tiết một tham số cấu hình theo SettingKey. Yêu cầu quyền ADMIN.'
+      operationId: getAdminSetting
+      summary: FN-ADM-19 Quản lý cấu hình tham số hệ thống
+      description: 'Lấy thông tin chi tiết một tham số cấu hình theo SettingKey.
+
+
+        Auth: Bearer (ADMIN).'
+      x-fn-id: FN-ADM-19
+      x-status: Approved
       security:
       - bearerAuth: []
       parameters:
@@ -12675,7 +12713,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SystemSettingDetailResponse'
+                $ref: '#/components/schemas/GetAdminSettingResponse'
+              example:
+                statusCode: 200
+                message: OK
+                data:
+                  settingKey: MEAL_SWAP_DAILY_LIMIT
+                  settingValue: '21'
+                  defaultValue: '21'
+                  dataType: INT
+                  category: MEAL_PLAN
+                  description: Hạn mức số lần đổi món trong một tuần
+                  updatedAt: '2026-10-28T00:00:00Z'
+                  updatedBy: 1
         '401':
           description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
           content:
@@ -12697,8 +12747,14 @@ paths:
     put:
       tags:
       - ADM
-      summary: Cập nhật giá trị tham số cấu hình hệ thống
-      description: 'Cập nhật giá trị một tham số cấu hình từ Admin Dashboard. Hệ thống sẽ kiểm tra kiểu dữ liệu (INT, DECIMAL, BOOLEAN, STRING), kiểm tra khoảng 0-100% nếu là tham số phần trăm, ghi nhận AuditLog và xóa cache Redis tương ứng. Yêu cầu quyền ADMIN.'
+      operationId: updateAdminSetting
+      summary: FN-ADM-19 Quản lý cấu hình tham số hệ thống
+      description: 'Cập nhật giá trị một tham số cấu hình từ Admin Dashboard. Hệ thống sẽ kiểm tra kiểu dữ liệu (INT, DECIMAL, BOOLEAN, STRING), kiểm tra khoảng 0-100% nếu là tham số phần trăm, ghi nhận AuditLog và xóa cache Redis tương ứng.
+
+
+        Auth: Bearer (ADMIN).'
+      x-fn-id: FN-ADM-19
+      x-status: Approved
       security:
       - bearerAuth: []
       parameters:
@@ -12713,16 +12769,30 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateSystemSettingRequest'
+              $ref: '#/components/schemas/UpdateAdminSettingRequest'
+            example:
+              settingValue: '25'
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SystemSettingDetailResponse'
+                $ref: '#/components/schemas/GetAdminSettingResponse'
+              example:
+                statusCode: 200
+                message: Cập nhật tham số cấu hình thành công.
+                data:
+                  settingKey: MEAL_SWAP_DAILY_LIMIT
+                  settingValue: '25'
+                  defaultValue: '21'
+                  dataType: INT
+                  category: MEAL_PLAN
+                  description: Hạn mức số lần đổi món trong một tuần
+                  updatedAt: '2026-10-28T00:00:00Z'
+                  updatedBy: 1
         '400':
-          description: 'ERR_VALIDATION: Định dạng giá trị không hợp lệ hoặc vượt ngưỡng phần trăm cho phép.'
+          description: 'ERR_VALIDATION: Định dạng giá trị không hợp lệ hoặc vượt ngưỡng phần trăm cho phép (0 - 100%).'
           content:
             application/json:
               schema:
@@ -12749,8 +12819,14 @@ paths:
     post:
       tags:
       - ADM
-      summary: Khôi phục cấu hình về giá trị mặc định ban đầu
-      description: 'Khôi phục giá trị của tham số cấu hình về giá trị mặc định ban đầu (DefaultValue) được định nghĩa trong hệ thống. Ghi nhận AuditLog và xóa cache Redis. Yêu cầu quyền ADMIN.'
+      operationId: resetAdminSetting
+      summary: FN-ADM-19 Quản lý cấu hình tham số hệ thống
+      description: 'Khôi phục giá trị của tham số cấu hình về giá trị mặc định ban đầu (DefaultValue) được định nghĩa trong hệ thống. Ghi nhận AuditLog và xóa cache Redis.
+
+
+        Auth: Bearer (ADMIN).'
+      x-fn-id: FN-ADM-19
+      x-status: Approved
       security:
       - bearerAuth: []
       parameters:
@@ -12766,7 +12842,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SystemSettingDetailResponse'
+                $ref: '#/components/schemas/GetAdminSettingResponse'
+              example:
+                statusCode: 200
+                message: Khôi phục cấu hình về giá trị mặc định thành công.
+                data:
+                  settingKey: MEAL_SWAP_DAILY_LIMIT
+                  settingValue: '21'
+                  defaultValue: '21'
+                  dataType: INT
+                  category: MEAL_PLAN
+                  description: Hạn mức số lần đổi món trong một tuần
+                  updatedAt: '2026-10-28T00:00:00Z'
+                  updatedBy: 1
         '401':
           description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
           content:
@@ -12785,4 +12873,3 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
