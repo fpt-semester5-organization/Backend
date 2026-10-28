@@ -7,4 +7,5 @@ public class UpdateMealPlanSlotResponseData
 {
     public MealSlotDto Slot { get; set; } = null!;
     public int SwapsRemaining { get; set; }
+    public int MaxSwapsAllowed { get; set; } = 21;
 }
