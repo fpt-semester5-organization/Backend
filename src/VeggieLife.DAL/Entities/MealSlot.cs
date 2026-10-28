@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace VeggieLife.DAL.Entities;
@@ -22,4 +22,6 @@ public partial class MealSlot
     public virtual MealPlan Plan { get; set; } = null!;
 
     public virtual Recipe Recipe { get; set; } = null!;
+
+    public virtual ICollection<MealSlotSwapHistory> SwapHistories { get; set; } = new List<MealSlotSwapHistory>();
 }

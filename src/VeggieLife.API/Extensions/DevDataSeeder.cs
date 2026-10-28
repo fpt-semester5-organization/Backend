@@ -31,6 +31,36 @@ public static class DevDataSeeder
                         ALTER TABLE dbo.Products ADD Image_Url VARCHAR(500) NULL;
                     END
 
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'MealPlans' AND COLUMN_NAME = 'Max_Swaps_Allowed')
+                    BEGIN
+                        ALTER TABLE dbo.MealPlans ADD Max_Swaps_Allowed INT NOT NULL CONSTRAINT DF_MealPlans_Max_Swaps DEFAULT (21);
+                    END
+
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'MealPlans' AND COLUMN_NAME = 'Swaps_Remaining')
+                    BEGIN
+                        ALTER TABLE dbo.MealPlans ADD Swaps_Remaining INT NOT NULL CONSTRAINT DF_MealPlans_Swaps_Remaining DEFAULT (21);
+                    END
+
+                    IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[MealSlotSwapHistories]') AND type in (N'U'))
+                    BEGIN
+                        CREATE TABLE [dbo].[MealSlotSwapHistories] (
+                            [Swap_History_ID]       INT IDENTITY(1,1) NOT NULL,
+                            [Slot_ID]               INT NOT NULL,
+                            [Old_Recipe_ID]         INT NOT NULL,
+                            [New_Recipe_ID]         INT NOT NULL,
+                            [Swap_Reason]           NVARCHAR(255) NULL,
+                            [Calories_Delta]        DECIMAL(6,1) NOT NULL,
+                            [Swapped_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_MealSlotSwapHistories_Swapped_At] DEFAULT (SYSDATETIME()),
+
+                            CONSTRAINT [PK_MealSlotSwapHistories] PRIMARY KEY CLUSTERED ([Swap_History_ID] ASC),
+                            CONSTRAINT [FK_MealSlotSwapHistories_MealSlots] FOREIGN KEY ([Slot_ID]) REFERENCES [dbo].[MealSlots]([Slot_ID]) ON DELETE CASCADE,
+                            CONSTRAINT [FK_MealSlotSwapHistories_OldRecipe] FOREIGN KEY ([Old_Recipe_ID]) REFERENCES [dbo].[Recipes]([Recipe_ID]),
+                            CONSTRAINT [FK_MealSlotSwapHistories_NewRecipe] FOREIGN KEY ([New_Recipe_ID]) REFERENCES [dbo].[Recipes]([Recipe_ID])
+                        );
+
+                        CREATE NONCLUSTERED INDEX [IX_MealSlotSwapHistories_Slot_ID] ON [dbo].[MealSlotSwapHistories]([Slot_ID] ASC);
+                    END
+
                     IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'FridgeInventory' AND COLUMN_NAME = 'Quantity')
                     BEGIN
                         ALTER TABLE dbo.FridgeInventory ADD Quantity DECIMAL(8,2) NOT NULL CONSTRAINT DF_FridgeInventory_Quantity DEFAULT (1.00);

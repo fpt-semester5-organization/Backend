@@ -138,6 +138,27 @@ public class MealPlansController : BaseApiController
     }
 
     /// <summary>
+    /// FN-MEAL-03: Xem lịch sử đổi món của một bữa ăn (Slot).
+    /// Trả về danh sách chi tiết các lần đổi món với đầy đủ thông tin món cũ, món mới, lý do và chênh lệch calo.
+    /// </summary>
+    [HttpGet("slots/{slotId:int}/swap-history")]
+    [HttpGet("{id:int}/slots/{slotId:int}/swap-history")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<MealSlotSwapHistoryDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetMealSlotSwapHistory(
+        [FromRoute] int slotId,
+        [FromRoute] int? id = null,
+        CancellationToken ct = default)
+    {
+        var (userId, _) = EnsureAuthorizedUser();
+        var result = await _mealPlanService.GetMealSlotSwapHistoryAsync(slotId, userId, id, ct);
+        return OkResponse(result, "OK");
+    }
+
+    /// <summary>
     /// FN-MEAL-04: Đánh dấu bữa ăn trong thực đơn ACTIVE là đã ăn / chưa ăn.
     /// </summary>
     [HttpPatch("{id:int}/slots/{slotId:int}")]

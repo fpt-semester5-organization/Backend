@@ -809,7 +809,9 @@ public class MealPlanService : IMealPlanService
             CustomInstructions = customInstructions,
             PlanStatus = "DRAFT",
             GeneratedByAi = generatedByAi,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            MaxSwapsAllowed = 21,
+            SwapsRemaining = 21
         };
 
         _db.MealPlans.Add(mealPlan);
@@ -897,10 +899,12 @@ public class MealPlanService : IMealPlanService
             Edits = new MealPlanEditsDto
             {
                 PreDeployUsed = 0,
-                PreDeployLimit = 21,
+                PreDeployLimit = mealPlan.MaxSwapsAllowed,
                 PostDeployUsed = 0,
-                PostDeployLimit = 21
-            }
+                PostDeployLimit = mealPlan.MaxSwapsAllowed
+            },
+            MaxSwapsAllowed = mealPlan.MaxSwapsAllowed,
+            SwapsRemaining = mealPlan.SwapsRemaining
         };
     }
 
@@ -951,17 +955,19 @@ public class MealPlanService : IMealPlanService
                 "Thực đơn không tồn tại hoặc không thuộc về bạn.");
         }
 
-        var preDeployUsed = await _db.AuditLogs.CountAsync(a =>
+        var preDeployAudit = await _db.AuditLogs.CountAsync(a =>
             a.TargetTable == "MealPlans" &&
             a.TargetId == id.ToString() &&
             a.Action == "MEAL_SLOT_SWAPPED" &&
             a.Note == "DRAFT", ct);
+        var preDeployUsed = Math.Max(preDeployAudit, plan.PlanStatus == "DRAFT" ? (plan.MaxSwapsAllowed - plan.SwapsRemaining) : 0);
 
-        var postDeployUsed = await _db.AuditLogs.CountAsync(a =>
+        var postDeployAudit = await _db.AuditLogs.CountAsync(a =>
             a.TargetTable == "MealPlans" &&
             a.TargetId == id.ToString() &&
             a.Action == "MEAL_SLOT_SWAPPED" &&
             a.Note == "ACTIVE", ct);
+        var postDeployUsed = Math.Max(postDeployAudit, plan.PlanStatus == "ACTIVE" ? (plan.MaxSwapsAllowed - plan.SwapsRemaining) : 0);
 
         var dayOrder = DaysOfWeek.Select((d, idx) => (d, idx)).ToDictionary(x => x.d, x => x.idx, StringComparer.OrdinalIgnoreCase);
         var mealOrder = MealTypes.Select((m, idx) => (m, idx)).ToDictionary(x => x.m, x => x.idx, StringComparer.OrdinalIgnoreCase);
@@ -1000,10 +1006,12 @@ public class MealPlanService : IMealPlanService
             Edits = new MealPlanEditsDto
             {
                 PreDeployUsed = preDeployUsed,
-                PreDeployLimit = 21,
+                PreDeployLimit = plan.MaxSwapsAllowed,
                 PostDeployUsed = postDeployUsed,
-                PostDeployLimit = 21
-            }
+                PostDeployLimit = plan.MaxSwapsAllowed
+            },
+            MaxSwapsAllowed = plan.MaxSwapsAllowed,
+            SwapsRemaining = plan.SwapsRemaining
         };
     }
 
@@ -1074,6 +1082,7 @@ public class MealPlanService : IMealPlanService
         }
 
         plan.PlanStatus = "ACTIVE";
+        plan.SwapsRemaining = plan.MaxSwapsAllowed;
 
         var auditLog = new AuditLog
         {
@@ -1134,19 +1143,13 @@ public class MealPlanService : IMealPlanService
                 "Bữa ăn không tồn tại trong thực đơn này.");
         }
 
-        // Kiểm tra hạn mức đổi món theo giai đoạn: 21 lần DRAFT, 21 lần ACTIVE (BR-PAY-SUB-01)
+        // Kiểm tra hạn mức đổi món linh hoạt theo MaxSwapsAllowed & SwapsRemaining (thay thế số 21 hardcode)
         var currentPhase = plan.PlanStatus;
-        var swapsUsedInPhase = await _db.AuditLogs.CountAsync(a =>
-            a.TargetTable == "MealPlans" &&
-            a.TargetId == id.ToString() &&
-            a.Action == "MEAL_SLOT_SWAPPED" &&
-            a.Note == currentPhase, ct);
-
-        if (swapsUsedInPhase >= 21)
+        if (plan.SwapsRemaining <= 0)
         {
             throw AppException.Forbidden(
                 ErrorCodes.ErrQuotaMealSwapExceeded,
-                $"Hết 21 lần đổi/chỉnh sửa của giai đoạn hiện tại ({currentPhase}).");
+                $"Hết {plan.MaxSwapsAllowed} lần đổi/chỉnh sửa của giai đoạn hiện tại ({currentPhase}).");
         }
 
         // Tìm món thay thế: APPROVED_ACTIVE, hợp trường phái, calo lệch <= 15%, không dị ứng
@@ -1210,7 +1213,26 @@ public class MealPlanService : IMealPlanService
         }
 
         var newRecipe = substituteCandidates[0];
-        slot.RecipeId = newRecipe.RecipeId;
+        var oldRecipeId = oldRecipe.RecipeId;
+        var newRecipeId = newRecipe.RecipeId;
+
+        slot.RecipeId = newRecipeId;
+        plan.SwapsRemaining--;
+
+        var caloriesDelta = Math.Round(newRecipe.CaloriesKcal - oldRecipe.CaloriesKcal, 1);
+        var swapReason = request?.SwapReason ?? "TASTE_PREFERENCE";
+
+        // Ghi nhận lịch sử đổi món vào bảng MealSlotSwapHistories
+        var swapHistory = new MealSlotSwapHistory
+        {
+            SlotId = slot.SlotId,
+            OldRecipeId = oldRecipeId,
+            NewRecipeId = newRecipeId,
+            SwapReason = swapReason,
+            CaloriesDelta = caloriesDelta,
+            SwappedAt = DateTime.UtcNow
+        };
+        _db.MealSlotSwapHistories.Add(swapHistory);
 
         var auditLog = new AuditLog
         {
@@ -1219,16 +1241,14 @@ public class MealPlanService : IMealPlanService
             Action = "MEAL_SLOT_SWAPPED",
             TargetTable = "MealPlans",
             TargetId = id.ToString(),
-            OldValue = JsonSerializer.Serialize(new { recipeId = oldRecipe.RecipeId }),
-            NewValue = JsonSerializer.Serialize(new { recipeId = newRecipe.RecipeId }),
+            OldValue = JsonSerializer.Serialize(new { recipeId = oldRecipeId }),
+            NewValue = JsonSerializer.Serialize(new { recipeId = newRecipeId }),
             Note = currentPhase,
             CreatedAt = DateTime.UtcNow
         };
         _db.AuditLogs.Add(auditLog);
 
         await _db.SaveChangesAsync(ct);
-
-        var swapsRemaining = 21 - (swapsUsedInPhase + 1);
 
         return new UpdateMealPlanSlotResponseData
         {
@@ -1246,8 +1266,67 @@ public class MealPlanService : IMealPlanService
                     ImageUrl = newRecipe.ImageUrl
                 }
             },
-            SwapsRemaining = swapsRemaining
+            SwapsRemaining = plan.SwapsRemaining,
+            MaxSwapsAllowed = plan.MaxSwapsAllowed
         };
+    }
+
+    public async Task<IReadOnlyList<MealSlotSwapHistoryDto>> GetMealSlotSwapHistoryAsync(
+        int slotId,
+        int userId,
+        int? planId = null,
+        CancellationToken ct = default)
+    {
+        var slot = await _db.MealSlots
+            .Include(s => s.Plan)
+            .FirstOrDefaultAsync(s => s.SlotId == slotId, ct);
+
+        if (slot == null || slot.Plan.UserId != userId || (planId.HasValue && slot.PlanId != planId.Value))
+        {
+            throw AppException.NotFound(
+                ErrorCodes.ErrMealPlanNotFound,
+                "Bữa ăn không tồn tại hoặc không thuộc về bạn.");
+        }
+
+        var histories = await _db.MealSlotSwapHistories
+            .Include(h => h.OldRecipe)
+            .Include(h => h.NewRecipe)
+            .Where(h => h.SlotId == slotId)
+            .OrderByDescending(h => h.SwappedAt)
+            .ThenByDescending(h => h.SwapHistoryId)
+            .Select(h => new MealSlotSwapHistoryDto
+            {
+                HistoryId = h.SwapHistoryId,
+                SlotId = h.SlotId,
+                OldRecipeId = h.OldRecipeId,
+                OldRecipeTitle = h.OldRecipe != null ? h.OldRecipe.Title : string.Empty,
+                OldRecipeImageUrl = h.OldRecipe != null ? h.OldRecipe.ImageUrl : null,
+                OldRecipeCalories = h.OldRecipe != null ? h.OldRecipe.CaloriesKcal : 0m,
+                OldRecipe = h.OldRecipe != null ? new MealSlotRecipeDto
+                {
+                    RecipeId = h.OldRecipe.RecipeId,
+                    Title = h.OldRecipe.Title,
+                    CaloriesKcal = h.OldRecipe.CaloriesKcal,
+                    ImageUrl = h.OldRecipe.ImageUrl
+                } : null,
+                NewRecipeId = h.NewRecipeId,
+                NewRecipeTitle = h.NewRecipe != null ? h.NewRecipe.Title : string.Empty,
+                NewRecipeImageUrl = h.NewRecipe != null ? h.NewRecipe.ImageUrl : null,
+                NewRecipeCalories = h.NewRecipe != null ? h.NewRecipe.CaloriesKcal : 0m,
+                NewRecipe = h.NewRecipe != null ? new MealSlotRecipeDto
+                {
+                    RecipeId = h.NewRecipe.RecipeId,
+                    Title = h.NewRecipe.Title,
+                    CaloriesKcal = h.NewRecipe.CaloriesKcal,
+                    ImageUrl = h.NewRecipe.ImageUrl
+                } : null,
+                SwapReason = h.SwapReason,
+                CaloriesDelta = h.CaloriesDelta,
+                SwappedAt = h.SwappedAt
+            })
+            .ToListAsync(ct);
+
+        return histories;
     }
 
     public async Task<PatchMealPlanSlotResponseData> PatchMealPlanSlotAsync(

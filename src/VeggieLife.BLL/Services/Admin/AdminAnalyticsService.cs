@@ -87,10 +87,40 @@ public class AdminAnalyticsService : IAdminAnalyticsService
             .ToListAsync(ct);
         var byStatusDict = byStatusList.ToDictionary(x => x.Status, x => x.Count);
 
-        // 2. Thống kê Content: COUNT Recipes/Posts/Videos theo trạng thái
-        var recipesCount = await _db.Recipes.AsNoTracking().CountAsync(ct);
-        var postsCount = await _db.Posts.AsNoTracking().CountAsync(ct);
-        var videosCount = await _db.Videos.AsNoTracking().CountAsync(ct);
+        // 2. Thống kê Content: COUNT Recipes/Posts/Videos tổng và theo khoảng thời gian
+        var recipesTotal = await _db.Recipes.AsNoTracking().CountAsync(ct);
+        var postsTotal = await _db.Posts.AsNoTracking().CountAsync(ct);
+        var videosTotal = await _db.Videos.AsNoTracking().CountAsync(ct);
+
+        var recipesQuery = _db.Recipes.AsNoTracking();
+        var postsQuery = _db.Posts.AsNoTracking();
+        var videosQuery = _db.Videos.AsNoTracking();
+
+        if (fromDate.HasValue)
+        {
+            var fromUtc = fromDate.Value.Date;
+            recipesQuery = recipesQuery.Where(r => r.CreatedAt >= fromUtc);
+            postsQuery = postsQuery.Where(p => p.CreatedAt >= fromUtc);
+            videosQuery = videosQuery.Where(v => v.CreatedAt >= fromUtc);
+        }
+        if (toDate.HasValue)
+        {
+            var toUtc = toDate.Value.Date.AddDays(1);
+            recipesQuery = recipesQuery.Where(r => r.CreatedAt < toUtc);
+            postsQuery = postsQuery.Where(p => p.CreatedAt < toUtc);
+            videosQuery = videosQuery.Where(v => v.CreatedAt < toUtc);
+        }
+        if (!fromDate.HasValue && !toDate.HasValue)
+        {
+            var thirtyDaysAgo = DateTime.UtcNow.AddDays(-30);
+            recipesQuery = recipesQuery.Where(r => r.CreatedAt >= thirtyDaysAgo);
+            postsQuery = postsQuery.Where(p => p.CreatedAt >= thirtyDaysAgo);
+            videosQuery = videosQuery.Where(v => v.CreatedAt >= thirtyDaysAgo);
+        }
+
+        var recipesNew = await recipesQuery.CountAsync(ct);
+        var postsNew = await postsQuery.CountAsync(ct);
+        var videosNew = await videosQuery.CountAsync(ct);
 
         // 3. Thống kê VIP: VIP đang hoạt động (Starts_At <= hiện tại < Ends_At) & doanh thu theo kỳ
         var now = DateTime.UtcNow;
@@ -149,9 +179,12 @@ public class AdminAnalyticsService : IAdminAnalyticsService
             },
             Content = new ContentOverviewDto
             {
-                Recipes = recipesCount,
-                Posts = postsCount,
-                Videos = videosCount
+                Recipes = recipesTotal,
+                RecipesNewInPeriod = recipesNew,
+                Posts = postsTotal,
+                PostsNewInPeriod = postsNew,
+                Videos = videosTotal,
+                VideosNewInPeriod = videosNew
             },
             Vip = new VipOverviewDto
             {
