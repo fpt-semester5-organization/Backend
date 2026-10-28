@@ -14,4 +14,14 @@ public class UpdateFridgeItemRequest
     /// Trạng thái độ tươi của nguyên liệu (tùy chọn: FRESH | NON-FRESH).
     /// </summary>
     public string? FreshnessStatus { get; set; }
+
+    /// <summary>
+    /// Số lượng nguyên liệu cập nhật (tùy chọn, > 0).
+    /// </summary>
+    public decimal? Quantity { get; set; }
+
+    /// <summary>
+    /// Đơn vị đong đo cập nhật (tùy chọn, tối đa 30 ký tự).
+    /// </summary>
+    public string? Unit { get; set; }
 }

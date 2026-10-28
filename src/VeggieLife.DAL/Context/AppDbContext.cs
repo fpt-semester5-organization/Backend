@@ -368,6 +368,14 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.IngredientId).HasColumnName("Ingredient_ID");
             entity.Property(e => e.SessionId).HasColumnName("Session_ID");
             entity.Property(e => e.UserId).HasColumnName("User_ID");
+            entity.Property(e => e.Quantity)
+                .HasColumnType("decimal(8, 2)")
+                .HasDefaultValue(1.00m)
+                .HasColumnName("Quantity");
+            entity.Property(e => e.Unit)
+                .HasMaxLength(30)
+                .HasDefaultValue("phần")
+                .HasColumnName("Unit");
 
             entity.HasOne(d => d.Ingredient).WithMany(p => p.FridgeInventories)
                 .HasForeignKey(d => d.IngredientId)

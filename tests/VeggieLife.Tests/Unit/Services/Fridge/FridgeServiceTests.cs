@@ -716,9 +716,81 @@ public class FridgeServiceTests : IDisposable
         result.IngredientId.Should().Be(13);
         result.Name.Should().Be("Cà chua bi");
         result.FreshnessStatus.Should().Be("FRESH");
+        result.Quantity.Should().Be(1);
+        result.Unit.Should().Be("quả");
 
         var inDb = await _db.FridgeInventories.FirstOrDefaultAsync(f => f.UserId == 10 && f.IngredientId == 13);
         inDb.Should().NotBeNull();
+        inDb!.Quantity.Should().Be(1);
+        inDb.Unit.Should().Be("quả");
+    }
+
+    [Fact]
+    public async Task AddFridgeItem_WithQuantityAndUnit_ReturnsAndSavesExactValues()
+    {
+        // Arrange: Thêm nguyên liệu với số lượng (VD: 3) và đơn vị (VD: "quả")
+        var request = new CreateFridgeItemRequest
+        {
+            IngredientId = 13, // Cà chua
+            CustomItemName = "Cà chua bi vườn nhà",
+            Quantity = 3,
+            Unit = "quả"
+        };
+
+        // Act
+        var result = await _service.AddFridgeItemAsync(11, request, CancellationToken.None);
+
+        // Assert: API trả về chính xác số lượng và đơn vị
+        result.Should().NotBeNull();
+        result.Quantity.Should().Be(3);
+        result.Unit.Should().Be("quả");
+
+        var inDb = await _db.FridgeInventories.FirstOrDefaultAsync(f => f.UserId == 11 && f.IngredientId == 13);
+        inDb.Should().NotBeNull();
+        inDb!.Quantity.Should().Be(3);
+        inDb.Unit.Should().Be("quả");
+    }
+
+    [Fact]
+    public async Task AddFridgeItem_WithoutUnit_DefaultsToIngredientStandardUnit()
+    {
+        // Arrange: Thêm Nấm rơm (StandardUnit = "g") nhưng không truyền Unit
+        var request = new CreateFridgeItemRequest
+        {
+            IngredientId = 12, // Nấm rơm
+            Quantity = 250,
+            Unit = null
+        };
+
+        // Act
+        var result = await _service.AddFridgeItemAsync(12, request, CancellationToken.None);
+
+        // Assert: Tự động dùng StandardUnit ("g") của nguyên liệu
+        result.Should().NotBeNull();
+        result.Quantity.Should().Be(250);
+        result.Unit.Should().Be("g");
+
+        var inDb = await _db.FridgeInventories.FirstOrDefaultAsync(f => f.UserId == 12 && f.IngredientId == 12);
+        inDb.Should().NotBeNull();
+        inDb!.Quantity.Should().Be(250);
+        inDb.Unit.Should().Be("g");
+    }
+
+    [Fact]
+    public async Task AddFridgeItem_NegativeQuantity_Throws400Validation()
+    {
+        // Arrange
+        var request = new CreateFridgeItemRequest
+        {
+            IngredientId = 13,
+            Quantity = -5
+        };
+
+        // Act & Assert
+        var act = async () => await _service.AddFridgeItemAsync(13, request, CancellationToken.None);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
     }
 
     [Fact]
@@ -731,7 +803,9 @@ public class FridgeServiceTests : IDisposable
             UserId = 10,
             IngredientId = 14,
             CustomItemName = "Đậu hũ non",
-            FreshnessStatus = "FRESH"
+            FreshnessStatus = "FRESH",
+            Quantity = 2,
+            Unit = "miếng"
         };
         _db.FridgeInventories.Add(item);
         await _db.SaveChangesAsync();
@@ -739,7 +813,9 @@ public class FridgeServiceTests : IDisposable
         var request = new UpdateFridgeItemRequest
         {
             CustomItemName = "Đậu hũ non lướt ván",
-            FreshnessStatus = "NON-FRESH"
+            FreshnessStatus = "NON-FRESH",
+            Quantity = 4,
+            Unit = "bìa"
         };
 
         // Act
@@ -749,9 +825,42 @@ public class FridgeServiceTests : IDisposable
         updated.Should().NotBeNull();
         updated.Name.Should().Be("Đậu hũ non lướt ván");
         updated.FreshnessStatus.Should().Be("NON-FRESH");
+        updated.Quantity.Should().Be(4);
+        updated.Unit.Should().Be("bìa");
 
         var inDb = await _db.FridgeInventories.FindAsync(99);
         inDb!.FreshnessStatus.Should().Be("NON-FRESH");
+        inDb.Quantity.Should().Be(4);
+        inDb.Unit.Should().Be("bìa");
+    }
+
+    [Fact]
+    public async Task UpdateFridgeItem_ZeroOrNegativeQuantity_Throws400Validation()
+    {
+        // Arrange
+        var item = new FridgeInventory
+        {
+            InventoryId = 199,
+            UserId = 10,
+            IngredientId = 14,
+            CustomItemName = "Đậu hũ non",
+            FreshnessStatus = "FRESH",
+            Quantity = 2,
+            Unit = "miếng"
+        };
+        _db.FridgeInventories.Add(item);
+        await _db.SaveChangesAsync();
+
+        var request = new UpdateFridgeItemRequest
+        {
+            Quantity = 0
+        };
+
+        // Act & Assert
+        var act = async () => await _service.UpdateFridgeItemAsync(10, 199, request, CancellationToken.None);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
     }
 
     [Fact]

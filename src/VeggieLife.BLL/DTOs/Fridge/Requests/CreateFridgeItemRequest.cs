@@ -14,4 +14,14 @@ public class CreateFridgeItemRequest
     /// Tên tùy chỉnh do người dùng đặt (tùy chọn, tối đa 100 ký tự). Mặc định là tên nguyên liệu gốc.
     /// </summary>
     public string? CustomItemName { get; set; }
+
+    /// <summary>
+    /// Số lượng nguyên liệu (VD: 3, 200, 1.5). Mặc định là 1 nếu không truyền.
+    /// </summary>
+    public decimal Quantity { get; set; } = 1;
+
+    /// <summary>
+    /// Đơn vị đong đo (VD: "quả", "g", "củ", "miếng"). Mặc định theo StandardUnit của nguyên liệu nếu để trống.
+    /// </summary>
+    public string? Unit { get; set; }
 }

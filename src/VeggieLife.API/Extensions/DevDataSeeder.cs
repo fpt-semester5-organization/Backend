@@ -60,6 +60,16 @@ public static class DevDataSeeder
 
                         CREATE NONCLUSTERED INDEX [IX_MealSlotSwapHistories_Slot_ID] ON [dbo].[MealSlotSwapHistories]([Slot_ID] ASC);
                     END
+
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'FridgeInventory' AND COLUMN_NAME = 'Quantity')
+                    BEGIN
+                        ALTER TABLE dbo.FridgeInventory ADD Quantity DECIMAL(8,2) NOT NULL CONSTRAINT DF_FridgeInventory_Quantity DEFAULT (1.00);
+                    END
+
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'FridgeInventory' AND COLUMN_NAME = 'Unit')
+                    BEGIN
+                        ALTER TABLE dbo.FridgeInventory ADD Unit NVARCHAR(30) NOT NULL CONSTRAINT DF_FridgeInventory_Unit DEFAULT (N'phần');
+                    END
                 ");
             }
             catch
@@ -376,21 +386,27 @@ public static class DevDataSeeder
                     UserId = 2,
                     IngredientId = 2, // Đậu hũ non
                     CustomItemName = "Đậu hũ non hữu cơ",
-                    FreshnessStatus = "FRESH"
+                    FreshnessStatus = "FRESH",
+                    Quantity = 2.0m,
+                    Unit = "miếng"
                 },
                 new FridgeInventory
                 {
                     UserId = 2,
                     IngredientId = 4, // Nấm rơm (sắp hết hạn cần dùng sớm)
                     CustomItemName = "Nấm rơm tươi",
-                    FreshnessStatus = "NON-FRESH"
+                    FreshnessStatus = "NON-FRESH",
+                    Quantity = 200.0m,
+                    Unit = "g"
                 },
                 new FridgeInventory
                 {
                     UserId = 2,
                     IngredientId = 7, // Cà chua
                     CustomItemName = "Cà chua Đà Lạt",
-                    FreshnessStatus = "FRESH"
+                    FreshnessStatus = "FRESH",
+                    Quantity = 3.0m,
+                    Unit = "quả"
                 }
             );
 
