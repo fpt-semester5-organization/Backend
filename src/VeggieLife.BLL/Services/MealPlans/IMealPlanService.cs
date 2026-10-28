@@ -62,6 +62,15 @@ public interface IMealPlanService
         CancellationToken ct = default);
 
     /// <summary>
+    /// FN-MEAL-03: Lấy lịch sử đổi món của bữa ăn (Slot).
+    /// </summary>
+    Task<IReadOnlyList<MealSlotSwapHistoryDto>> GetMealSlotSwapHistoryAsync(
+        int slotId,
+        int userId,
+        int? planId = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// FN-MEAL-04: Đánh dấu một bữa trong thực đơn ACTIVE là đã ăn / chưa ăn để theo dõi tiến độ tuần.
     /// </summary>
     Task<PatchMealPlanSlotResponseData> PatchMealPlanSlotAsync(
