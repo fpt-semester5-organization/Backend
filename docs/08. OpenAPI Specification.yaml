@@ -2577,6 +2577,12 @@ components:
               freshnessStatus:
                 type: string
                 enum: *id010
+              quantity:
+                type: number
+                description: Số lượng nguyên liệu trong tủ lạnh ảo
+              unit:
+                type: string
+                description: Đơn vị đong đo (VD: "quả", "g", "củ", "miếng")
       required:
       - statusCode
       - message
@@ -2592,8 +2598,17 @@ components:
           type: string
           maxLength: 100
           description: ≤ 100 ký tự — Mặc định là tên nguyên liệu
+        quantity:
+          type: number
+          description: Số lượng nguyên liệu (VD: 3, 200, 1.5). Mặc định là 1
+        unit:
+          type: string
+          maxLength: 30
+          description: Đơn vị đong đo (VD: "quả", "g", "củ", "miếng"). Mặc định theo StandardUnit
       required:
       - ingredientId
+    AddFridgeItemRequestDto:
+      $ref: '#/components/schemas/CreateFridgeItemRequest'
     CreateFridgeItemResponse:
       type: object
       properties:
@@ -2613,10 +2628,30 @@ components:
             freshnessStatus:
               type: string
               enum: *id010
+            quantity:
+              type: number
+            unit:
+              type: string
       required:
       - statusCode
       - message
       - data
+    FridgeItemResponseDto:
+      type: object
+      properties:
+        inventoryId:
+          type: integer
+        ingredientId:
+          type: integer
+        name:
+          type: string
+        freshnessStatus:
+          type: string
+          enum: *id010
+        quantity:
+          type: number
+        unit:
+          type: string
     UpdateFridgeItemRequest:
       type: object
       properties:
@@ -2630,6 +2665,13 @@ components:
           - FRESH
           - NON-FRESH
           description: FRESH | NON-FRESH
+        quantity:
+          type: number
+          description: Số lượng nguyên liệu cập nhật (> 0)
+        unit:
+          type: string
+          maxLength: 30
+          description: Đơn vị đong đo cập nhật
     UpdateFridgeItemResponse:
       type: object
       properties:
@@ -2649,6 +2691,10 @@ components:
             freshnessStatus:
               type: string
               enum: *id010
+            quantity:
+              type: number
+            unit:
+              type: string
       required:
       - statusCode
       - message

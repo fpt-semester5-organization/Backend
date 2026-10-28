@@ -19,6 +19,8 @@ BEGIN
         [Session_ID]            INT NULL,
         [Custom_Item_Name]      NVARCHAR(100) NOT NULL,
         [Freshness_Status]      VARCHAR(15) NOT NULL CONSTRAINT [DF_FridgeInventory_Freshness] DEFAULT ('FRESH'),
+        [Quantity]              DECIMAL(8,2) NOT NULL CONSTRAINT [DF_FridgeInventory_Quantity] DEFAULT (1.00),
+        [Unit]                  NVARCHAR(30) NOT NULL CONSTRAINT [DF_FridgeInventory_Unit] DEFAULT (N'phần'),
 
         CONSTRAINT [PK_FridgeInventory] PRIMARY KEY CLUSTERED ([Inventory_ID] ASC),
         CONSTRAINT [FK_FridgeInventory_Ingredients] FOREIGN KEY ([Ingredient_ID]) REFERENCES [dbo].[Ingredients]([Ingredient_ID]),
