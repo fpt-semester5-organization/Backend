@@ -14,6 +14,16 @@ public class RecipeDetailDto
     public int RecipeId { get; set; }
 
     /// <summary>
+    /// Mã định danh món ăn (Food) mà công thức này thuộc về.
+    /// </summary>
+    public int? FoodId { get; set; }
+
+    /// <summary>
+    /// Tên món ăn (Food) mà công thức này thuộc về.
+    /// </summary>
+    public string? FoodName { get; set; }
+
+    /// <summary>
     /// Loại nội dung: RECIPE hoặc VIDEO.
     /// </summary>
     public string Type { get; set; } = "RECIPE";

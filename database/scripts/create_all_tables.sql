@@ -1518,3 +1518,75 @@ BEGIN
 END;
 GO
 GO
+
+
+-- ============================================================================
+-- START: 41_Foods.sql
+-- ============================================================================
+-- ============================================================================
+-- File: 41_Foods.sql
+-- Table: Foods (3.41)
+-- Cluster: Kho Công thức Chay, Thực đơn & Đi chợ
+-- Description: Danh mục món ăn khái niệm (Food entity). Một Food có thể có nhiều Recipe
+--              với các biến thể dinh dưỡng khác nhau (tăng cân, giảm cân, duy trì...).
+-- ============================================================================
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[Foods]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE [dbo].[Foods] (
+        [Food_ID]       INT IDENTITY(1,1) NOT NULL,
+        [Category_ID]   INT NOT NULL,
+        [Food_Name]     NVARCHAR(150) NOT NULL,
+        [Created_At]    DATETIME2(7) NOT NULL CONSTRAINT [DF_Foods_Created_At] DEFAULT (SYSDATETIME()),
+        [Updated_At]    DATETIME2(7) NULL,
+
+        CONSTRAINT [PK_Foods] PRIMARY KEY CLUSTERED ([Food_ID] ASC),
+        CONSTRAINT [UQ_Foods_Food_Name] UNIQUE ([Food_Name] ASC)
+    );
+
+    CREATE NONCLUSTERED INDEX [IX_Foods_Category_ID] ON [dbo].[Foods]([Category_ID] ASC);
+
+    IF OBJECT_ID(N'[dbo].[FoodCategories]', N'U') IS NOT NULL
+    BEGIN
+        ALTER TABLE [dbo].[Foods] ADD CONSTRAINT [FK_Foods_FoodCategories]
+            FOREIGN KEY ([Category_ID]) REFERENCES [dbo].[FoodCategories]([Category_ID]);
+    END;
+END;
+GO
+
+
+-- ============================================================================
+-- START: 42_Recipes_Add_FoodId.sql
+-- ============================================================================
+-- ============================================================================
+-- File: 42_Recipes_Add_FoodId.sql
+-- Table: Recipes (Alteration)
+-- Cluster: Kho Công thức Chay, Thực đơn & Đi chợ
+-- Description: Thêm khóa ngoại Food_ID vào bảng Recipes để liên kết công thức với món ăn khái niệm (Foods).
+--              Nullable để tương thích ngược với dữ liệu công thức đã tồn tại.
+-- ============================================================================
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[Recipes]')
+      AND name = 'Food_ID'
+)
+BEGIN
+    ALTER TABLE [dbo].[Recipes] ADD [Food_ID] INT NULL;
+
+    ALTER TABLE [dbo].[Recipes] ADD CONSTRAINT [FK_Recipes_Foods]
+        FOREIGN KEY ([Food_ID]) REFERENCES [dbo].[Foods]([Food_ID]);
+
+    CREATE NONCLUSTERED INDEX [IX_Recipes_Food_ID] ON [dbo].[Recipes]([Food_ID] ASC);
+END;
+GO

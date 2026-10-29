@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.Common.Responses;
+using VeggieLife.BLL.DTOs.Foods.Responses;
 using VeggieLife.BLL.DTOs.Recipes.Requests;
 using VeggieLife.BLL.DTOs.Recipes.Responses;
 using VeggieLife.BLL.Services.Cache;
@@ -19,6 +20,7 @@ using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
 
 using VeggieLife.BLL.DTOs.Ai;
+using VeggieLife.BLL.Services.Foods;
 using VeggieLife.BLL.Services.Knowledge;
 using VeggieLife.BLL.Services.Moderation;
 
@@ -35,6 +37,7 @@ public class RecipeService : IRecipeService
     private readonly ILogger<RecipeService> _logger;
     private readonly IContentModerationService _moderationService;
     private readonly IKnowledgeSyncQueue _knowledgeSyncQueue;
+    private readonly IFoodService _foodService;
 
     private static readonly TimeSpan RecipeSearchCacheTtl = TimeSpan.FromHours(24);  // BR-SYS-CACHE-01
     private static readonly TimeSpan RecipeDetailCacheTtl = TimeSpan.FromHours(24);  // BR-SYS-CACHE-01
@@ -46,13 +49,15 @@ public class RecipeService : IRecipeService
         IRedisService redis,
         ILogger<RecipeService> logger,
         IContentModerationService? moderationService = null,
-        IKnowledgeSyncQueue? knowledgeSyncQueue = null)
+        IKnowledgeSyncQueue? knowledgeSyncQueue = null,
+        IFoodService? foodService = null)
     {
         _db = db;
         _redis = redis;
         _logger = logger;
         _moderationService = moderationService ?? new SimulatedContentModerationService(new Microsoft.Extensions.Logging.Abstractions.NullLogger<SimulatedContentModerationService>());
         _knowledgeSyncQueue = knowledgeSyncQueue ?? new KnowledgeSyncQueueStub(new Microsoft.Extensions.Logging.Abstractions.NullLogger<KnowledgeSyncQueueStub>());
+        _foodService = foodService ?? new FoodService(db, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance.CreateLogger<FoodService>());
     }
 
     /// <summary>
@@ -77,6 +82,7 @@ public class RecipeService : IRecipeService
             normalizedKeyword,
             filter.CategoryId,
             filter.DietarySchoolId,
+            filter.FoodId,
             normalizedIngredient,
             filter.MaxCookTime,
             normalizedContentType,
@@ -125,6 +131,12 @@ public class RecipeService : IRecipeService
         if (filter.DietarySchoolId.HasValue)
         {
             query = query.Where(r => r.DietarySchoolId == filter.DietarySchoolId.Value);
+        }
+
+        // Lọc theo Món ăn khái niệm (Food)
+        if (filter.FoodId.HasValue && filter.FoodId.Value > 0)
+        {
+            query = query.Where(r => r.FoodId == filter.FoodId.Value);
         }
 
         // Lọc theo Từ khóa tên món / mô tả
@@ -179,6 +191,8 @@ public class RecipeService : IRecipeService
             .Select(r => new RecipeSummaryDto
             {
                 RecipeId = r.RecipeId,
+                FoodId = r.FoodId,
+                FoodName = r.Food != null ? r.Food.FoodName : null,
                 Type = r.Posts.Any(p => p.Videos.Any(v => v.Status == "READY")) ? "VIDEO" : "RECIPE",
                 VideoId = r.Posts.SelectMany(p => p.Videos)
                     .Where(v => v.Status == "READY")
@@ -623,6 +637,7 @@ public class RecipeService : IRecipeService
         string? keyword,
         int? categoryId,
         int? dietarySchoolId,
+        int? foodId,
         string? ingredient,
         int? maxCookTime,
         string contentType,
@@ -630,7 +645,7 @@ public class RecipeService : IRecipeService
         int page,
         int size)
     {
-        var rawKey = $"{keyword?.ToLowerInvariant()}|{categoryId}|{dietarySchoolId}|{ingredient?.ToLowerInvariant()}|{maxCookTime}|{contentType}|{sort}|{page}|{size}";
+        var rawKey = $"{keyword?.ToLowerInvariant()}|{categoryId}|{dietarySchoolId}|{foodId}|{ingredient?.ToLowerInvariant()}|{maxCookTime}|{contentType}|{sort}|{page}|{size}";
         using var md5 = MD5.Create();
         var bytes = md5.ComputeHash(Encoding.UTF8.GetBytes(rawKey));
         return Convert.ToHexString(bytes).ToLowerInvariant();
@@ -754,6 +769,22 @@ public class RecipeService : IRecipeService
             throw new AppException(422, ErrorCodes.ErrRecipeStructureInvalid, "Danh mục món ăn không tồn tại.");
         }
 
+        // 2.1 Phân giải hoặc tự động tạo món ăn khái niệm (Food entity) từ Combobox
+        int? resolvedFoodId = null;
+        if (request.FoodId.HasValue && request.FoodId.Value > 0)
+        {
+            var foodExists = await _db.Foods.AnyAsync(f => f.FoodId == request.FoodId.Value, ct);
+            if (foodExists)
+            {
+                resolvedFoodId = request.FoodId.Value;
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(request.FoodName))
+        {
+            var food = await _foodService.GetOrCreateFoodAsync(request.FoodName, request.CategoryId > 0 ? request.CategoryId : 1, ct);
+            resolvedFoodId = food.FoodId;
+        }
+
         // 3. Xử lý chế độ Lưu nháp (submit = false)
         if (!request.Submit)
         {
@@ -763,6 +794,7 @@ public class RecipeService : IRecipeService
                 UserId = userId,
                 CategoryId = request.CategoryId > 0 ? request.CategoryId : 1,
                 DietarySchoolId = request.DietarySchoolId > 0 ? request.DietarySchoolId : 1,
+                FoodId = resolvedFoodId,
                 Title = !string.IsNullOrWhiteSpace(request.Title) ? request.Title.Trim() : "Công thức chưa đặt tên",
                 Description = request.Description?.Trim(),
                 Instructions = request.Instructions != null && request.Instructions.Count > 0
@@ -804,6 +836,8 @@ public class RecipeService : IRecipeService
             return new CreateRecipeResponseDto
             {
                 RecipeId = draftRecipe.RecipeId,
+                FoodId = resolvedFoodId,
+                FoodName = !string.IsNullOrWhiteSpace(request.FoodName) ? request.FoodName.Trim() : (resolvedFoodId.HasValue ? (await _foodService.GetFoodByIdAsync(resolvedFoodId.Value, ct))?.FoodName : null),
                 Status = "DRAFT",
                 AiConfidence = 0.0
             };
@@ -819,6 +853,7 @@ public class RecipeService : IRecipeService
                 UserId = userId,
                 CategoryId = request.CategoryId,
                 DietarySchoolId = request.DietarySchoolId,
+                FoodId = resolvedFoodId,
                 Title = request.Title.Trim(),
                 Description = request.Description?.Trim(),
                 Instructions = JsonSerializer.Serialize(request.Instructions),
@@ -896,6 +931,7 @@ public class RecipeService : IRecipeService
             UserId = userId,
             CategoryId = request.CategoryId,
             DietarySchoolId = request.DietarySchoolId,
+            FoodId = resolvedFoodId,
             Title = request.Title.Trim(),
             Description = request.Description?.Trim(),
             Instructions = JsonSerializer.Serialize(request.Instructions),
@@ -983,6 +1019,8 @@ public class RecipeService : IRecipeService
         return new CreateRecipeResponseDto
         {
             RecipeId = recipe.RecipeId,
+            FoodId = resolvedFoodId,
+            FoodName = !string.IsNullOrWhiteSpace(request.FoodName) ? request.FoodName.Trim() : (resolvedFoodId.HasValue ? (await _foodService.GetFoodByIdAsync(resolvedFoodId.Value, ct))?.FoodName : null),
             Status = recipe.Status,
             AiConfidence = Math.Round(aiResult.ViolationScore, 2)
         };
@@ -1030,6 +1068,21 @@ public class RecipeService : IRecipeService
         var newDesc = request.Description != null ? request.Description.Trim() : recipe.Description;
         var newCategoryId = request.CategoryId.HasValue && request.CategoryId.Value > 0 ? request.CategoryId.Value : recipe.CategoryId;
         var newDietarySchoolId = request.DietarySchoolId.HasValue && request.DietarySchoolId.Value > 0 ? request.DietarySchoolId.Value : recipe.DietarySchoolId;
+
+        int? updatedFoodId = recipe.FoodId;
+        if (request.FoodId.HasValue && request.FoodId.Value > 0)
+        {
+            var foodExists = await _db.Foods.AnyAsync(f => f.FoodId == request.FoodId.Value, ct);
+            if (foodExists)
+            {
+                updatedFoodId = request.FoodId.Value;
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(request.FoodName))
+        {
+            var food = await _foodService.GetOrCreateFoodAsync(request.FoodName, newCategoryId, ct);
+            updatedFoodId = food.FoodId;
+        }
         var newPrepTime = request.PrepTimeMinutes.HasValue ? request.PrepTimeMinutes.Value : recipe.PrepTimeMinutes;
         var newCookTime = request.CookTimeMinutes.HasValue ? request.CookTimeMinutes.Value : recipe.CookTimeMinutes;
         var newServings = request.Servings.HasValue ? request.Servings.Value : recipe.Servings;
@@ -1072,6 +1125,7 @@ public class RecipeService : IRecipeService
                 recipe.DifficultyLevel = newDifficulty;
                 recipe.ImageUrl = newImageUrl;
                 recipe.Instructions = JsonSerializer.Serialize(newInstructions);
+                recipe.FoodId = updatedFoodId;
                 recipe.Status = "DRAFT";
                 recipe.UpdatedAt = DateTime.UtcNow;
 
@@ -1324,6 +1378,7 @@ public class RecipeService : IRecipeService
         recipe.Description = newDesc;
         recipe.CategoryId = newCategoryId;
         recipe.DietarySchoolId = newDietarySchoolId;
+        recipe.FoodId = updatedFoodId;
         recipe.PrepTimeMinutes = newPrepTime;
         recipe.CookTimeMinutes = newCookTime;
         recipe.Servings = newServings;
@@ -1647,6 +1702,14 @@ public class RecipeService : IRecipeService
         public List<string> ForbiddenFoodGroups { get; set; } = new();
         public bool ForbidAllium { get; set; }
         public string? Description { get; set; }
+    }
+
+    /// <summary>
+    /// Tìm kiếm Food theo tên (dùng cho autocomplete combobox). Trả tối đa 10 kết quả.
+    /// </summary>
+    public async Task<IReadOnlyList<FoodSummaryDto>> SearchFoodsAsync(string query, CancellationToken ct = default)
+    {
+        return await _foodService.SearchFoodsAsync(query, ct);
     }
 
     /// <summary>

@@ -367,7 +367,8 @@ public static class ServiceExtensions
         services.AddHttpClient<IOpenFoodFactsClient, OpenFoodFactsClient>();
         services.AddScoped<IProductService, ProductService>();
 
-        // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
+        // Dịch vụ Món ăn khái niệm (Food) & Công thức món chay (FN-POST-01, FN-POST-02)
+        services.AddScoped<VeggieLife.BLL.Services.Foods.IFoodService, VeggieLife.BLL.Services.Foods.FoodService>();
         services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();
 
         // Dịch vụ Bài viết cộng đồng (FN-POST-05, FN-POST-06)
