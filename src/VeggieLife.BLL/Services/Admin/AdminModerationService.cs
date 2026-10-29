@@ -51,6 +51,11 @@ public class AdminModerationService : IAdminModerationService
 
         var query = _db.ViolationReports
             .AsNoTracking()
+            .Include(r => r.Comment).ThenInclude(c => c!.User)
+            .Include(r => r.Comment).ThenInclude(c => c!.Post).ThenInclude(p => p!.User)
+            .Include(r => r.Post).ThenInclude(p => p!.User)
+            .Include(r => r.Recipe).ThenInclude(rec => rec!.User)
+            .Include(r => r.Video).ThenInclude(v => v!.Post).ThenInclude(p => p!.User)
             .Where(r => r.Status == "PENDING");
 
         if (!string.IsNullOrWhiteSpace(request.ReportSource))
@@ -90,26 +95,42 @@ public class AdminModerationService : IAdminModerationService
         {
             string targetType = "POST";
             int targetId = 0;
+            int? parentPostId = null;
+            string? targetTitle = null;
+            string? targetContent = null;
+            string? authorName = null;
 
             if (r.RecipeId.HasValue)
             {
                 targetType = "RECIPE";
                 targetId = r.RecipeId.Value;
+                targetTitle = r.Recipe?.Title;
+                targetContent = r.Recipe?.Description;
+                authorName = r.Recipe?.User?.FullName;
             }
             else if (r.PostId.HasValue)
             {
                 targetType = "POST";
                 targetId = r.PostId.Value;
+                targetTitle = r.Post?.Title;
+                targetContent = r.Post?.Content;
+                authorName = r.Post?.User?.FullName;
             }
             else if (r.VideoId.HasValue)
             {
                 targetType = "VIDEO";
                 targetId = r.VideoId.Value;
+                targetTitle = r.Video?.Title;
+                authorName = r.Video?.Post?.User?.FullName;
             }
             else if (r.CommentId.HasValue)
             {
                 targetType = "COMMENT";
                 targetId = r.CommentId.Value;
+                targetContent = r.Comment?.Content;
+                authorName = r.Comment?.User?.FullName;
+                parentPostId = r.Comment?.PostId;
+                targetTitle = r.Comment?.Post?.Title;
             }
 
             return new AdminModerationQueueItemDto
@@ -117,6 +138,10 @@ public class AdminModerationService : IAdminModerationService
                 ReportId = r.ReportId,
                 TargetType = targetType,
                 TargetId = targetId,
+                ParentPostId = parentPostId,
+                TargetTitle = targetTitle,
+                TargetContent = targetContent,
+                AuthorName = authorName,
                 ViolationType = r.ViolationType,
                 ReportSource = r.ReportSource,
                 EvidenceSummary = r.EvidenceSummary,
