@@ -1,5 +1,7 @@
+
 -- ============================================================================
--- Table: MealSlotSwapHistories
+-- File: 40_MealSlotSwapHistories.sql
+-- Table: MealSlotSwapHistories (3.40)
 -- Cluster: Kho Công thức Chay, Thực đơn & Đi chợ
 -- Description: Lưu vết lịch sử đổi món từng bữa ăn trong kế hoạch thực đơn (SlotId, OldRecipeId, NewRecipeId, SwapReason, CaloriesDelta, SwappedAt).
 -- ============================================================================

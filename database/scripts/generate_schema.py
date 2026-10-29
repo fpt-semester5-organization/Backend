@@ -72,6 +72,8 @@ TABLE_ORDER = [
     "ChatSessions",         # 36 (8 cols)
     "ChatMessages",         # 37 (6 cols)
     "Surveys",              # 38 (7 cols)
+    "SystemSettings",       # 39 (8 cols)
+    "MealSlotSwapHistories",# 40 (7 cols)
 ]
 
 # Thông tin cụm phân hệ nghiệp vụ cho từng bảng
@@ -114,6 +116,8 @@ TABLE_CLUSTERS = {
     "ChatSessions": "Trợ lý Tư vấn AI, Tủ lạnh Ảo & Địa điểm",
     "ChatMessages": "Trợ lý Tư vấn AI, Tủ lạnh Ảo & Địa điểm",
     "Surveys": "Trợ lý Tư vấn AI, Tủ lạnh Ảo & Địa điểm",
+    "SystemSettings": "Quản trị Tài khoản, Sức khỏe & Hội viên",
+    "MealSlotSwapHistories": "Kho Công thức Chay, Thực đơn & Đi chợ",
 }
 
 def find_project_root():
