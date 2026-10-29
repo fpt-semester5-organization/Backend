@@ -24,6 +24,8 @@ BEGIN
         [Custom_Instructions]   NVARCHAR(200) NULL,
         [Plan_Status]           VARCHAR(20) NOT NULL CONSTRAINT [DF_MealPlans_Status] DEFAULT ('DRAFT'),
         [Generated_By_AI]       BIT NOT NULL CONSTRAINT [DF_MealPlans_Generated_By_AI] DEFAULT (0),
+        [Max_Swaps_Allowed]     INT NOT NULL CONSTRAINT [DF_MealPlans_Max_Swaps] DEFAULT (21),
+        [Swaps_Remaining]       INT NOT NULL CONSTRAINT [DF_MealPlans_Swaps_Remaining] DEFAULT (21),
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_MealPlans_Created_At] DEFAULT (SYSDATETIME()),
 
         CONSTRAINT [PK_MealPlans] PRIMARY KEY CLUSTERED ([Plan_ID] ASC),

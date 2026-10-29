@@ -248,13 +248,15 @@ public class FridgeControllerTests
         };
         _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
 
-        var request = new CreateFridgeItemRequest { IngredientId = 12, CustomItemName = "Nấm rơm tươi" };
+        var request = new CreateFridgeItemRequest { IngredientId = 12, CustomItemName = "Nấm rơm tươi", Quantity = 3, Unit = "g" };
         var createdItem = new FridgeItemDto
         {
             InventoryId = 55,
             IngredientId = 12,
             Name = "Nấm rơm tươi",
-            FreshnessStatus = "FRESH"
+            FreshnessStatus = "FRESH",
+            Quantity = 3,
+            Unit = "g"
         };
 
         _mockService.Setup(s => s.AddFridgeItemAsync(userId, request, It.IsAny<CancellationToken>()))
@@ -272,6 +274,8 @@ public class FridgeControllerTests
         response.Should().NotBeNull();
         response!.Message.Should().Be("Đã thêm.");
         response.Data!.InventoryId.Should().Be(55);
+        response.Data.Quantity.Should().Be(3);
+        response.Data.Unit.Should().Be("g");
     }
 
     [Fact]
@@ -286,13 +290,15 @@ public class FridgeControllerTests
         };
         _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
 
-        var request = new UpdateFridgeItemRequest { FreshnessStatus = "NON-FRESH" };
+        var request = new UpdateFridgeItemRequest { FreshnessStatus = "NON-FRESH", Quantity = 5, Unit = "hộp" };
         var updatedItem = new FridgeItemDto
         {
             InventoryId = 55,
             IngredientId = 12,
             Name = "Nấm rơm",
-            FreshnessStatus = "NON-FRESH"
+            FreshnessStatus = "NON-FRESH",
+            Quantity = 5,
+            Unit = "hộp"
         };
 
         _mockService.Setup(s => s.UpdateFridgeItemAsync(userId, 55, request, It.IsAny<CancellationToken>()))
@@ -308,6 +314,8 @@ public class FridgeControllerTests
 
         var response = okResult.Value as ApiResponse<FridgeItemDto>;
         response.Should().NotBeNull();
+        response!.Data!.Quantity.Should().Be(5);
+        response.Data.Unit.Should().Be("hộp");
         response!.Message.Should().Be("Đã cập nhật.");
         response.Data!.FreshnessStatus.Should().Be("NON-FRESH");
     }

@@ -339,7 +339,9 @@ public static class DevInMemoryDataSeeder
                 UserId = 2,
                 IngredientId = 39, // Đậu hũ non
                 CustomItemName = "Đậu hũ non hữu cơ",
-                FreshnessStatus = "FRESH"
+                FreshnessStatus = "FRESH",
+                Quantity = 2.0m,
+                Unit = "miếng"
             },
             new FridgeInventory
             {
@@ -347,7 +349,9 @@ public static class DevInMemoryDataSeeder
                 UserId = 2,
                 IngredientId = 90, // Nấm rơm tươi
                 CustomItemName = "Nấm rơm tươi",
-                FreshnessStatus = "NON-FRESH"
+                FreshnessStatus = "NON-FRESH",
+                Quantity = 200.0m,
+                Unit = "g"
             }
         );
 

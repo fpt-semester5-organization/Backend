@@ -31,9 +31,15 @@ public class ContentOverviewDto
 {
     public int Recipes { get; set; }
 
+    public int RecipesNewInPeriod { get; set; }
+
     public int Posts { get; set; }
 
+    public int PostsNewInPeriod { get; set; }
+
     public int Videos { get; set; }
+
+    public int VideosNewInPeriod { get; set; }
 }
 
 public class VipOverviewDto

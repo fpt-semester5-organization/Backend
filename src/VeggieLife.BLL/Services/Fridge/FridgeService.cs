@@ -358,7 +358,9 @@ public class FridgeService : IFridgeService
                         IngredientId = matchedIng.IngredientId,
                         SessionId = fridgeSession.SessionId,
                         CustomItemName = matchedIng.IngredientName,
-                        FreshnessStatus = dto.FreshnessStatus
+                        FreshnessStatus = dto.FreshnessStatus,
+                        Quantity = 1.0m,
+                        Unit = matchedIng.StandardUnit
                     };
                     _db.FridgeInventories.Add(newItem);
                     existingInventoryList.Add(newItem);
@@ -456,7 +458,9 @@ public class FridgeService : IFridgeService
                 InventoryId = f.InventoryId,
                 IngredientId = f.IngredientId,
                 Name = string.IsNullOrWhiteSpace(f.CustomItemName) ? f.Ingredient.IngredientName : f.CustomItemName,
-                FreshnessStatus = f.FreshnessStatus
+                FreshnessStatus = f.FreshnessStatus,
+                Quantity = f.Quantity,
+                Unit = string.IsNullOrWhiteSpace(f.Unit) ? f.Ingredient.StandardUnit : f.Unit
             })
             .ToListAsync(ct);
 
@@ -481,6 +485,11 @@ public class FridgeService : IFridgeService
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Tên tùy chỉnh nguyên liệu không được vượt quá 100 ký tự.");
         }
 
+        if (request.Quantity < 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Số lượng nguyên liệu (quantity) không được âm.");
+        }
+
         var ingredient = await _db.Ingredients.FindAsync(new object[] { request.IngredientId }, ct);
         if (ingredient == null)
         {
@@ -495,12 +504,17 @@ public class FridgeService : IFridgeService
         }
 
         var customName = string.IsNullOrWhiteSpace(request.CustomItemName) ? ingredient.IngredientName : request.CustomItemName.Trim();
+        var quantity = request.Quantity > 0 ? request.Quantity : 1.0m;
+        var unit = !string.IsNullOrWhiteSpace(request.Unit) ? request.Unit.Trim() : ingredient.StandardUnit;
+
         var newItem = new FridgeInventory
         {
             UserId = userId,
             IngredientId = request.IngredientId,
             CustomItemName = customName,
-            FreshnessStatus = "FRESH"
+            FreshnessStatus = "FRESH",
+            Quantity = quantity,
+            Unit = unit
         };
 
         _db.FridgeInventories.Add(newItem);
@@ -511,7 +525,9 @@ public class FridgeService : IFridgeService
             InventoryId = newItem.InventoryId,
             IngredientId = newItem.IngredientId,
             Name = newItem.CustomItemName,
-            FreshnessStatus = newItem.FreshnessStatus
+            FreshnessStatus = newItem.FreshnessStatus,
+            Quantity = newItem.Quantity,
+            Unit = newItem.Unit
         };
     }
 
@@ -563,6 +579,20 @@ public class FridgeService : IFridgeService
             {
                 item.FreshnessStatus = request.FreshnessStatus.Trim().ToUpperInvariant();
             }
+
+            if (request.Quantity.HasValue)
+            {
+                if (request.Quantity.Value <= 0)
+                {
+                    throw AppException.BadRequest(ErrorCodes.ErrValidation, "Số lượng nguyên liệu (quantity) phải lớn hơn 0.");
+                }
+                item.Quantity = request.Quantity.Value;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Unit))
+            {
+                item.Unit = request.Unit.Trim();
+            }
         }
 
         await _db.SaveChangesAsync(ct);
@@ -572,7 +602,9 @@ public class FridgeService : IFridgeService
             InventoryId = item.InventoryId,
             IngredientId = item.IngredientId,
             Name = string.IsNullOrWhiteSpace(item.CustomItemName) ? item.Ingredient.IngredientName : item.CustomItemName,
-            FreshnessStatus = item.FreshnessStatus
+            FreshnessStatus = item.FreshnessStatus,
+            Quantity = item.Quantity,
+            Unit = string.IsNullOrWhiteSpace(item.Unit) ? item.Ingredient.StandardUnit : item.Unit
         };
     }
 

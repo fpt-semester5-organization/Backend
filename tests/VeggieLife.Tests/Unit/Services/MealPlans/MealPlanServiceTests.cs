@@ -682,6 +682,7 @@ public class MealPlanServiceTests : IDisposable
         // ASSERT
         result.Slot.Recipe!.RecipeId.Should().NotBe(101);
         result.SwapsRemaining.Should().Be(20);
+        result.MaxSwapsAllowed.Should().Be(21);
 
         var refreshedSlot = await _db.MealSlots.FindAsync(slot.SlotId);
         refreshedSlot!.RecipeId.Should().Be(result.Slot.Recipe!.RecipeId);
@@ -689,32 +690,40 @@ public class MealPlanServiceTests : IDisposable
         var log = await _db.AuditLogs.FirstOrDefaultAsync(l => l.TargetId == "506" && l.Action == "MEAL_SLOT_SWAPPED");
         log.Should().NotBeNull();
         log!.Note.Should().Be("DRAFT");
+
+        // Kiểm tra bảng MealSlotSwapHistories có đúng 1 dòng ghi nhận
+        var swapHistory = await _db.MealSlotSwapHistories.FirstOrDefaultAsync(h => h.SlotId == slot.SlotId);
+        swapHistory.Should().NotBeNull();
+        swapHistory!.OldRecipeId.Should().Be(101);
+        swapHistory.NewRecipeId.Should().Be(result.Slot.Recipe!.RecipeId);
+        swapHistory.SwapReason.Should().Be("Muốn đổi món khác");
+        swapHistory.CaloriesDelta.Should().Be(result.Slot.Recipe.CaloriesKcal - 550m);
+
+        // Kiểm tra endpoint service GetMealSlotSwapHistoryAsync trả về đầy đủ lý do đổi và món cũ
+        var histories = await _service.GetMealSlotSwapHistoryAsync(slot.SlotId, userId);
+        histories.Should().HaveCount(1);
+        histories[0].OldRecipeId.Should().Be(101);
+        histories[0].OldRecipeTitle.Should().NotBeEmpty();
+        histories[0].NewRecipeId.Should().Be(result.Slot.Recipe.RecipeId);
+        histories[0].NewRecipeTitle.Should().NotBeEmpty();
+        histories[0].SwapReason.Should().Be("Muốn đổi món khác");
+        histories[0].CaloriesDelta.Should().Be(result.Slot.Recipe.CaloriesKcal - 550m);
+        histories[0].OldRecipe.Should().NotBeNull();
+        histories[0].OldRecipe!.RecipeId.Should().Be(101);
+        histories[0].NewRecipe.Should().NotBeNull();
+        histories[0].NewRecipe!.RecipeId.Should().Be(result.Slot.Recipe.RecipeId);
     }
 
     [Fact]
     public async Task UpdateMealPlanSlotAsync_22ndSwapAttempt_MustBeRejectedWith403AndExactErrorCode()
     {
-        // ARRANGE: Tạo plan và gán 21 lần swap đã dùng trong AuditLogs cho phase DRAFT
+        // ARRANGE: Tạo plan và gán SwapsRemaining = 0
         var userId = 507;
         _db.Users.Add(new User { UserId = userId, Email = "user507@test.com", FullName = "User 507", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
         _db.HealthProfiles.Add(new HealthProfile { UserId = userId, DietarySchoolId = 1, Gender = "MALE", DateOfBirth = new DateOnly(1992, 5, 5), HeightCm = 170m, CurrentWeightKg = 65m, BmiValue = 22.5m, BmrKcal = 1500m, TdeeKcal = 2000m, TargetDailyCalories = 2000m, RegionPreference = "MIEN_NAM", HealthGoal = "MAINTAIN" });
         var plan = CreateTestMealPlan(507, userId, "DRAFT");
+        plan.SwapsRemaining = 0; // Hết hạn mức đổi món
         var slot = await _db.MealSlots.FirstAsync(s => s.PlanId == 507);
-
-        // Seed 21 lần swap audit logs
-        for (int i = 1; i <= 21; i++)
-        {
-            _db.AuditLogs.Add(new AuditLog
-            {
-                ActorUserId = userId,
-                ActorRole = UserRoles.Member,
-                Action = "MEAL_SLOT_SWAPPED",
-                TargetTable = "MealPlans",
-                TargetId = "507",
-                Note = "DRAFT",
-                CreatedAt = DateTime.UtcNow.AddMinutes(-i)
-            });
-        }
         await _db.SaveChangesAsync();
 
         var request = new UpdateMealPlanSlotRequest { SwapReason = "Thử đổi lần 22" };
@@ -725,6 +734,130 @@ public class MealPlanServiceTests : IDisposable
         ex.Which.StatusCode.Should().Be(403);
         ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrQuotaMealSwapExceeded);
         ex.Which.Message.Should().Contain("Hết 21 lần đổi/chỉnh sửa của giai đoạn hiện tại (DRAFT).");
+    }
+
+    [Fact]
+    public async Task UpdateMealPlanSlotAsync_WithCustomMaxSwapsAllowed_ShouldEnforceDynamicLimit()
+    {
+        // ARRANGE: Hạn mức linh hoạt, không phụ thuộc số 21 hardcode (ví dụ MaxSwapsAllowed = 5)
+        var userId = 5071;
+        _db.Users.Add(new User { UserId = userId, Email = "user5071@test.com", FullName = "User 5071", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        _db.HealthProfiles.Add(new HealthProfile { UserId = userId, DietarySchoolId = 1, Gender = "MALE", DateOfBirth = new DateOnly(1992, 5, 5), HeightCm = 170m, CurrentWeightKg = 65m, BmiValue = 22.5m, BmrKcal = 1500m, TdeeKcal = 2000m, TargetDailyCalories = 2000m, RegionPreference = "MIEN_NAM", HealthGoal = "MAINTAIN" });
+        var plan = CreateTestMealPlan(5071, userId, "DRAFT");
+        plan.MaxSwapsAllowed = 5;
+        plan.SwapsRemaining = 1;
+        var slot = await _db.MealSlots.FirstAsync(s => s.PlanId == 5071);
+        slot.RecipeId = 101;
+        await _db.SaveChangesAsync();
+
+        var request1 = new UpdateMealPlanSlotRequest { SwapReason = "Lần đổi cuối cùng" };
+
+        // ACT 1: Đổi thành công khi còn 1 lượt
+        var result1 = await _service.UpdateMealPlanSlotAsync(5071, slot.SlotId, userId, UserRoles.Member, request1);
+        result1.SwapsRemaining.Should().Be(0);
+        result1.MaxSwapsAllowed.Should().Be(5);
+
+        // ACT 2 & ASSERT: Khi đã về 0, đổi tiếp phải bị từ chối với thông báo chứa số 5 động
+        var request2 = new UpdateMealPlanSlotRequest { SwapReason = "Đổi vượt hạn mức 5" };
+        var act2 = () => _service.UpdateMealPlanSlotAsync(5071, slot.SlotId, userId, UserRoles.Member, request2);
+        var ex2 = await act2.Should().ThrowAsync<AppException>();
+        ex2.Which.StatusCode.Should().Be(403);
+        ex2.Which.ErrorCode.Should().Be(ErrorCodes.ErrQuotaMealSwapExceeded);
+        ex2.Which.Message.Should().Contain("Hết 5 lần đổi/chỉnh sửa của giai đoạn hiện tại (DRAFT).");
+    }
+
+    [Fact]
+    public async Task GetMealSlotSwapHistoryAsync_WhenSlotNotFound_ShouldThrowNotFound()
+    {
+        // ARRANGE & ACT & ASSERT
+        var act = () => _service.GetMealSlotSwapHistoryAsync(999999, 1);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrMealPlanNotFound);
+    }
+
+    [Fact]
+    public async Task GetMealSlotSwapHistoryAsync_WhenNotOwner_ShouldThrowNotFound()
+    {
+        // ARRANGE
+        var ownerUserId = 5072;
+        var otherUserId = 5073;
+        _db.Users.Add(new User { UserId = ownerUserId, Email = "owner@test.com", FullName = "Owner", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        _db.Users.Add(new User { UserId = otherUserId, Email = "other@test.com", FullName = "Other", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        var plan = CreateTestMealPlan(5072, ownerUserId, "DRAFT");
+        var slot = await _db.MealSlots.FirstAsync(s => s.PlanId == 5072);
+        await _db.SaveChangesAsync();
+
+        // ACT & ASSERT: Người dùng khác không được xem lịch sử bữa ăn này
+        var act = () => _service.GetMealSlotSwapHistoryAsync(slot.SlotId, otherUserId);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrMealPlanNotFound);
+    }
+
+    [Fact]
+    public async Task GetMealSlotSwapHistoryAsync_WhenPlanIdMismatch_ShouldThrowNotFound()
+    {
+        // ARRANGE
+        var userId = 5074;
+        _db.Users.Add(new User { UserId = userId, Email = "user5074@test.com", FullName = "User 5074", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        var plan = CreateTestMealPlan(5074, userId, "DRAFT");
+        var slot = await _db.MealSlots.FirstAsync(s => s.PlanId == 5074);
+        await _db.SaveChangesAsync();
+
+        // ACT & ASSERT: Khi truyền sai planId khác với planId thực tế của slot
+        var act = () => _service.GetMealSlotSwapHistoryAsync(slot.SlotId, userId, planId: 9999);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrMealPlanNotFound);
+    }
+
+    [Fact]
+    public async Task GetMealSlotSwapHistoryAsync_MultipleSwaps_ShouldReturnAllInDescendingOrder()
+    {
+        // ARRANGE
+        var userId = 5075;
+        _db.Users.Add(new User { UserId = userId, Email = "user5075@test.com", FullName = "User 5075", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        var plan = CreateTestMealPlan(5075, userId, "DRAFT");
+        var slot = await _db.MealSlots.FirstAsync(s => s.PlanId == 5075);
+        slot.RecipeId = 101;
+        await _db.SaveChangesAsync();
+
+        // Thêm 2 bản ghi lịch sử với thời gian khác nhau
+        var now = DateTime.UtcNow;
+        _db.MealSlotSwapHistories.AddRange(
+            new MealSlotSwapHistory
+            {
+                SlotId = slot.SlotId,
+                OldRecipeId = 101,
+                NewRecipeId = 102,
+                SwapReason = "Lần đổi 1",
+                CaloriesDelta = 10m,
+                SwappedAt = now.AddMinutes(-30)
+            },
+            new MealSlotSwapHistory
+            {
+                SlotId = slot.SlotId,
+                OldRecipeId = 102,
+                NewRecipeId = 103,
+                SwapReason = "Lần đổi 2",
+                CaloriesDelta = -20m,
+                SwappedAt = now
+            }
+        );
+        await _db.SaveChangesAsync();
+
+        // ACT
+        var histories = await _service.GetMealSlotSwapHistoryAsync(slot.SlotId, userId);
+
+        // ASSERT: Phải trả về 2 bản ghi, bản ghi mới nhất (Lần đổi 2) lên đầu
+        histories.Should().HaveCount(2);
+        histories[0].SwapReason.Should().Be("Lần đổi 2");
+        histories[0].OldRecipeId.Should().Be(102);
+        histories[0].NewRecipeId.Should().Be(103);
+        histories[1].SwapReason.Should().Be("Lần đổi 1");
+        histories[1].OldRecipeId.Should().Be(101);
+        histories[1].NewRecipeId.Should().Be(102);
     }
 
     [Fact]
@@ -1200,7 +1333,9 @@ public class MealPlanServiceTests : IDisposable
             TargetDailyKcal = 1800m,
             PlanStatus = status,
             BudgetTier = "STANDARD",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            MaxSwapsAllowed = 21,
+            SwapsRemaining = 21
         };
         _db.MealPlans.Add(plan);
 

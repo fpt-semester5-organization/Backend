@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace VeggieLife.DAL.Entities;
@@ -16,6 +16,10 @@ public partial class FridgeInventory
     public string CustomItemName { get; set; } = null!;
 
     public string FreshnessStatus { get; set; } = null!;
+
+    public decimal Quantity { get; set; } = 1.0m;
+
+    public string Unit { get; set; } = "phần";
 
     public virtual Ingredient Ingredient { get; set; } = null!;
 

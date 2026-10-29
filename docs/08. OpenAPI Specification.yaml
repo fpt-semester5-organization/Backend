@@ -2267,10 +2267,84 @@ components:
                       type: string
             swapsRemaining:
               type: integer
+            maxSwapsAllowed:
+              type: integer
       required:
       - statusCode
       - message
       - data
+    MealSlotSwapHistoryResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MealSlotSwapHistoryDto'
+      required:
+      - statusCode
+      - message
+      - data
+    MealSlotSwapHistoryDto:
+      type: object
+      properties:
+        historyId:
+          type: integer
+        slotId:
+          type: integer
+        oldRecipeId:
+          type: integer
+        oldRecipeTitle:
+          type: string
+        oldRecipeImageUrl:
+          type: string
+          nullable: true
+        oldRecipeCalories:
+          type: number
+        oldRecipe:
+          type: object
+          properties:
+            recipeId:
+              type: integer
+            title:
+              type: string
+            caloriesKcal:
+              type: number
+            imageUrl:
+              type: string
+              nullable: true
+        newRecipeId:
+          type: integer
+        newRecipeTitle:
+          type: string
+        newRecipeImageUrl:
+          type: string
+          nullable: true
+        newRecipeCalories:
+          type: number
+        newRecipe:
+          type: object
+          properties:
+            recipeId:
+              type: integer
+            title:
+              type: string
+            caloriesKcal:
+              type: number
+            imageUrl:
+              type: string
+              nullable: true
+        swapReason:
+          type: string
+          nullable: true
+        caloriesDelta:
+          type: number
+        swappedAt:
+          type: string
+          format: date-time
     PatchMealPlanSlotRequest:
       type: object
       properties:
@@ -2577,6 +2651,12 @@ components:
               freshnessStatus:
                 type: string
                 enum: *id010
+              quantity:
+                type: number
+                description: Số lượng nguyên liệu trong tủ lạnh ảo
+              unit:
+                type: string
+                description: Đơn vị đong đo (VD: "quả", "g", "củ", "miếng")
       required:
       - statusCode
       - message
@@ -2592,8 +2672,17 @@ components:
           type: string
           maxLength: 100
           description: ≤ 100 ký tự — Mặc định là tên nguyên liệu
+        quantity:
+          type: number
+          description: Số lượng nguyên liệu (VD: 3, 200, 1.5). Mặc định là 1
+        unit:
+          type: string
+          maxLength: 30
+          description: Đơn vị đong đo (VD: "quả", "g", "củ", "miếng"). Mặc định theo StandardUnit
       required:
       - ingredientId
+    AddFridgeItemRequestDto:
+      $ref: '#/components/schemas/CreateFridgeItemRequest'
     CreateFridgeItemResponse:
       type: object
       properties:
@@ -2613,10 +2702,30 @@ components:
             freshnessStatus:
               type: string
               enum: *id010
+            quantity:
+              type: number
+            unit:
+              type: string
       required:
       - statusCode
       - message
       - data
+    FridgeItemResponseDto:
+      type: object
+      properties:
+        inventoryId:
+          type: integer
+        ingredientId:
+          type: integer
+        name:
+          type: string
+        freshnessStatus:
+          type: string
+          enum: *id010
+        quantity:
+          type: number
+        unit:
+          type: string
     UpdateFridgeItemRequest:
       type: object
       properties:
@@ -2630,6 +2739,13 @@ components:
           - FRESH
           - NON-FRESH
           description: FRESH | NON-FRESH
+        quantity:
+          type: number
+          description: Số lượng nguyên liệu cập nhật (> 0)
+        unit:
+          type: string
+          maxLength: 30
+          description: Đơn vị đong đo cập nhật
     UpdateFridgeItemResponse:
       type: object
       properties:
@@ -2649,6 +2765,10 @@ components:
             freshnessStatus:
               type: string
               enum: *id010
+            quantity:
+              type: number
+            unit:
+              type: string
       required:
       - statusCode
       - message
@@ -8255,6 +8375,52 @@ paths:
               $ref: '#/components/schemas/PatchMealPlanSlotRequest'
             example:
               isCompleted: true
+  /meal-plans/slots/{slotId}/swap-history:
+    get:
+      tags:
+      - MEAL
+      operationId: getMealSlotSwapHistory
+      summary: FN-MEAL-03 Xem lịch sử đổi món của bữa ăn
+      description: 'Lấy danh sách các lần đổi món của một bữa ăn (Slot), bao gồm thông tin chi tiết món cũ, món mới, lý do đổi và chênh lệch calo.
+
+        Auth: Bearer (MEMBER | VIP).'
+      x-fn-id: FN-MEAL-03
+      x-status: Approved
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: slotId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+        description: '> 0'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MealSlotSwapHistoryResponse'
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_FORBIDDEN: Không có quyền truy cập.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'ERR_MEAL_PLAN_NOT_FOUND: Bữa ăn không tồn tại hoặc không thuộc về bạn.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /meal-plans/{id}/shopping-list:
     post:
       tags:

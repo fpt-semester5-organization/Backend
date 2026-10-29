@@ -175,8 +175,8 @@ public class SubscriptionService : ISubscriptionService
                     try
                     {
                         var digits = new string(pendingTx.PartnerTransactionCode.Where(char.IsDigit).ToArray());
-                        var paymentLinkId = !string.IsNullOrWhiteSpace(pendingTx.SignatureHash) 
-                            ? pendingTx.SignatureHash 
+                        var paymentLinkId = !string.IsNullOrWhiteSpace(pendingTx.SignatureHash)
+                            ? pendingTx.SignatureHash
                             : digits;
 
                         if (!string.IsNullOrWhiteSpace(paymentLinkId))
@@ -636,7 +636,7 @@ public class SubscriptionService : ISubscriptionService
                         createdAt = transaction.CreatedAt,
                         receivedAt = now
                     }),
-                    Note = $"Thanh toán trễ quá 30 phút ({ (now - transaction.CreatedAt).TotalMinutes:F1} phút). Tiền đã vào tài khoản PayOS, chuyển sang hàng đợi Admin Reconcile để xem xét COMPENSATE hoặc REFUND.",
+                    Note = $"Thanh toán trễ quá 30 phút ({(now - transaction.CreatedAt).TotalMinutes:F1} phút). Tiền đã vào tài khoản PayOS, chuyển sang hàng đợi Admin Reconcile để xem xét COMPENSATE hoặc REFUND.",
                     CreatedAt = now
                 });
 
