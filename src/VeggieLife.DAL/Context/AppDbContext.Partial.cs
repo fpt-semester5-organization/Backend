@@ -17,6 +17,8 @@ namespace VeggieLife.DAL.Context;
 /// </summary>
 public partial class AppDbContext
 {
+    public virtual DbSet<SystemSetting> SystemSettings { get; set; }
+
     /// <summary>
     /// Hook partial method được gọi ở cuối OnModelCreating của AppDbContext (scaffold sinh).
     /// </summary>
@@ -193,6 +195,53 @@ public partial class AppDbContext
         {
             entity.HasIndex(e => e.FoodGroup, "IX_Ingredients_Food_Group");
             entity.HasIndex(e => e.IsAllium, "IX_Ingredients_Is_Allium");
+        });
+
+        // SystemSettings (Cấu hình hệ thống động)
+        modelBuilder.Entity<SystemSetting>(entity =>
+        {
+            entity.ToTable("SystemSettings");
+            entity.HasKey(e => e.SettingKey);
+
+            entity.Property(e => e.SettingKey)
+                .HasColumnName("Setting_Key")
+                .HasMaxLength(60)
+                .IsUnicode(false);
+
+            entity.Property(e => e.SettingValue)
+                .HasColumnName("Setting_Value")
+                .HasMaxLength(500);
+
+            entity.Property(e => e.DefaultValue)
+                .HasColumnName("Default_Value")
+                .HasMaxLength(500);
+
+            entity.Property(e => e.DataType)
+                .HasColumnName("Data_Type")
+                .HasMaxLength(20)
+                .IsUnicode(false);
+
+            entity.Property(e => e.Category)
+                .HasColumnName("Category")
+                .HasMaxLength(30)
+                .IsUnicode(false);
+
+            entity.Property(e => e.Description)
+                .HasColumnName("Description")
+                .HasMaxLength(255);
+
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnName("Updated_At")
+                .HasDefaultValueSql("SYSDATETIME()");
+
+            entity.Property(e => e.UpdatedBy)
+                .HasColumnName("Updated_By");
+
+            entity.HasOne(d => d.UpdatedByUser)
+                .WithMany(p => p.SystemSettings)
+                .HasForeignKey(d => d.UpdatedBy)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_SystemSettings_Users");
         });
     }
 

@@ -1,5 +1,5 @@
 -- ============================================================================
--- VeggieLifeDb - Master Schema Creation Script (38 Tables)
+-- VeggieLifeDb - Master Schema Creation Script (39 Tables)
 -- Clusters:
 --   - Quản trị Tài khoản, Sức khỏe & Hội viên (9 thực thể)
 --   - Mạng xã hội Ẩm thực, Video, Kiểm duyệt & Tương tác (7 thực thể)
@@ -1449,4 +1449,72 @@ CREATE TABLE dbo.Surveys (
         REFERENCES dbo.ChatSessions(Chat_Session_ID) ON DELETE SET NULL,
     CONSTRAINT CK_Surveys_Rating_Score CHECK (Rating_Score BETWEEN 1 AND 5)
 );
+GO
+
+
+-- ============================================================================
+-- START: 39_SystemSettings.sql
+-- ============================================================================
+-- ============================================================
+-- File: 39_SystemSettings.sql
+-- Bảng Thực Thể: SystemSettings (3.39)
+-- Mục đích nghiệp vụ: Lưu trữ các tham số cấu hình động toàn hệ thống (Hạn mức đổi món, hạn mức AI, ngưỡng ngân sách...)
+-- Phục vụ quản trị tập trung linh hoạt từ Admin Dashboard theo chuẩn Enterprise.
+-- ============================================================
+
+CREATE TABLE dbo.SystemSettings (
+    Setting_Key VARCHAR(60) NOT NULL,
+    Setting_Value NVARCHAR(500) NOT NULL,
+    Default_Value NVARCHAR(500) NOT NULL,
+    Data_Type VARCHAR(20) NOT NULL CONSTRAINT DF_SystemSettings_Data_Type DEFAULT 'INT',
+    Category VARCHAR(30) NOT NULL,
+    Description NVARCHAR(255) NULL,
+    Updated_At DATETIME2(7) NOT NULL CONSTRAINT DF_SystemSettings_Updated_At DEFAULT SYSDATETIME(),
+    Updated_By INT NULL,
+
+    CONSTRAINT PK_SystemSettings PRIMARY KEY CLUSTERED (Setting_Key),
+    CONSTRAINT FK_SystemSettings_Users FOREIGN KEY (Updated_By) 
+        REFERENCES dbo.Users(User_ID) ON DELETE SET NULL,
+    CONSTRAINT CK_SystemSettings_Data_Type CHECK (Data_Type IN ('INT', 'DECIMAL', 'BOOLEAN', 'STRING')),
+    CONSTRAINT CK_SystemSettings_Category CHECK (Category IN ('MEAL_PLAN', 'AI_QUOTA', 'LLMOPS', 'COMMUNITY', 'GENERAL'))
+);
+GO
+
+
+
+-- ============================================================================
+-- START: 40_MealSlotSwapHistories.sql
+-- ============================================================================
+-- ============================================================================
+-- File: 40_MealSlotSwapHistories.sql
+-- Table: MealSlotSwapHistories (3.40)
+-- Cluster: Kho Công thức Chay, Thực đơn & Đi chợ
+-- Description: Lưu vết lịch sử đổi món từng bữa ăn trong kế hoạch thực đơn (SlotId, OldRecipeId, NewRecipeId, SwapReason, CaloriesDelta, SwappedAt).
+-- ============================================================================
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[MealSlotSwapHistories]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE [dbo].[MealSlotSwapHistories] (
+        [Swap_History_ID]       INT IDENTITY(1,1) NOT NULL,
+        [Slot_ID]               INT NOT NULL,
+        [Old_Recipe_ID]         INT NOT NULL,
+        [New_Recipe_ID]         INT NOT NULL,
+        [Swap_Reason]           NVARCHAR(255) NULL,
+        [Calories_Delta]        DECIMAL(6,1) NOT NULL,
+        [Swapped_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_MealSlotSwapHistories_Swapped_At] DEFAULT (SYSDATETIME()),
+
+        CONSTRAINT [PK_MealSlotSwapHistories] PRIMARY KEY CLUSTERED ([Swap_History_ID] ASC),
+        CONSTRAINT [FK_MealSlotSwapHistories_MealSlots] FOREIGN KEY ([Slot_ID]) REFERENCES [dbo].[MealSlots]([Slot_ID]) ON DELETE CASCADE,
+        CONSTRAINT [FK_MealSlotSwapHistories_OldRecipe] FOREIGN KEY ([Old_Recipe_ID]) REFERENCES [dbo].[Recipes]([Recipe_ID]),
+        CONSTRAINT [FK_MealSlotSwapHistories_NewRecipe] FOREIGN KEY ([New_Recipe_ID]) REFERENCES [dbo].[Recipes]([Recipe_ID])
+    );
+
+    CREATE NONCLUSTERED INDEX [IX_MealSlotSwapHistories_Slot_ID] ON [dbo].[MealSlotSwapHistories]([Slot_ID] ASC);
+END;
+GO
 GO

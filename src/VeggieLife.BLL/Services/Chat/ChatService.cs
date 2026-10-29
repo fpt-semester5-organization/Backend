@@ -16,6 +16,7 @@ using VeggieLife.BLL.DTOs.Chat.Responses;
 using VeggieLife.BLL.DTOs.Surveys.Requests;
 using VeggieLife.BLL.Services.AI;
 using VeggieLife.BLL.Services.Cache;
+using VeggieLife.BLL.Services.Settings;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
 
@@ -30,6 +31,7 @@ public class ChatService : IChatService
     private readonly AppDbContext _dbContext;
     private readonly IRedisService _redisService;
     private readonly IAiServiceClient _aiServiceClient;
+    private readonly ISystemSettingService? _settingService;
     private readonly ILogger<ChatService> _logger;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -43,12 +45,14 @@ public class ChatService : IChatService
         AppDbContext dbContext,
         IRedisService redisService,
         IAiServiceClient aiServiceClient,
-        ILogger<ChatService> logger)
+        ILogger<ChatService> logger,
+        ISystemSettingService? settingService = null)
     {
         _dbContext = dbContext;
         _redisService = redisService;
         _aiServiceClient = aiServiceClient;
         _logger = logger;
+        _settingService = settingService;
     }
 
     /// <summary>
@@ -110,12 +114,16 @@ public class ChatService : IChatService
             }
 
             // Kiểm tra hạn mức dùng thử AI của khách (BR-GUEST-02, BR-GUEST-AI-01)
+            var guestLimit = _settingService != null
+                ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_GUEST", ChatConstants.GuestAiLimit, ct)
+                : ChatConstants.GuestAiLimit;
+
             var usedTurns = await _redisService.GetAsync<long?>($"guest_quota:ai:{cleanedGuestUuid}", ct) ?? 0;
-            if (usedTurns >= ChatConstants.GuestAiLimit)
+            if (usedTurns >= guestLimit)
             {
                 throw AppException.Forbidden(
                     ErrorCodes.ErrQuotaAiExceeded,
-                    "Khách đã dùng hết 03 lượt AI dùng thử.");
+                    $"Khách đã dùng hết {guestLimit:D2} lượt AI dùng thử.");
             }
 
             session = new ChatSession
@@ -258,12 +266,16 @@ public class ChatService : IChatService
 
         if (isGuest)
         {
-            quotaLimit = ChatConstants.GuestAiLimit;
+            var guestLimit = _settingService != null
+                ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_GUEST", ChatConstants.GuestAiLimit, ct)
+                : ChatConstants.GuestAiLimit;
+
+            quotaLimit = guestLimit;
             quotaScope = "DAILY";
 
             var (allowed, current, _) = await _redisService.TryConsumeQuotaAsync(
                 $"guest_quota:ai:{cleanedGuestUuid}",
-                ChatConstants.GuestAiLimit,
+                guestLimit,
                 TimeSpan.FromHours(24),
                 ct);
 
@@ -271,7 +283,7 @@ public class ChatService : IChatService
             {
                 throw AppException.Forbidden(
                     ErrorCodes.ErrQuotaAiExceeded,
-                    "Khách hết 03 lượt AI hoặc Free hết 20 câu/ngày.");
+                    $"Khách đã dùng hết {guestLimit} lượt AI dùng thử (BR-GUEST-02). Vui lòng đăng ký tài khoản để tiếp tục.");
             }
 
             guestUsed = current;
@@ -279,7 +291,14 @@ public class ChatService : IChatService
         else
         {
             var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase);
-            quotaLimit = isVip ? ChatConstants.VipDailyLimit : ChatConstants.FreeMemberDailyLimit;
+            var vipLimit = _settingService != null
+                ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_VIP", ChatConstants.VipDailyLimit, ct)
+                : ChatConstants.VipDailyLimit;
+            var freeLimit = _settingService != null
+                ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_FREE", ChatConstants.FreeMemberDailyLimit, ct)
+                : ChatConstants.FreeMemberDailyLimit;
+
+            quotaLimit = isVip ? vipLimit : freeLimit;
             quotaScope = "DAILY";
 
             var todayStart = DateTime.UtcNow.Date;
@@ -292,7 +311,7 @@ public class ChatService : IChatService
             {
                 throw AppException.Forbidden(
                     ErrorCodes.ErrQuotaAiExceeded,
-                    "Khách hết 03 lượt AI hoặc Free hết 20 câu/ngày.");
+                    $"Bạn đã dùng hết {quotaLimit} câu hỏi AI trong ngày. Vui lòng nâng cấp VIP hoặc quay lại vào ngày mai.");
             }
         }
 

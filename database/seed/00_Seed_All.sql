@@ -55,12 +55,16 @@ GO
 :r "08_Seed_SubscriptionPlans.sql"
 GO
 
--- 9. SEED COMPREHENSIVE MOCK DATA (TOÀN BỘ 38 BẢNG HỆ THỐNG)
+-- 9. SEED SYSTEM SETTINGS (CẤU HÌNH ĐỘNG HỆ THỐNG)
+:r "15_Seed_SystemSettings.sql"
+GO
+
+-- 10. SEED COMPREHENSIVE MOCK DATA (TOÀN BỘ 39 BẢNG HỆ THỐNG)
 :r "99_MockData.sql"
 GO
 
 PRINT N'============================================================================';
-PRINT N'  HOÀN TẤT THỰC THI TOÀN BỘ MASTER DATA & SEED DATA 38 BẢNG CHO VEGGIELIFE DB!';
+PRINT N'  HOÀN TẤT THỰC THI TOÀN BỘ MASTER DATA & SEED DATA 39 BẢNG CHO VEGGIELIFE DB!';
 PRINT N'============================================================================';
 GO
 

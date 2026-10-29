@@ -13,6 +13,7 @@ using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.MealPlans.Requests;
 using VeggieLife.BLL.DTOs.MealPlans.Responses;
 using VeggieLife.BLL.Services.Cache;
+using VeggieLife.BLL.Services.Settings;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
 using VeggieLife.DAL.External.AiService;
@@ -33,17 +34,20 @@ public class MealPlanService : IMealPlanService
     private readonly AppDbContext _db;
     private readonly IAiServiceClient _aiClient;
     private readonly IRedisService _redisService;
+    private readonly ISystemSettingService _settingService;
     private readonly ILogger<MealPlanService> _logger;
 
     public MealPlanService(
         AppDbContext db,
         IAiServiceClient aiClient,
         IRedisService redisService,
+        ISystemSettingService settingService,
         ILogger<MealPlanService> logger)
     {
         _db = db;
         _aiClient = aiClient;
         _redisService = redisService;
+        _settingService = settingService;
         _logger = logger;
     }
 
@@ -234,7 +238,9 @@ public class MealPlanService : IMealPlanService
     private async Task CheckWeeklyQuotaAsync(int userId, string userRole, DateOnly startDate, CancellationToken ct)
     {
         var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase);
-        var weeklyLimit = isVip ? 3 : 1;
+        var weeklyLimit = isVip
+            ? await _settingService.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_VIP", 3, ct)
+            : await _settingService.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_FREE", 1, ct);
 
         var weekStart = startDate;
         var weekEnd = startDate.AddDays(6);
@@ -797,6 +803,9 @@ public class MealPlanService : IMealPlanService
     {
         var candidateLookup = candidateRecipes.ToDictionary(r => r.RecipeId);
 
+        var preDeployLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct);
+        var postDeployLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
+
         var mealPlan = new MealPlan
         {
             UserId = userId,
@@ -810,8 +819,8 @@ public class MealPlanService : IMealPlanService
             PlanStatus = "DRAFT",
             GeneratedByAi = generatedByAi,
             CreatedAt = DateTime.UtcNow,
-            MaxSwapsAllowed = 21,
-            SwapsRemaining = 21
+            MaxSwapsAllowed = preDeployLimit,
+            SwapsRemaining = preDeployLimit
         };
 
         _db.MealPlans.Add(mealPlan);
@@ -899,9 +908,9 @@ public class MealPlanService : IMealPlanService
             Edits = new MealPlanEditsDto
             {
                 PreDeployUsed = 0,
-                PreDeployLimit = mealPlan.MaxSwapsAllowed,
+                PreDeployLimit = preDeployLimit,
                 PostDeployUsed = 0,
-                PostDeployLimit = mealPlan.MaxSwapsAllowed
+                PostDeployLimit = postDeployLimit
             },
             MaxSwapsAllowed = mealPlan.MaxSwapsAllowed,
             SwapsRemaining = mealPlan.SwapsRemaining
@@ -991,6 +1000,9 @@ public class MealPlanService : IMealPlanService
             })
             .ToList();
 
+        var preDeployLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct);
+        var postDeployLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
+
         return new CreateMealPlanResponseData
         {
             PlanId = plan.PlanId,
@@ -1006,9 +1018,9 @@ public class MealPlanService : IMealPlanService
             Edits = new MealPlanEditsDto
             {
                 PreDeployUsed = preDeployUsed,
-                PreDeployLimit = plan.MaxSwapsAllowed,
+                PreDeployLimit = preDeployLimit,
                 PostDeployUsed = postDeployUsed,
-                PostDeployLimit = plan.MaxSwapsAllowed
+                PostDeployLimit = postDeployLimit
             },
             MaxSwapsAllowed = plan.MaxSwapsAllowed,
             SwapsRemaining = plan.SwapsRemaining
@@ -1143,16 +1155,28 @@ public class MealPlanService : IMealPlanService
                 "Bữa ăn không tồn tại trong thực đơn này.");
         }
 
-        // Kiểm tra hạn mức đổi món linh hoạt theo MaxSwapsAllowed & SwapsRemaining (thay thế số 21 hardcode)
+        // Kiểm tra hạn mức đổi món linh hoạt theo MaxSwapsAllowed & SwapsRemaining kết hợp SystemSettings
         var currentPhase = plan.PlanStatus;
-        if (plan.SwapsRemaining <= 0)
+        var swapLimit = string.Equals(currentPhase, "DRAFT", StringComparison.OrdinalIgnoreCase)
+            ? await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct)
+            : await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
+
+        var swapsUsedInPhase = await _db.AuditLogs.CountAsync(a =>
+            a.TargetTable == "MealPlans" &&
+            a.TargetId == id.ToString() &&
+            a.Action == "MEAL_SLOT_SWAPPED" &&
+            a.Note == currentPhase, ct);
+
+        var effectiveLimit = swapLimit != 21 ? swapLimit : (plan.MaxSwapsAllowed > 0 ? plan.MaxSwapsAllowed : 21);
+
+        if (plan.SwapsRemaining <= 0 || swapsUsedInPhase >= effectiveLimit)
         {
             throw AppException.Forbidden(
                 ErrorCodes.ErrQuotaMealSwapExceeded,
-                $"Hết {plan.MaxSwapsAllowed} lần đổi/chỉnh sửa của giai đoạn hiện tại ({currentPhase}).");
+                $"Hết {effectiveLimit} lần đổi/chỉnh sửa của giai đoạn hiện tại ({currentPhase}).");
         }
 
-        // Tìm món thay thế: APPROVED_ACTIVE, hợp trường phái, calo lệch <= 15%, không dị ứng
+        // Tìm món thay thế: APPROVED_ACTIVE, hợp trường phái, calo lệch <= tolerance, không dị ứng
         var oldRecipe = slot.Recipe ?? await _db.Recipes.FirstOrDefaultAsync(r => r.RecipeId == slot.RecipeId, ct);
         if (oldRecipe == null)
         {
@@ -1161,9 +1185,11 @@ public class MealPlanService : IMealPlanService
                 "Không tìm thấy công thức món cũ để tính toán thay thế.");
         }
 
+        var calorieTolerancePercent = await _settingService.GetIntSettingAsync("MEAL_SWAP_CALORIE_TOLERANCE_PERCENT", 15, ct);
+        var toleranceFactor = calorieTolerancePercent / 100m;
         var oldCalories = oldRecipe.CaloriesKcal;
-        var minKcal = oldCalories * 0.85m;
-        var maxKcal = oldCalories * 1.15m;
+        var minKcal = oldCalories * (1m - toleranceFactor);
+        var maxKcal = oldCalories * (1m + toleranceFactor);
 
         var userAllergenIds = await _db.UserAllergies
             .Where(ua => ua.UserId == userId)

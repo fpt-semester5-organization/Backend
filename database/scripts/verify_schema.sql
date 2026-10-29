@@ -1,7 +1,7 @@
 -- ============================================================================
 -- VeggieLifeDb - Database Schema Verification Script (Sprint 5: D1-D2)
 -- Mục tiêu: Kiểm tra đếm lại toàn bộ cơ sở dữ liệu sau khi sinh từ tài liệu
--- Tiêu chuẩn nghiệm thu: Đúng 38 bảng và đúng 312 cột (loại trừ sysdiagrams nếu có).
+-- Tiêu chuẩn nghiệm thu: Đúng 39 bảng và đúng 320 cột (loại trừ sysdiagrams nếu có).
 -- ============================================================================
 
 USE [VeggieLifeDb];
@@ -10,7 +10,7 @@ GO
 SET NOCOUNT ON;
 
 PRINT '============================================================================';
-PRINT '            KIỂM TRA TỰ ĐỘNG CƠ SỞ DỮ LIỆU VEGGIELIFE (38 BẢNG - 312 CỘT)';
+PRINT '            KIỂM TRA TỰ ĐỘNG CƠ SỞ DỮ LIỆU VEGGIELIFE (39 BẢNG - 320 CỘT)';
 PRINT '============================================================================';
 
 DECLARE @TotalTables INT;
@@ -23,12 +23,12 @@ FROM INFORMATION_SCHEMA.COLUMNS
 WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME <> 'sysdiagrams';
 
 PRINT '1. TỔNG HỢP TOÀN BỘ CƠ SỞ DỮ LIỆU:';
-PRINT '   - Số bảng thực tế: ' + CAST(@TotalTables AS VARCHAR(10)) + ' / 38 bảng yêu cầu';
-PRINT '   - Số cột thực tế:  ' + CAST(@TotalColumns AS VARCHAR(10)) + ' / 312 cột yêu cầu';
+PRINT '   - Số bảng thực tế: ' + CAST(@TotalTables AS VARCHAR(10)) + ' / 39 bảng yêu cầu';
+PRINT '   - Số cột thực tế:  ' + CAST(@TotalColumns AS VARCHAR(10)) + ' / 321 cột yêu cầu';
 
-IF @TotalTables = 38 AND @TotalColumns = 312
+IF @TotalTables = 39 AND @TotalColumns = 321
 BEGIN
-    PRINT '   >>> KẾT QUẢ NGHIỆM THU: [PASS] ĐẠT 100% TIÊU CHÍ (38 BẢNG, 312 CỘT)';
+    PRINT '   >>> KẾT QUẢ NGHIỆM THU: [PASS] ĐẠT 100% TIÊU CHÍ (39 BẢNG, 321 CỘT)';
 END
 ELSE
 BEGIN

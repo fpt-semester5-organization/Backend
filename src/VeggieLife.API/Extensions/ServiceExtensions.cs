@@ -360,6 +360,7 @@ public static class ServiceExtensions
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminENumberService, VeggieLife.BLL.Services.Admin.AdminENumberService>();
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminAuditLogService, VeggieLife.BLL.Services.Admin.AdminAuditLogService>();
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminAnalyticsService, VeggieLife.BLL.Services.Admin.AdminAnalyticsService>();
+        services.AddScoped<VeggieLife.BLL.Services.Settings.ISystemSettingService, VeggieLife.BLL.Services.Settings.SystemSettingService>();
 
         // Cấu hình & Dịch vụ tra cứu mã vạch Open Food Facts (FN-BAR-01, FN-BAR-02)
         services.Configure<OpenFoodFactsSettings>(configuration.GetSection(OpenFoodFactsSettings.SectionName));
