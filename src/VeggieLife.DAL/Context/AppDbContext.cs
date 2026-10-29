@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using VeggieLife.DAL.Entities;
@@ -27,6 +27,8 @@ public partial class AppDbContext : DbContext
     public virtual DbSet<DietarySchool> DietarySchools { get; set; }
 
     public virtual DbSet<EnumberDictionary> EnumberDictionaries { get; set; }
+
+    public virtual DbSet<Food> Foods { get; set; }
 
     public virtual DbSet<FoodCategory> FoodCategories { get; set; }
 
@@ -346,6 +348,30 @@ public partial class AppDbContext : DbContext
                 .HasColumnName("Is_Active");
             entity.Property(e => e.IsCore).HasColumnName("Is_Core");
             entity.Property(e => e.UpdatedAt).HasColumnName("Updated_At");
+        });
+
+        modelBuilder.Entity<Food>(entity =>
+        {
+            entity.HasKey(e => e.FoodId);
+
+            entity.ToTable("Foods");
+
+            entity.HasIndex(e => e.FoodName, "UQ_Foods_Food_Name").IsUnique();
+
+            entity.Property(e => e.FoodId).HasColumnName("Food_ID");
+            entity.Property(e => e.CategoryId).HasColumnName("Category_ID");
+            entity.Property(e => e.FoodName)
+                .HasMaxLength(150)
+                .HasColumnName("Food_Name");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(sysdatetime())")
+                .HasColumnName("Created_At");
+            entity.Property(e => e.UpdatedAt).HasColumnName("Updated_At");
+
+            entity.HasOne(d => d.Category).WithMany(p => p.Foods)
+                .HasForeignKey(d => d.CategoryId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_Foods_FoodCategories");
         });
 
         modelBuilder.Entity<FridgeInventory>(entity =>
@@ -859,6 +885,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.UpdatedAt).HasColumnName("Updated_At");
             entity.Property(e => e.UserId).HasColumnName("User_ID");
             entity.Property(e => e.ViewCount).HasColumnName("View_Count");
+            entity.Property(e => e.FoodId).HasColumnName("Food_ID");
 
             entity.HasOne(d => d.Category).WithMany(p => p.Recipes)
                 .HasForeignKey(d => d.CategoryId)
@@ -873,6 +900,10 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.Recipes)
                 .HasForeignKey(d => d.UserId)
                 .HasConstraintName("FK_Recipes_Users");
+
+            entity.HasOne(d => d.Food).WithMany(p => p.Recipes)
+                .HasForeignKey(d => d.FoodId)
+                .HasConstraintName("FK_Recipes_Foods");
         });
 
         modelBuilder.Entity<RecipeIngredient>(entity =>

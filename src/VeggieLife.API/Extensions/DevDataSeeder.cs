@@ -70,6 +70,22 @@ public static class DevDataSeeder
                     BEGIN
                         ALTER TABLE dbo.FridgeInventory ADD Unit NVARCHAR(30) NOT NULL CONSTRAINT DF_FridgeInventory_Unit DEFAULT (N'phần');
                     END
+
+                    IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[Foods]') AND type in (N'U'))
+                    BEGIN
+                        CREATE TABLE [dbo].[Foods] (
+                            [Food_ID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                            [Category_ID] INT NOT NULL,
+                            [Food_Name] NVARCHAR(150) NOT NULL UNIQUE,
+                            [Created_At] DATETIME2(7) NOT NULL DEFAULT (SYSDATETIME()),
+                            [Updated_At] DATETIME2(7) NULL
+                        );
+                    END
+
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Recipes' AND COLUMN_NAME = 'Food_ID')
+                    BEGIN
+                        ALTER TABLE dbo.Recipes ADD Food_ID INT NULL;
+                    END
                 ");
             }
             catch
@@ -436,6 +452,26 @@ public static class DevDataSeeder
                 db.SaveChanges();
             }
 
+            // 6.5 Nạp Món ăn khái niệm (Foods) phục vụ combobox và liên kết công thức
+            if (!db.Foods.Any())
+            {
+                var catSoup = db.FoodCategories.FirstOrDefault(c => c.CategoryName.Contains("Canh") || c.CategoryName.Contains("Súp"))?.CategoryId ?? 1;
+                var catStir = db.FoodCategories.FirstOrDefault(c => c.CategoryName.Contains("Xào") || c.CategoryName.Contains("Kho"))?.CategoryId ?? 2;
+
+                db.Foods.AddRange(
+                    new Food { FoodId = 1, CategoryId = catSoup, FoodName = "Canh nấm đậu phụ cà chua", CreatedAt = DateTime.UtcNow },
+                    new Food { FoodId = 2, CategoryId = catStir, FoodName = "Nấm rơm xào đậu hũ", CreatedAt = DateTime.UtcNow },
+                    new Food { FoodId = 3, CategoryId = catSoup, FoodName = "Canh chua nấm rau cải", CreatedAt = DateTime.UtcNow },
+                    new Food { FoodId = 4, CategoryId = catSoup, FoodName = "Bún bò Huế chay", CreatedAt = DateTime.UtcNow },
+                    new Food { FoodId = 5, CategoryId = catSoup, FoodName = "Phở chay Hà Nội", CreatedAt = DateTime.UtcNow },
+                    new Food { FoodId = 6, CategoryId = catSoup, FoodName = "Bún riêu cua chay", CreatedAt = DateTime.UtcNow },
+                    new Food { FoodId = 7, CategoryId = catStir, FoodName = "Đậu hũ kho nấm rơm", CreatedAt = DateTime.UtcNow },
+                    new Food { FoodId = 8, CategoryId = catStir, FoodName = "Cơm tấm sườn bì chả chay", CreatedAt = DateTime.UtcNow },
+                    new Food { FoodId = 9, CategoryId = catSoup, FoodName = "Lẩu nấm dưỡng sinh thảo mộc", CreatedAt = DateTime.UtcNow }
+                );
+                db.SaveChanges();
+            }
+
             // 7. Nạp Công thức món ăn chuẩn (Recipes & RecipeIngredients) phục vụ FN-VIS-03
             if (!db.Recipes.Any())
             {
@@ -445,6 +481,7 @@ public static class DevDataSeeder
                     UserId = 1,
                     CategoryId = 1,
                     DietarySchoolId = 1, // Vegan
+                    FoodId = 1,
                     Title = "Canh nấm đậu phụ cà chua",
                     Description = "Món canh chay thanh đạm giàu đạm thực vật từ đậu hũ non và nấm rơm.",
                     Instructions = "1. Cắt đậu hũ miếng vuông. 2. Xào sơ cà chua và nấm rơm. 3. Nấu sôi và nêm gia vị.",
@@ -465,6 +502,7 @@ public static class DevDataSeeder
                     UserId = 1,
                     CategoryId = 2,
                     DietarySchoolId = 1, // Vegan
+                    FoodId = 2,
                     Title = "Nấm rơm xào đậu hũ",
                     Description = "Món xào thơm lừng từ nấm rơm tươi và đậu hũ non.",
                     Instructions = "1. Áp chảo đậu hũ vàng đều. 2. Cho nấm rơm vào xào chín. 3. Rắc tiêu và dùng nóng.",
@@ -485,6 +523,7 @@ public static class DevDataSeeder
                     UserId = 1,
                     CategoryId = 1,
                     DietarySchoolId = 1, // Vegan
+                    FoodId = 3,
                     Title = "Canh chua nấm rau cải",
                     Description = "Món canh chua giải nhiệt từ nấm rơm, cà chua và cải thìa.",
                     Instructions = "1. Nấu nước sôi. 2. Cho cà chua, nấm và rau cải thìa vào. 3. Nêm nước cốt me và muối.",

@@ -10,6 +10,13 @@ public class UpdateRecipeRequest
     public string? Title { get; set; }
     public int? CategoryId { get; set; }
     public int? DietarySchoolId { get; set; }
+
+    /// <summary>Mã định danh món ăn (Food) nếu muốn chuyển sang món khác.</summary>
+    public int? FoodId { get; set; }
+
+    /// <summary>Tên món ăn mới hoặc cập nhật.</summary>
+    public string? FoodName { get; set; }
+
     public string? Description { get; set; }
     public List<string>? Instructions { get; set; }
     public int? PrepTimeMinutes { get; set; }

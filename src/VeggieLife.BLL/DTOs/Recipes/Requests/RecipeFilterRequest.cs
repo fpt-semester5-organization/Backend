@@ -11,6 +11,11 @@ public class RecipeFilterRequest
     public string? Keyword { get; set; }
 
     /// <summary>
+    /// Mã món ăn (Food_ID > 0) để lọc các công thức của cùng một món ăn.
+    /// </summary>
+    public int? FoodId { get; set; }
+
+    /// <summary>
     /// Mã danh mục món ăn (Category_ID > 0).
     /// </summary>
     public int? CategoryId { get; set; }
