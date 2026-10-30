@@ -33,6 +33,8 @@ public partial class MealPlan
 
     public int SwapsRemaining { get; set; } = 21;
 
+    public int DurationDays { get; set; } = 7;
+
     public virtual DietarySchool DietarySchool { get; set; } = null!;
 
     public virtual ICollection<MealSlot> MealSlots { get; set; } = new List<MealSlot>();

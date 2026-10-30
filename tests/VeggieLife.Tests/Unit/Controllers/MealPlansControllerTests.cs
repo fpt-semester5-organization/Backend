@@ -640,4 +640,93 @@ public class MealPlansControllerTests
         ex.Which.StatusCode.Should().Be(403);
         ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrGuestPersonalizationRestricted);
     }
+
+    [Fact]
+    public async Task CreateMealPlanCustomDays_ValidRequest_ShouldReturn201Created()
+    {
+        // Arrange
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "45"),
+            new(ClaimTypes.Role, UserRoles.Member)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        var request = new CreateMealPlanRequest
+        {
+            StartDate = "2026-11-02",
+            BudgetTier = "STANDARD",
+            DurationDays = 5
+        };
+
+        var responseData = new CreateMealPlanResponseData
+        {
+            PlanId = 101,
+            PlanName = "Thực đơn 5 ngày (02/11)",
+            StartDate = "2026-11-02",
+            EndDate = "2026-11-06",
+            DurationDays = 5,
+            Slots = new List<MealSlotDto>()
+        };
+
+        _mockService.Setup(s => s.CreateMealPlanAsync(45, UserRoles.Member, request, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var actionResult = await _controller.CreateMealPlanCustomDays(request, CancellationToken.None);
+
+        // Assert
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status201Created);
+
+        var apiResponse = objectResult.Value as ApiResponse<CreateMealPlanResponseData>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data!.PlanId.Should().Be(101);
+        apiResponse.Data.DurationDays.Should().Be(5);
+    }
+
+    [Fact]
+    public async Task SwapMealSlotByNote_ValidRequest_ShouldReturn200OK()
+    {
+        // Arrange
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "45"),
+            new(ClaimTypes.Role, UserRoles.Member)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        var request = new SwapMealSlotByNoteRequest
+        {
+            Note = "Muốn ăn món thanh đạm"
+        };
+
+        var responseData = new UpdateMealPlanSlotResponseData
+        {
+            Slot = new MealSlotDto
+            {
+                SlotId = 10,
+                Recipe = new MealSlotRecipeDto { RecipeId = 99, Title = "Canh nấm đậu hũ" }
+            },
+            SwapsRemaining = 20,
+            MaxSwapsAllowed = 21
+        };
+
+        _mockService.Setup(s => s.SwapMealSlotByNoteAsync(10, 45, UserRoles.Member, request, 101, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var actionResult = await _controller.SwapMealSlotByNote(10, 101, request, CancellationToken.None);
+
+        // Assert
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var apiResponse = objectResult.Value as ApiResponse<UpdateMealPlanSlotResponseData>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data!.Slot.Recipe!.RecipeId.Should().Be(99);
+        apiResponse.Data.SwapsRemaining.Should().Be(20);
+    }
 }

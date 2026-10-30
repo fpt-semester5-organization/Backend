@@ -41,6 +41,11 @@ public static class DevDataSeeder
                         ALTER TABLE dbo.MealPlans ADD Swaps_Remaining INT NOT NULL CONSTRAINT DF_MealPlans_Swaps_Remaining DEFAULT (21);
                     END
 
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'MealPlans' AND COLUMN_NAME = 'Duration_Days')
+                    BEGIN
+                        ALTER TABLE dbo.MealPlans ADD Duration_Days INT NOT NULL CONSTRAINT DF_MealPlans_Duration_Days DEFAULT (7);
+                    END
+
                     IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[MealSlotSwapHistories]') AND type in (N'U'))
                     BEGIN
                         CREATE TABLE [dbo].[MealSlotSwapHistories] (

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using VeggieLife.DAL.Entities;
@@ -589,6 +589,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.SwapsRemaining)
                 .HasDefaultValue(21)
                 .HasColumnName("Swaps_Remaining");
+            entity.Property(e => e.DurationDays)
+                .HasDefaultValue(7)
+                .HasColumnName("Duration_Days");
             entity.Property(e => e.StartDate).HasColumnName("Start_Date");
             entity.Property(e => e.TargetDailyKcal)
                 .HasColumnType("decimal(6, 1)")

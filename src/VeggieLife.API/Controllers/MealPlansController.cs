@@ -57,6 +57,29 @@ public class MealPlansController : BaseApiController
     }
 
     /// <summary>
+    /// FN-MEAL-01: Sinh thực đơn linh hoạt số ngày (1 đến 30 ngày) bằng AI.
+    /// Cho phép người dùng tùy chọn số ngày thực đơn (DurationDays) thay vì mặc định 7 ngày.
+    /// </summary>
+    [HttpPost("custom-days")]
+    [HttpPost("flexible")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<CreateMealPlanResponseData>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> CreateMealPlanCustomDays(
+        [FromBody] CreateMealPlanRequest request,
+        CancellationToken ct)
+    {
+        var (userId, userRole) = EnsureAuthorizedUser();
+        var result = await _mealPlanService.CreateMealPlanAsync(userId, userRole, request, ct);
+        return CreatedResponse(result, "Đã tạo thực đơn nháp.");
+    }
+
+    /// <summary>
     /// FN-MEAL-02: Xem danh sách các thực đơn của người dùng.
     /// Lấy danh sách thực đơn (Plan_Status != TEMPLATE) sắp xếp mới nhất trước, có phân trang.
     /// </summary>
@@ -156,6 +179,30 @@ public class MealPlansController : BaseApiController
         var (userId, _) = EnsureAuthorizedUser();
         var result = await _mealPlanService.GetMealSlotSwapHistoryAsync(slotId, userId, id, ct);
         return OkResponse(result, "OK");
+    }
+
+    /// <summary>
+    /// FN-MEAL-03: Đổi món theo ghi chú/khẩu vị người dùng bằng AI.
+    /// Gom 100 món ứng viên, đóng gói toàn bộ công thức gửi qua AI để chọn món tối ưu nhất theo ghi chú.
+    /// </summary>
+    [HttpPost("slots/{slotId:int}/swap-by-note")]
+    [HttpPost("{id:int}/slots/{slotId:int}/swap-by-note")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<UpdateMealPlanSlotResponseData>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> SwapMealSlotByNote(
+        [FromRoute] int slotId,
+        [FromRoute] int? id,
+        [FromBody] SwapMealSlotByNoteRequest request,
+        CancellationToken ct = default)
+    {
+        var (userId, userRole) = EnsureAuthorizedUser();
+        var result = await _mealPlanService.SwapMealSlotByNoteAsync(slotId, userId, userRole, request, id, ct);
+        return OkResponse(result, "Đã đổi món theo yêu cầu.");
     }
 
     /// <summary>

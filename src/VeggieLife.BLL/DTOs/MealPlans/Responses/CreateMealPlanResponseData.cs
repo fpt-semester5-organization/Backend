@@ -21,4 +21,5 @@ public class CreateMealPlanResponseData
     public MealPlanEditsDto Edits { get; set; } = new();
     public int MaxSwapsAllowed { get; set; } = 21;
     public int SwapsRemaining { get; set; } = 21;
+    public int DurationDays { get; set; } = 7;
 }

@@ -20,6 +20,12 @@ public class CreateMealPlanRequest
     public string BudgetTier { get; set; } = "STANDARD";
 
     /// <summary>
+    /// Số ngày cho thực đơn (từ 1 đến 30 ngày, mặc định: 7 ngày).
+    /// </summary>
+    [Range(1, 30, ErrorMessage = "Số ngày tạo thực đơn phải từ 1 đến 30 ngày.")]
+    public int DurationDays { get; set; } = 7;
+
+    /// <summary>
     /// Ưu tiên món dùng nguyên liệu trong tủ lạnh ảo (mặc định: false).
     /// </summary>
     public bool UseFridge { get; set; } = false;
