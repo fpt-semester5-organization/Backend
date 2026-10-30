@@ -139,8 +139,11 @@ public class AdminAnalyticsServiceTests
         result.Users.ByStatus["SUSPENDED"].Should().Be(1);
 
         result.Content.Recipes.Should().Be(2);
+        result.Content.RecipesNewInPeriod.Should().Be(2);
         result.Content.Posts.Should().Be(1);
+        result.Content.PostsNewInPeriod.Should().Be(1);
         result.Content.Videos.Should().Be(1);
+        result.Content.VideosNewInPeriod.Should().Be(1);
 
         result.Vip.Active.Should().Be(1);
         result.Vip.RevenueVnd.Should().Be(49000 + 129000);
@@ -177,5 +180,42 @@ public class AdminAnalyticsServiceTests
 
         // DB không bị query
         _mockRedis.Verify(r => r.SetAsync(It.IsAny<string>(), It.IsAny<AdminAnalyticsOverviewResponseData>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_FiltersContentByDateRangeCorrectly()
+    {
+        var now = DateTime.UtcNow;
+        _db.Recipes.AddRange(
+            new Recipe { RecipeId = 10, Title = "Old Recipe", Instructions = "I", DifficultyLevel = "EASY", Source = "USER", Status = "APPROVED_ACTIVE", CreatedAt = now.AddDays(-40) },
+            new Recipe { RecipeId = 11, Title = "New Recipe", Instructions = "I", DifficultyLevel = "EASY", Source = "USER", Status = "APPROVED_ACTIVE", CreatedAt = now }
+        );
+        _db.Posts.AddRange(
+            new Post { PostId = 10, UserId = 1, Title = "Old Post", Content = "C", Visibility = "PUBLIC", ModerationStatus = "APPROVED_ACTIVE", CreatedAt = now.AddDays(-40) },
+            new Post { PostId = 11, UserId = 1, Title = "New Post", Content = "C", Visibility = "PUBLIC", ModerationStatus = "APPROVED_ACTIVE", CreatedAt = now }
+        );
+        _db.Videos.AddRange(
+            new Video { VideoId = 10, PostId = 10, Title = "Old Video", VideoUrl = "http://video.mp4", Status = "APPROVED_ACTIVE", CreatedAt = now.AddDays(-40) },
+            new Video { VideoId = 11, PostId = 11, Title = "New Video", VideoUrl = "http://video.mp4", Status = "APPROVED_ACTIVE", CreatedAt = now }
+        );
+        await _db.SaveChangesAsync();
+
+        var filter = new AdminAnalyticsOverviewFilterRequest
+        {
+            From = now.AddDays(-2).ToString("yyyy-MM-dd"),
+            To = now.ToString("yyyy-MM-dd")
+        };
+
+        var result = await _service.GetOverviewAsync(filter);
+
+        // Tổng kho toàn sàn
+        result.Content.Recipes.Should().Be(2);
+        result.Content.Posts.Should().Be(2);
+        result.Content.Videos.Should().Be(2);
+
+        // Lọc trong kỳ (chỉ có mục tạo hôm nay, mục 40 ngày trước bị loại)
+        result.Content.RecipesNewInPeriod.Should().Be(1);
+        result.Content.PostsNewInPeriod.Should().Be(1);
+        result.Content.VideosNewInPeriod.Should().Be(1);
     }
 }

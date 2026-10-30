@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace VeggieLife.DAL.Entities;
@@ -28,6 +28,10 @@ public partial class MealPlan
     public bool GeneratedByAi { get; set; }
 
     public DateTime CreatedAt { get; set; }
+
+    public int MaxSwapsAllowed { get; set; } = 21;
+
+    public int SwapsRemaining { get; set; } = 21;
 
     public virtual DietarySchool DietarySchool { get; set; } = null!;
 

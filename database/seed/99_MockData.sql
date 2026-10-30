@@ -259,7 +259,7 @@ GO
 
 -- 3. USER WEIGHT HISTORY (Bảng 05)
 PRINT N'>> [3/38] Nạp dữ liệu UserWeightHistory...';
-IF NOT EXISTS (SELECT 1 FROM dbo.UserWeightHistory WHERE User_ID = 2 AND Weight_Kg = 56.5)
+DELETE FROM dbo.UserWeightHistory;
 BEGIN
     INSERT INTO dbo.UserWeightHistory (User_ID, Weight_Kg, Logged_Date, Note, Created_At)
     VALUES
@@ -517,7 +517,7 @@ GO
 
 -- 7. AUDIT LOGS (Bảng 10)
 PRINT N'>> [7/38] Nạp dữ liệu AuditLogs...';
-IF (SELECT COUNT(*) FROM dbo.AuditLogs) < 50
+DELETE FROM dbo.AuditLogs;
 BEGIN
     INSERT INTO dbo.AuditLogs 
         (Actor_User_ID, Actor_Role, Action, Target_Table, Target_ID, Old_Value, New_Value, Note, Created_At)
@@ -1123,7 +1123,7 @@ USING (
 ) AS source (Recipe_ID, Ingredient_ID, Quantity_Needed, Unit, Preparation_Note, Is_Optional)
 ON target.Recipe_ID = source.Recipe_ID AND target.Ingredient_ID = source.Ingredient_ID
 WHEN MATCHED THEN
-    UPDATE SET target.Quantity_Needed = source.Quantity_Needed, target.Unit = source.Unit
+    UPDATE SET target.Quantity_Needed = source.Quantity_Needed, target.Unit = source.Unit, target.Preparation_Note = source.Preparation_Note, target.Is_Optional = source.Is_Optional
 WHEN NOT MATCHED THEN
     INSERT (Recipe_ID, Ingredient_ID, Quantity_Needed, Unit, Preparation_Note, Is_Optional)
     VALUES (source.Recipe_ID, source.Ingredient_ID, source.Quantity_Needed, source.Unit, source.Preparation_Note, source.Is_Optional);
@@ -1295,7 +1295,7 @@ USING (
 ) AS source (Video_ID, Post_ID, Title, Video_Url, Thumbnail_Url, Duration_Seconds, View_Count, Status, Created_At)
 ON target.Video_ID = source.Video_ID
 WHEN MATCHED THEN
-    UPDATE SET target.Video_Url = source.Video_Url, target.Thumbnail_Url = source.Thumbnail_Url, target.Status = source.Status
+    UPDATE SET target.Title = source.Title, target.Video_Url = source.Video_Url, target.Thumbnail_Url = source.Thumbnail_Url, target.Status = source.Status
 WHEN NOT MATCHED THEN
     INSERT (Video_ID, Post_ID, Title, Video_Url, Thumbnail_Url, Duration_Seconds, View_Count, Status, Created_At)
     VALUES (source.Video_ID, source.Post_ID, source.Title, source.Video_Url, source.Thumbnail_Url, source.Duration_Seconds, source.View_Count, source.Status, source.Created_At);
@@ -1899,7 +1899,7 @@ USING (
 ) AS source (Plan_ID, User_ID, Dietary_School_ID, Plan_Name, Start_Date, End_Date, Target_Daily_Kcal, Budget_Tier, Custom_Instructions, Plan_Status, Generated_By_AI, Created_At)
 ON target.Plan_ID = source.Plan_ID
 WHEN MATCHED THEN
-    UPDATE SET target.Plan_Name = source.Plan_Name, target.Plan_Status = source.Plan_Status, target.Target_Daily_Kcal = source.Target_Daily_Kcal
+    UPDATE SET target.Plan_Name = source.Plan_Name, target.Plan_Status = source.Plan_Status, target.Target_Daily_Kcal = source.Target_Daily_Kcal, target.Custom_Instructions = source.Custom_Instructions, target.Budget_Tier = source.Budget_Tier
 WHEN NOT MATCHED THEN
     INSERT (Plan_ID, User_ID, Dietary_School_ID, Plan_Name, Start_Date, End_Date, Target_Daily_Kcal, Budget_Tier, Custom_Instructions, Plan_Status, Generated_By_AI, Created_At)
     VALUES (source.Plan_ID, source.User_ID, source.Dietary_School_ID, source.Plan_Name, source.Start_Date, source.End_Date, source.Target_Daily_Kcal, source.Budget_Tier, source.Custom_Instructions, source.Plan_Status, source.Generated_By_AI, source.Created_At);
@@ -2401,7 +2401,7 @@ USING (
 ) AS source (Product_ID, Barcode, Product_Name, Brand, Ingredients_Text, Image_Url, Vegan_Verdict, Admin_Verified, Created_At, Last_Synced_At)
 ON target.Product_ID = source.Product_ID
 WHEN MATCHED THEN
-    UPDATE SET target.Product_Name = source.Product_Name, target.Vegan_Verdict = source.Vegan_Verdict, target.Image_Url = source.Image_Url
+    UPDATE SET target.Product_Name = source.Product_Name, target.Brand = source.Brand, target.Ingredients_Text = source.Ingredients_Text, target.Vegan_Verdict = source.Vegan_Verdict, target.Image_Url = source.Image_Url
 WHEN NOT MATCHED THEN
     INSERT (Product_ID, Barcode, Product_Name, Brand, Ingredients_Text, Image_Url, Vegan_Verdict, Admin_Verified, Created_At, Last_Synced_At)
     VALUES (source.Product_ID, source.Barcode, source.Product_Name, source.Brand, source.Ingredients_Text, source.Image_Url, source.Vegan_Verdict, source.Admin_Verified, source.Created_At, source.Last_Synced_At);
@@ -2596,7 +2596,7 @@ USING (
 ) AS source (Venue_ID, External_Source, External_Place_ID, Venue_Name, Address, Latitude, Longitude, Rating, Thumbnail_Url, Is_Fully_Vegan, Is_Active, Raw_Origin_JSON, Created_At)
 ON target.Venue_ID = source.Venue_ID
 WHEN MATCHED THEN
-    UPDATE SET target.Venue_Name = source.Venue_Name, target.Thumbnail_Url = source.Thumbnail_Url, target.Rating = source.Rating
+    UPDATE SET target.Venue_Name = source.Venue_Name, target.Address = source.Address, target.Thumbnail_Url = source.Thumbnail_Url, target.Rating = source.Rating
 WHEN NOT MATCHED THEN
     INSERT (Venue_ID, External_Source, External_Place_ID, Venue_Name, Address, Latitude, Longitude, Rating, Thumbnail_Url, Is_Fully_Vegan, Is_Active, Raw_Origin_JSON, Created_At)
     VALUES (source.Venue_ID, source.External_Source, source.External_Place_ID, source.Venue_Name, source.Address, source.Latitude, source.Longitude, source.Rating, source.Thumbnail_Url, source.Is_Fully_Vegan, source.Is_Active, source.Raw_Origin_JSON, source.Created_At);
@@ -2634,7 +2634,7 @@ USING (
 ) AS source (Item_ID, Venue_ID, Dish_Name, Price_VND, Description, Image_Url, Is_Signature)
 ON target.Item_ID = source.Item_ID
 WHEN MATCHED THEN
-    UPDATE SET target.Dish_Name = source.Dish_Name, target.Price_VND = source.Price_VND
+    UPDATE SET target.Dish_Name = source.Dish_Name, target.Price_VND = source.Price_VND, target.Description = source.Description
 WHEN NOT MATCHED THEN
     INSERT (Item_ID, Venue_ID, Dish_Name, Price_VND, Description, Image_Url, Is_Signature)
     VALUES (source.Item_ID, source.Venue_ID, source.Dish_Name, source.Price_VND, source.Description, source.Image_Url, source.Is_Signature);
@@ -2727,7 +2727,7 @@ USING (
 ) AS source (Survey_ID, User_ID, Session_ID, Rating_Score, Context_Question, Feedback_Content, Created_At)
 ON target.Survey_ID = source.Survey_ID
 WHEN MATCHED THEN
-    UPDATE SET target.Rating_Score = source.Rating_Score, target.Feedback_Content = source.Feedback_Content
+    UPDATE SET target.Rating_Score = source.Rating_Score, target.Feedback_Content = source.Feedback_Content, target.Context_Question = source.Context_Question
 WHEN NOT MATCHED THEN
     INSERT (Survey_ID, User_ID, Session_ID, Rating_Score, Context_Question, Feedback_Content, Created_At)
     VALUES (source.Survey_ID, source.User_ID, source.Session_ID, source.Rating_Score, source.Context_Question, source.Feedback_Content, source.Created_At);

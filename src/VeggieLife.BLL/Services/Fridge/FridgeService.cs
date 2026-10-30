@@ -278,37 +278,37 @@ public class FridgeService : IFridgeService
                 }
             }
 
-            if (highestSim < 0.50 || bestMatch == null)
+            if (highestSim >= 0.80 && bestMatch != null)
             {
-                // Tự động tạo nguyên liệu vào danh mục nếu chưa có để đảm bảo luôn lưu được vào kho tủ lạnh
-                var maxId = allIngredients.Any() ? allIngredients.Max(i => i.IngredientId) : 100;
-                bestMatch = new Ingredient
+                var dto = new DetectedFridgeIngredientDto
                 {
-                    IngredientId = maxId + 1,
-                    IngredientName = rawName,
-                    StandardUnit = rawItem.Unit ?? "g",
-                    DefaultStallType = "PRODUCE",
-                    FoodGroup = rawItem.IsAnimalProduct ? "ANIMAL" : (rawItem.FoodGroup ?? "PLANT"),
-                    CaloriesPer100g = 50m
+                    InventoryId = null, // Sẽ được điền sau khi lưu vào DB (nếu là Thành viên)
+                    IngredientId = bestMatch.IngredientId,
+                    Name = bestMatch.IngredientName,
+                    FreshnessStatus = freshness,
+                    Box2D = rawItem.Box2D,
+                    Quantity = rawItem.Quantity,
+                    Amount = rawItem.Amount,
+                    Unit = rawItem.Unit
                 };
-                _db.Ingredients.Add(bestMatch);
-                await _db.SaveChangesAsync(ct);
-                allIngredients.Add(bestMatch);
+                detectedList.Add(dto);
+                matchedItemsForSave.Add((dto, bestMatch));
             }
-
-            var dto = new DetectedFridgeIngredientDto
+            else
             {
-                InventoryId = null, // Sẽ được điền sau khi lưu vào DB (nếu là Thành viên)
-                IngredientId = bestMatch.IngredientId,
-                Name = rawName, // Giữ tên nguyên bản trực quan theo ảnh
-                FreshnessStatus = freshness,
-                Box2D = rawItem.Box2D,
-                Quantity = rawItem.Quantity,
-                Amount = rawItem.Amount,
-                Unit = rawItem.Unit
-            };
-            detectedList.Add(dto);
-            matchedItemsForSave.Add((dto, bestMatch));
+                // Không khớp >= 80%: không lưu vào DB, trả về để người dùng chọn thủ công
+                detectedList.Add(new DetectedFridgeIngredientDto
+                {
+                    InventoryId = null,
+                    IngredientId = null,
+                    Name = rawName,
+                    FreshnessStatus = freshness,
+                    Box2D = rawItem.Box2D,
+                    Quantity = rawItem.Quantity,
+                    Amount = rawItem.Amount,
+                    Unit = rawItem.Unit
+                });
+            }
         }
 
         // =========================================================================
@@ -371,7 +371,9 @@ public class FridgeService : IFridgeService
                         IngredientId = matchedIng.IngredientId,
                         SessionId = fridgeSession.SessionId,
                         CustomItemName = matchedIng.IngredientName,
-                        FreshnessStatus = dto.FreshnessStatus
+                        FreshnessStatus = dto.FreshnessStatus,
+                        Quantity = 1.0m,
+                        Unit = matchedIng.StandardUnit
                     };
                     _db.FridgeInventories.Add(newItem);
                     existingInventoryList.Add(newItem);
@@ -469,7 +471,9 @@ public class FridgeService : IFridgeService
                 InventoryId = f.InventoryId,
                 IngredientId = f.IngredientId,
                 Name = string.IsNullOrWhiteSpace(f.CustomItemName) ? f.Ingredient.IngredientName : f.CustomItemName,
-                FreshnessStatus = f.FreshnessStatus
+                FreshnessStatus = f.FreshnessStatus,
+                Quantity = f.Quantity,
+                Unit = string.IsNullOrWhiteSpace(f.Unit) ? f.Ingredient.StandardUnit : f.Unit
             })
             .ToListAsync(ct);
 
@@ -492,6 +496,11 @@ public class FridgeService : IFridgeService
         if (!string.IsNullOrWhiteSpace(request.CustomItemName) && request.CustomItemName.Length > 100)
         {
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Tên tùy chỉnh nguyên liệu không được vượt quá 100 ký tự.");
+        }
+
+        if (request.Quantity < 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Số lượng nguyên liệu (quantity) không được âm.");
         }
 
         // 1. Tìm hoặc tự động tạo nguyên liệu trong danh mục nếu chưa có
@@ -534,33 +543,26 @@ public class FridgeService : IFridgeService
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Vui lòng chọn hoặc nhập tên nguyên liệu hợp lệ.");
         }
 
-        var customName = string.IsNullOrWhiteSpace(request.CustomItemName) ? ingredient.IngredientName : request.CustomItemName.Trim();
-        var freshness = string.Equals(request.FreshnessStatus, "NON-FRESH", StringComparison.OrdinalIgnoreCase) ? "NON-FRESH" : "FRESH";
-
-        // 2. Nếu nguyên liệu ĐÃ CÓ trong tủ: tự động UPSERT (cập nhật số lượng/tên tùy chỉnh và độ tươi)
-        var existing = await _db.FridgeInventories.FirstOrDefaultAsync(f => f.UserId == userId && f.IngredientId == ingredient.IngredientId, ct);
-        if (existing != null)
+        // Mỗi nguyên liệu chỉ một dòng cho mỗi người dùng (BR-USR-08)
+        var existing = await _db.FridgeInventories.AnyAsync(f => f.UserId == userId && f.IngredientId == ingredient.IngredientId, ct);
+        if (existing)
         {
-            existing.CustomItemName = customName;
-            existing.FreshnessStatus = freshness;
-            await _db.SaveChangesAsync(ct);
-
-            return new FridgeItemDto
-            {
-                InventoryId = existing.InventoryId,
-                IngredientId = existing.IngredientId,
-                Name = existing.CustomItemName,
-                FreshnessStatus = existing.FreshnessStatus
-            };
+            throw AppException.Conflict(ErrorCodes.ErrFridgeItemExists, "Nguyên liệu đã có trong tủ.");
         }
 
-        // 3. Nếu chưa có trong tủ: thêm mới
+        var customName = string.IsNullOrWhiteSpace(request.CustomItemName) ? ingredient.IngredientName : request.CustomItemName.Trim();
+        var freshness = string.Equals(request.FreshnessStatus, "NON-FRESH", StringComparison.OrdinalIgnoreCase) ? "NON-FRESH" : "FRESH";
+        var quantity = request.Quantity > 0 ? request.Quantity : 1.0m;
+        var unit = !string.IsNullOrWhiteSpace(request.Unit) ? request.Unit.Trim() : ingredient.StandardUnit;
+
         var newItem = new FridgeInventory
         {
             UserId = userId,
             IngredientId = ingredient.IngredientId,
             CustomItemName = customName,
-            FreshnessStatus = freshness
+            FreshnessStatus = freshness,
+            Quantity = quantity,
+            Unit = unit
         };
 
         _db.FridgeInventories.Add(newItem);
@@ -571,7 +573,9 @@ public class FridgeService : IFridgeService
             InventoryId = newItem.InventoryId,
             IngredientId = newItem.IngredientId,
             Name = newItem.CustomItemName,
-            FreshnessStatus = newItem.FreshnessStatus
+            FreshnessStatus = newItem.FreshnessStatus,
+            Quantity = newItem.Quantity,
+            Unit = newItem.Unit
         };
     }
 
@@ -623,6 +627,20 @@ public class FridgeService : IFridgeService
             {
                 item.FreshnessStatus = request.FreshnessStatus.Trim().ToUpperInvariant();
             }
+
+            if (request.Quantity.HasValue)
+            {
+                if (request.Quantity.Value <= 0)
+                {
+                    throw AppException.BadRequest(ErrorCodes.ErrValidation, "Số lượng nguyên liệu (quantity) phải lớn hơn 0.");
+                }
+                item.Quantity = request.Quantity.Value;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Unit))
+            {
+                item.Unit = request.Unit.Trim();
+            }
         }
 
         await _db.SaveChangesAsync(ct);
@@ -632,7 +650,9 @@ public class FridgeService : IFridgeService
             InventoryId = item.InventoryId,
             IngredientId = item.IngredientId,
             Name = string.IsNullOrWhiteSpace(item.CustomItemName) ? item.Ingredient.IngredientName : item.CustomItemName,
-            FreshnessStatus = item.FreshnessStatus
+            FreshnessStatus = item.FreshnessStatus,
+            Quantity = item.Quantity,
+            Unit = string.IsNullOrWhiteSpace(item.Unit) ? item.Ingredient.StandardUnit : item.Unit
         };
     }
 

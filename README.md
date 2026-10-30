@@ -18,8 +18,8 @@ API của VeggieLife. **ASP.NET Core 8 Web API · C# · EF Core 8 (Database-firs
 | Đặc tả 82 chức năng (mã `FN-<MODULE>-nn`) | `docs/03. Functional Requirements.docx` |
 | Ngưỡng hiệu năng, bảo mật | `docs/04. Nonfunctional Requirements Specification.docx` |
 | Kiến trúc, biến môi trường, Docker, CI | `docs/05. Architecture and Deployment.docx` |
-| 38 bảng / 312 cột | `docs/06. Logical Data Model Specification.docx` |
-| 113 endpoint | `docs/07. API Specification.docx` và `docs/08. OpenAPI Specification.yaml` |
+| 39 bảng / 321 cột | `docs/06. Logical Data Model Specification.docx` |
+| 117 endpoint | `docs/07. API Specification.docx` và `docs/08. OpenAPI Specification.yaml` |
 | **Thẻ chức năng để code** (luồng, dữ liệu, endpoint, lỗi, test) | `docs/09. Task Cards.docx` |
 | Bảng/cột, hằng số, enum, mã lỗi, khóa Redis | `docs/10. Data Dictionary and Constants.docx` |
 | Tên interface dùng chung, hợp đồng AI service, quy tắc cho agent | Sprint Plan **Phụ lục B** và **§11** (`plan/16. Context implement/09. Sprint Plan.docx`) |
@@ -62,15 +62,15 @@ veggielife-backend/
 ├── docs/                          bản sao đặc tả (xem docs/README.md)
 ├── .github/workflows/             CI: build + test + format + contract guard + gitleaks
 ├── database/                      ★ Database-first: SQL là gốc, Entity sinh từ đây
-│   ├── schema/                    38 file DDL, mỗi bảng 1 file, đánh số theo thứ tự khóa ngoại (sinh bằng dm_to_ddl.py)
+│   ├── schema/                    39 file DDL, mỗi bảng 1 file, đánh số theo thứ tự khóa ngoại (sinh bằng dm_to_ddl.py)
 │   ├── seed/                      dữ liệu gốc: 7 trường phái (DietarySchools), Allergens, FoodCategories, Ingredients (+ IngredientAllergens),
-│   │                              ENumberDictionary, SubscriptionPlans (49k/129k/449k), template_meal_plans.sql, Admin đầu tiên
+│   │                              ENumberDictionary, SubscriptionPlans (49k/129k/449k), template_meal_plans.sql, Admin đầu tiên, SystemSettings
 │   └── scripts/                   run_all.sh (schema + seed bằng sqlcmd), scaffold.sh, reset_db.sh, dm_to_ddl.py
 ├── scripts/                       check_contract.py (contract guard: route/field khớp 08. OpenAPI)
 ├── src/
 │   ├── VeggieLife.API/
 │   │   ├── Controllers/           1 controller / resource (bảng mục 4)
-│   │   │   └── Admin/             toàn bộ /api/v1/admin/*: AdminUsersController, AdminModerationController, AdminMasterDataController, AdminKnowledgeController, AdminAiController…
+│   │   │   └── Admin/             toàn bộ /api/v1/admin/*: AdminUsersController, AdminModerationController, AdminMasterDataController, AdminKnowledgeController, AdminAiController, AdminSettingsController…
 │   │   ├── Middlewares/           ExceptionHandling, CorrelationId, GeoRestriction, RateLimit
 │   │   ├── Filters/               GuestQuotaAttribute, ValidationFilter
 │   │   ├── Authorization/         policy GuestOrMember, Member, Vip, Admin; claim types (role, isVip)
@@ -118,7 +118,7 @@ Module theo mã FN; hạn mức và hằng số tra ở `docs/10. Data Dictionar
 | MAP | VenuesController → IVenueService | VeganVenues, VenueCategories | Khách 5 km, Thành viên 1–10 km, chỉ trong Việt Nam; `VenueMenuItems` **không hiện thực** (D100) |
 | CHAT | ChatController / SurveysController → IChatService | ChatSessions, ChatMessages (`Metadata_JSON`), Surveys | Free 20, VIP 200 câu/ngày; ai-service `/chat/answer` lo RAG; `/admin/knowledge/*` (FN-CHAT-07) |
 | SUB | SubscriptionsController / PaymentsController → IPaymentService | SubscriptionPlans, PaymentTransactions | MoMo + VietQR sandbox; IPN HMAC SHA-256; đơn PENDING hết hạn sau 5 phút |
-| ADM | Admin*Controller → IAdminService | AuditLogs + các bảng trên | Đăng nhập qua `/auth/login`; tự đăng xuất sau 30 phút không thao tác; **không** có 2FA |
+| ADM | Admin*Controller → IAdminService, ISystemSettingService | AuditLogs, SystemSettings + các bảng trên | Đăng nhập qua `/auth/login`; tự đăng xuất sau 30 phút không thao tác; **không** có 2FA; quản trị cấu hình hệ thống động (SystemSettings) |
 | (dùng chung) | | AIQuotaLogs | Ghi mỗi lần gọi AI (`Feature_Code`: AI_CHAT, MEAL_PLAN_GEN, AI_FRIDGE, AI_BARCODE, SUMMARIZE_VIDEO, AI_EMBEDDING, CONTENT_MODERATION) |
 
 **Hạn mức Khách** (Redis, BR-GUEST-02): 03 lượt AI/phiên (dùng chung), quét mã vạch 03/ngày, tìm quán 03 lần.
@@ -129,7 +129,7 @@ Module theo mã FN; hạn mức và hằng số tra ở `docs/10. Data Dictionar
 
 ## 5. Database-first: quy trình bắt buộc
 
-**38 bảng:** Users, DietarySchools, HealthProfiles, UserWeightHistory, SubscriptionPlans, PaymentTransactions, Allergens, UserAllergies, AIQuotaLogs, Posts, Comments, ViolationReports, Videos, VideoTranscripts, Recipes, FoodCategories, Ingredients, RecipeIngredients, MealPlans, MealSlots, ShoppingLists, ShoppingListItems, Products, ENumberDictionary, Product_ENumbers, ProductAllergens, UserScanHistory, FridgeSessions, FridgeInventory, VeganVenues, VenueMenuItems, VenueCategories, ChatSessions, ChatMessages, Surveys, AuditLogs, Votes, IngredientAllergens.
+**39 bảng:** Users, DietarySchools, HealthProfiles, UserWeightHistory, SubscriptionPlans, PaymentTransactions, Allergens, UserAllergies, AIQuotaLogs, Posts, Comments, ViolationReports, Videos, VideoTranscripts, Recipes, FoodCategories, Ingredients, RecipeIngredients, MealPlans, MealSlots, ShoppingLists, ShoppingListItems, Products, ENumberDictionary, Product_ENumbers, ProductAllergens, UserScanHistory, FridgeSessions, FridgeInventory, VeganVenues, VenueMenuItems, VenueCategories, ChatSessions, ChatMessages, Surveys, AuditLogs, Votes, IngredientAllergens, SystemSettings.
 
 Kiểu, độ dài, nullable, CHECK, FK lấy đúng từ `docs/06` và `docs/10` mục 2. File DDL đánh số theo thứ tự khóa ngoại (bảng cha trước) và được **sinh bằng script** (`database/scripts/dm_to_ddl.py`), không gõ tay.
 
@@ -211,7 +211,7 @@ Backend **không** có biến `Gemini__*`, `Qdrant__*`, `Embedding__*`, `Rag__*`
 
 ```bash
 docker compose up -d                 # SQL Server, Redis, API, ai-service, Qdrant (+ stt-service khi cần)
-bash database/scripts/run_all.sh     # 38 bảng + dữ liệu gốc
+bash database/scripts/run_all.sh     # 39 bảng + dữ liệu gốc
 ```
 
 Trước khi báo xong một task, các lệnh sau phải xanh:

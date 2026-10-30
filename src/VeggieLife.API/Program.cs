@@ -78,6 +78,7 @@ builder.Services.AddControllers()
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+        options.JsonSerializerOptions.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All);
     });
 
 // 6. Cấu hình Health Checks
@@ -145,11 +146,14 @@ else
 
 // 10. Pipeline: Authentication & Authorization
 app.UseAuthentication();
+app.UseMiddleware<UserBlacklistMiddleware>();
 app.UseMiddleware<GuestSecurityMiddleware>();
 app.UseAuthorization();
 
 // 11. Pipeline: Map Controllers & Custom Health Checks
 app.MapControllers();
+app.MapHub<VeggieLife.API.Hubs.UserHub>("/hubs/user");
+app.MapHub<VeggieLife.API.Hubs.UserHub>("/hubs/auth");
 app.MapCustomHealthCheck();
 
 app.Run();

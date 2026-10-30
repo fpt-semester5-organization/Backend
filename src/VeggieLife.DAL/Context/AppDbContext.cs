@@ -28,6 +28,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<EnumberDictionary> EnumberDictionaries { get; set; }
 
+    public virtual DbSet<Food> Foods { get; set; }
+
     public virtual DbSet<FoodCategory> FoodCategories { get; set; }
 
     public virtual DbSet<FridgeInventory> FridgeInventories { get; set; }
@@ -43,6 +45,8 @@ public partial class AppDbContext : DbContext
     public virtual DbSet<MealPlan> MealPlans { get; set; }
 
     public virtual DbSet<MealSlot> MealSlots { get; set; }
+
+    public virtual DbSet<MealSlotSwapHistory> MealSlotSwapHistories { get; set; }
 
     public virtual DbSet<PaymentTransaction> PaymentTransactions { get; set; }
 
@@ -346,6 +350,30 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.UpdatedAt).HasColumnName("Updated_At");
         });
 
+        modelBuilder.Entity<Food>(entity =>
+        {
+            entity.HasKey(e => e.FoodId);
+
+            entity.ToTable("Foods");
+
+            entity.HasIndex(e => e.FoodName, "UQ_Foods_Food_Name").IsUnique();
+
+            entity.Property(e => e.FoodId).HasColumnName("Food_ID");
+            entity.Property(e => e.CategoryId).HasColumnName("Category_ID");
+            entity.Property(e => e.FoodName)
+                .HasMaxLength(150)
+                .HasColumnName("Food_Name");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(sysdatetime())")
+                .HasColumnName("Created_At");
+            entity.Property(e => e.UpdatedAt).HasColumnName("Updated_At");
+
+            entity.HasOne(d => d.Category).WithMany(p => p.Foods)
+                .HasForeignKey(d => d.CategoryId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_Foods_FoodCategories");
+        });
+
         modelBuilder.Entity<FridgeInventory>(entity =>
         {
             entity.HasKey(e => e.InventoryId);
@@ -366,6 +394,14 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.IngredientId).HasColumnName("Ingredient_ID");
             entity.Property(e => e.SessionId).HasColumnName("Session_ID");
             entity.Property(e => e.UserId).HasColumnName("User_ID");
+            entity.Property(e => e.Quantity)
+                .HasColumnType("decimal(8, 2)")
+                .HasDefaultValue(1.00m)
+                .HasColumnName("Quantity");
+            entity.Property(e => e.Unit)
+                .HasMaxLength(30)
+                .HasDefaultValue("phần")
+                .HasColumnName("Unit");
 
             entity.HasOne(d => d.Ingredient).WithMany(p => p.FridgeInventories)
                 .HasForeignKey(d => d.IngredientId)
@@ -547,6 +583,12 @@ public partial class AppDbContext : DbContext
                 .IsUnicode(false)
                 .HasDefaultValue("DRAFT")
                 .HasColumnName("Plan_Status");
+            entity.Property(e => e.MaxSwapsAllowed)
+                .HasDefaultValue(21)
+                .HasColumnName("Max_Swaps_Allowed");
+            entity.Property(e => e.SwapsRemaining)
+                .HasDefaultValue(21)
+                .HasColumnName("Swaps_Remaining");
             entity.Property(e => e.StartDate).HasColumnName("Start_Date");
             entity.Property(e => e.TargetDailyKcal)
                 .HasColumnType("decimal(6, 1)")
@@ -592,6 +634,43 @@ public partial class AppDbContext : DbContext
                 .HasForeignKey(d => d.RecipeId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_MealSlots_Recipes");
+        });
+
+        modelBuilder.Entity<MealSlotSwapHistory>(entity =>
+        {
+            entity.HasKey(e => e.SwapHistoryId);
+
+            entity.ToTable("MealSlotSwapHistories");
+
+            entity.HasIndex(e => e.SlotId, "IX_MealSlotSwapHistories_Slot_ID");
+
+            entity.Property(e => e.SwapHistoryId).HasColumnName("Swap_History_ID");
+            entity.Property(e => e.SlotId).HasColumnName("Slot_ID");
+            entity.Property(e => e.OldRecipeId).HasColumnName("Old_Recipe_ID");
+            entity.Property(e => e.NewRecipeId).HasColumnName("New_Recipe_ID");
+            entity.Property(e => e.SwapReason)
+                .HasMaxLength(255)
+                .HasColumnName("Swap_Reason");
+            entity.Property(e => e.CaloriesDelta)
+                .HasColumnType("decimal(6, 1)")
+                .HasColumnName("Calories_Delta");
+            entity.Property(e => e.SwappedAt)
+                .HasDefaultValueSql("(sysdatetime())")
+                .HasColumnName("Swapped_At");
+
+            entity.HasOne(d => d.Slot).WithMany(p => p.SwapHistories)
+                .HasForeignKey(d => d.SlotId)
+                .HasConstraintName("FK_MealSlotSwapHistories_MealSlots");
+
+            entity.HasOne(d => d.OldRecipe).WithMany()
+                .HasForeignKey(d => d.OldRecipeId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_MealSlotSwapHistories_OldRecipe");
+
+            entity.HasOne(d => d.NewRecipe).WithMany()
+                .HasForeignKey(d => d.NewRecipeId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_MealSlotSwapHistories_NewRecipe");
         });
 
         modelBuilder.Entity<PaymentTransaction>(entity =>
@@ -658,7 +737,7 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValueSql("(sysdatetime())")
                 .HasColumnName("Created_At");
             entity.Property(e => e.ImageUrl)
-                .HasMaxLength(255)
+                .HasMaxLength(1000)
                 .IsUnicode(false)
                 .HasColumnName("Image_Url");
             entity.Property(e => e.ModerationStatus)
@@ -786,7 +865,7 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValue("MEDIUM")
                 .HasColumnName("Difficulty_Level");
             entity.Property(e => e.ImageUrl)
-                .HasMaxLength(255)
+                .HasMaxLength(1000)
                 .IsUnicode(false)
                 .HasColumnName("Image_Url");
             entity.Property(e => e.IsVerified).HasColumnName("Is_Verified");
@@ -806,6 +885,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.UpdatedAt).HasColumnName("Updated_At");
             entity.Property(e => e.UserId).HasColumnName("User_ID");
             entity.Property(e => e.ViewCount).HasColumnName("View_Count");
+            entity.Property(e => e.FoodId).HasColumnName("Food_ID");
 
             entity.HasOne(d => d.Category).WithMany(p => p.Recipes)
                 .HasForeignKey(d => d.CategoryId)
@@ -820,6 +900,10 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.Recipes)
                 .HasForeignKey(d => d.UserId)
                 .HasConstraintName("FK_Recipes_Users");
+
+            entity.HasOne(d => d.Food).WithMany(p => p.Recipes)
+                .HasForeignKey(d => d.FoodId)
+                .HasConstraintName("FK_Recipes_Foods");
         });
 
         modelBuilder.Entity<RecipeIngredient>(entity =>
@@ -1191,13 +1275,13 @@ public partial class AppDbContext : DbContext
                 .IsUnicode(false)
                 .HasDefaultValue("PROCESSING");
             entity.Property(e => e.ThumbnailUrl)
-                .HasMaxLength(255)
+                .HasMaxLength(1000)
                 .IsUnicode(false)
                 .HasColumnName("Thumbnail_Url");
             entity.Property(e => e.Title).HasMaxLength(150);
             entity.Property(e => e.UpdatedAt).HasColumnName("Updated_At");
             entity.Property(e => e.VideoUrl)
-                .HasMaxLength(255)
+                .HasMaxLength(1000)
                 .IsUnicode(false)
                 .HasColumnName("Video_Url");
             entity.Property(e => e.ViewCount).HasColumnName("View_Count");

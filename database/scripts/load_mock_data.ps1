@@ -7,7 +7,7 @@ $server = "(localdb)\MSSQLLocalDB"
 $database = "VeggieLifeDB"
 
 Write-Host "Bắt đầu nạp dữ liệu mẫu vào cơ sở dữ liệu $database trên máy chủ $server..."
-sqlcmd -S $server -d $database -i $sqlFile -b
+sqlcmd -S $server -d $database -f 65001 -C -i $sqlFile -b
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "✅ Nạp dữ liệu mẫu thành công! Bạn có thể chạy lại script này bao nhiêu lần tùy ý mà không sợ trùng lặp." -ForegroundColor Green

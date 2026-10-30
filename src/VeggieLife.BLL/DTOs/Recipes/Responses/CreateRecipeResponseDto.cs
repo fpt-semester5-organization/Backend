@@ -6,6 +6,13 @@ namespace VeggieLife.BLL.DTOs.Recipes.Responses;
 public class CreateRecipeResponseDto
 {
     public int RecipeId { get; set; }
+
+    /// <summary>Mã định danh món ăn khái niệm (Food) liên kết.</summary>
+    public int? FoodId { get; set; }
+
+    /// <summary>Tên món ăn khái niệm (Food) liên kết.</summary>
+    public string? FoodName { get; set; }
+
     public string Status { get; set; } = "DRAFT";
     public double AiConfidence { get; set; }
 }

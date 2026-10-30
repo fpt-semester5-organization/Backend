@@ -11,6 +11,7 @@ using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.Admin.Moderation;
 using VeggieLife.BLL.Services.Cache;
+using VeggieLife.BLL.Services.Realtime;
 using VeggieLife.BLL.Services.Knowledge;
 using VeggieLife.BLL.Validators.Admin;
 using VeggieLife.DAL.Context;
@@ -26,18 +27,21 @@ public class AdminModerationService : IAdminModerationService
     private readonly AppDbContext _db;
     private readonly IRedisService _redis;
     private readonly IKnowledgeSyncQueue _knowledgeSyncQueue;
+    private readonly IUserRealtimeNotifier? _realtimeNotifier;
     private readonly ILogger<AdminModerationService> _logger;
 
     public AdminModerationService(
         AppDbContext db,
         IRedisService redis,
         IKnowledgeSyncQueue knowledgeSyncQueue,
-        ILogger<AdminModerationService> logger)
+        ILogger<AdminModerationService> logger,
+        IUserRealtimeNotifier? realtimeNotifier = null)
     {
         _db = db;
         _redis = redis;
         _knowledgeSyncQueue = knowledgeSyncQueue;
         _logger = logger;
+        _realtimeNotifier = realtimeNotifier;
     }
 
     /// <summary>
@@ -51,6 +55,11 @@ public class AdminModerationService : IAdminModerationService
 
         var query = _db.ViolationReports
             .AsNoTracking()
+            .Include(r => r.Comment).ThenInclude(c => c!.User)
+            .Include(r => r.Comment).ThenInclude(c => c!.Post).ThenInclude(p => p!.User)
+            .Include(r => r.Post).ThenInclude(p => p!.User)
+            .Include(r => r.Recipe).ThenInclude(rec => rec!.User)
+            .Include(r => r.Video).ThenInclude(v => v!.Post).ThenInclude(p => p!.User)
             .Where(r => r.Status == "PENDING");
 
         if (!string.IsNullOrWhiteSpace(request.ReportSource))
@@ -90,26 +99,42 @@ public class AdminModerationService : IAdminModerationService
         {
             string targetType = "POST";
             int targetId = 0;
+            int? parentPostId = null;
+            string? targetTitle = null;
+            string? targetContent = null;
+            string? authorName = null;
 
             if (r.RecipeId.HasValue)
             {
                 targetType = "RECIPE";
                 targetId = r.RecipeId.Value;
+                targetTitle = r.Recipe?.Title;
+                targetContent = r.Recipe?.Description;
+                authorName = r.Recipe?.User?.FullName;
             }
             else if (r.PostId.HasValue)
             {
                 targetType = "POST";
                 targetId = r.PostId.Value;
+                targetTitle = r.Post?.Title;
+                targetContent = r.Post?.Content;
+                authorName = r.Post?.User?.FullName;
             }
             else if (r.VideoId.HasValue)
             {
                 targetType = "VIDEO";
                 targetId = r.VideoId.Value;
+                targetTitle = r.Video?.Title;
+                authorName = r.Video?.Post?.User?.FullName;
             }
             else if (r.CommentId.HasValue)
             {
                 targetType = "COMMENT";
                 targetId = r.CommentId.Value;
+                targetContent = r.Comment?.Content;
+                authorName = r.Comment?.User?.FullName;
+                parentPostId = r.Comment?.PostId;
+                targetTitle = r.Comment?.Post?.Title;
             }
 
             return new AdminModerationQueueItemDto
@@ -117,6 +142,10 @@ public class AdminModerationService : IAdminModerationService
                 ReportId = r.ReportId,
                 TargetType = targetType,
                 TargetId = targetId,
+                ParentPostId = parentPostId,
+                TargetTitle = targetTitle,
+                TargetContent = targetContent,
+                AuthorName = authorName,
                 ViolationType = r.ViolationType,
                 ReportSource = r.ReportSource,
                 EvidenceSummary = r.EvidenceSummary,
@@ -477,10 +506,24 @@ public class AdminModerationService : IAdminModerationService
             {
                 foreach (var tokenHash in activeHashes)
                 {
-                    await _redis.RemoveAsync($"jwt_blacklist:{tokenHash}", ct);
+                    await _redis.RemoveAsync($"refresh:{tokenHash}", ct);
                 }
             }
             await _redis.RemoveAsync(userSessionsKey, ct);
+            await _redis.RemoveAsync($"admin_session:{userId}", ct);
+
+            // Blacklist tài khoản trong Redis 30 ngày (BR-AUTH-004)
+            await _redis.SetAsync($"user_blacklist:{userId}", true, TimeSpan.FromDays(30), ct);
+
+            // Gửi thông điệp SignalR Force Logout realtime
+            if (_realtimeNotifier != null)
+            {
+                await _realtimeNotifier.NotifyForceLogoutAsync(
+                    userId,
+                    "Tài khoản của bạn đã bị khóa do vi phạm tiêu chuẩn cộng đồng nhiều lần.",
+                    "BAN",
+                    ct);
+            }
         }
         catch (Exception ex)
         {

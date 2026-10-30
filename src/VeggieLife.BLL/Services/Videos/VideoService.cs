@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
+using VeggieLife.BLL.DTOs.Posts.Responses;
 using VeggieLife.BLL.DTOs.Videos.Requests;
 using VeggieLife.BLL.DTOs.Videos.Responses;
 using VeggieLife.BLL.Services.Cache;
@@ -141,16 +142,20 @@ public class VideoService : IVideoService
 
             var imageUploadResult = await _mediaService.UploadImageAsync(dto.FileStream, fileName, "veggielife/images", ct);
 
+            var safeImageUrl = imageUploadResult.SecureUrl?.Length > 1000
+                ? imageUploadResult.SecureUrl[..1000]
+                : imageUploadResult.SecureUrl;
+
             // Gắn URL ảnh vào bài viết hoặc công thức đích
             if (targetPost != null)
             {
-                targetPost.ImageUrl = imageUploadResult.SecureUrl;
+                targetPost.ImageUrl = safeImageUrl;
                 targetPost.UpdatedAt = DateTime.UtcNow;
             }
 
             if (targetRecipe != null)
             {
-                targetRecipe.ImageUrl = imageUploadResult.SecureUrl;
+                targetRecipe.ImageUrl = safeImageUrl;
                 targetRecipe.UpdatedAt = DateTime.UtcNow;
             }
 
@@ -178,25 +183,51 @@ public class VideoService : IVideoService
             : (targetPost?.Title ?? targetRecipe?.Title ?? "Video hướng dẫn nấu ăn");
         var finalTitle = rawTitle.Length > 150 ? rawTitle[..150] : rawTitle;
 
-        var thumbnailUrl = _mediaService.GetImageUrl(videoUploadResult.PublicId, format: "jpg");
-        if (thumbnailUrl.Length > 255) thumbnailUrl = thumbnailUrl[..255];
+        var thumbnailUrl = !string.IsNullOrEmpty(videoUploadResult.SecureUrl) && videoUploadResult.SecureUrl.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
+            ? videoUploadResult.SecureUrl[..^4] + ".jpg"
+            : _mediaService.GetImageUrl(videoUploadResult.PublicId, format: "jpg");
+        if (thumbnailUrl.Length > 1000) thumbnailUrl = thumbnailUrl[..1000];
 
         var durationSeconds = (int)Math.Round(videoUploadResult.DurationSeconds ?? 0);
 
-        // INSERT Videos (Status = PROCESSING)
+        // Gán ảnh thu nhỏ của video làm ảnh đại diện bài viết / công thức nếu chưa có ảnh
+        if (targetPost != null && string.IsNullOrEmpty(targetPost.ImageUrl))
+        {
+            targetPost.ImageUrl = thumbnailUrl;
+            targetPost.UpdatedAt = DateTime.UtcNow;
+        }
+
+        if (targetRecipe != null && string.IsNullOrEmpty(targetRecipe.ImageUrl))
+        {
+            targetRecipe.ImageUrl = thumbnailUrl;
+            targetRecipe.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // INSERT Videos: Status = READY ngay khi tải lên Cloudinary thành công để người dùng xem được video trên màn hình cộng đồng
         var video = new Video
         {
             PostId = targetPost!.PostId,
             Title = finalTitle,
-            VideoUrl = videoUploadResult.SecureUrl.Length > 255 ? videoUploadResult.SecureUrl[..255] : videoUploadResult.SecureUrl,
+            VideoUrl = videoUploadResult.SecureUrl.Length > 1000 ? videoUploadResult.SecureUrl[..1000] : videoUploadResult.SecureUrl,
             ThumbnailUrl = thumbnailUrl,
             DurationSeconds = durationSeconds,
             ViewCount = 0,
-            Status = "PROCESSING",
+            Status = "READY",
             CreatedAt = DateTime.UtcNow
         };
 
         _context.Videos.Add(video);
+
+        // Tách riêng phần Whisper STT bóc tách phiên âm & công thức (VideoTranscript.Status = PENDING)
+        var transcript = new VideoTranscript
+        {
+            Video = video,
+            RecipeId = targetRecipe?.RecipeId,
+            Status = "PENDING",
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.VideoTranscripts.Add(transcript);
+
         await _context.SaveChangesAsync(ct);
 
         // 6. Đưa job bóc tách vào hàng đợi Redis stt_queue (LPUSH)
@@ -208,12 +239,13 @@ public class VideoService : IVideoService
             CreatedAt = video.CreatedAt
         }, ct);
 
-        _logger.LogInformation("Đã khởi tạo bản ghi video id={VideoId} với trạng thái PROCESSING và xếp hàng STT.", video.VideoId);
+        _logger.LogInformation("Đã khởi tạo bản ghi video id={VideoId} với trạng thái READY và xếp hàng bóc tách STT.", video.VideoId);
 
         return new CreateVideoResponseData
         {
             VideoId = video.VideoId,
-            Status = "PROCESSING"
+            Status = "PROCESSING",
+            ImageUrl = thumbnailUrl
         };
     }
 
@@ -234,7 +266,7 @@ public class VideoService : IVideoService
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã video phải lớn hơn 0.");
         }
 
-        // 2. Xử lý hạn ngạch nếu là Khách vãng lai (BR-GUEST-02, BR-AI-STT-03)
+        // 2. Xử lý hạn ngạch nếu là Khách vãng lai (BR-GUEST-02, BR-AI-STT-03, Leader câu 7: mở lại cùng video không bị trừ thêm)
         VideoTranscriptQuotaDto? quota = null;
         if (isGuest)
         {
@@ -244,21 +276,38 @@ public class VideoService : IVideoService
             }
 
             var guestKey = $"guest_quota:ai:{guestUuid}";
+            var viewedKey = $"guest_quota:ai:{guestUuid}:video:{id}";
             const int limit = 3;
 
-            var (allowed, current, remaining) = await _redisService.TryConsumeQuotaAsync(guestKey, limit, TimeSpan.FromHours(24), ct);
-            if (!allowed)
+            var alreadyViewed = await _redisService.ExistsAsync(viewedKey, ct);
+            if (!alreadyViewed)
             {
-                throw AppException.Forbidden(ErrorCodes.ErrQuotaAiExceeded,
-                    "Khách đã dùng hết 03 lượt AI dùng thử (FN-POST-09, BR-GUEST-02). Vui lòng đăng ký tài khoản để tiếp tục.");
-            }
+                var (allowed, current, remaining) = await _redisService.TryConsumeQuotaAsync(guestKey, limit, TimeSpan.FromHours(24), ct);
+                if (!allowed)
+                {
+                    throw AppException.Forbidden(ErrorCodes.ErrQuotaAiExceeded,
+                        "Khách đã dùng hết 03 lượt AI dùng thử (FN-POST-09, BR-GUEST-02). Vui lòng đăng ký tài khoản để tiếp tục.");
+                }
 
-            quota = new VideoTranscriptQuotaDto
+                await _redisService.SetAsync(viewedKey, true, TimeSpan.FromHours(24), ct);
+
+                quota = new VideoTranscriptQuotaDto
+                {
+                    Used = (int)current,
+                    Limit = limit,
+                    Remaining = (int)remaining
+                };
+            }
+            else
             {
-                Used = (int)current,
-                Limit = limit,
-                Remaining = (int)remaining
-            };
+                var currentUsed = await _redisService.GetAsync<int?>(guestKey, ct) ?? 1;
+                quota = new VideoTranscriptQuotaDto
+                {
+                    Used = currentUsed,
+                    Limit = limit,
+                    Remaining = Math.Max(0, limit - currentUsed)
+                };
+            }
         }
 
         // 3. Truy vấn Video cùng VideoTranscript và Recipe
@@ -283,24 +332,44 @@ public class VideoService : IVideoService
             throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
         }
 
-        // 5. Kiểm tra trạng thái bản phiên âm
+        // 5. Kiểm tra trạng thái bản phiên âm (hỗ trợ cả READY lẫn COMPLETED)
         var transcript = video.VideoTranscript;
-        if (transcript == null || transcript.Status != "READY")
+        if (transcript == null || (transcript.Status != "READY" && transcript.Status != "COMPLETED"))
         {
             throw AppException.NotFound(ErrorCodes.ErrTranscriptNotReady, "Chưa có bản phiên âm cho video này.");
         }
 
-        // 6. Xây dựng ExtractedRecipeDto
+        // 6. Xây dựng ExtractedRecipeDto và Segments
         ExtractedRecipeDto? extractedRecipe = null;
+        List<TranscriptSegmentDto>? segments = null;
         if (!string.IsNullOrWhiteSpace(transcript.ExtractedRecipeJson))
         {
             try
             {
                 using var doc = System.Text.Json.JsonDocument.Parse(transcript.ExtractedRecipeJson);
                 var root = doc.RootElement;
-                var title = root.TryGetProperty("title", out var titleElem) ? titleElem.GetString() ?? string.Empty : string.Empty;
+
+                // Trích xuất segments nếu có
+                if (root.TryGetProperty("segments", out var segElem) && segElem.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    segments = new List<TranscriptSegmentDto>();
+                    foreach (var s in segElem.EnumerateArray())
+                    {
+                        var start = s.TryGetProperty("start", out var st) ? st.GetDouble() : 0.0;
+                        var end = s.TryGetProperty("end", out var en) ? en.GetDouble() : 0.0;
+                        var text = s.TryGetProperty("text", out var tx) ? tx.GetString() ?? string.Empty : string.Empty;
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            segments.Add(new TranscriptSegmentDto { Start = start, End = end, Text = text });
+                        }
+                    }
+                }
+
+                // Trích xuất recipe
+                var recipeElem = root.TryGetProperty("recipe", out var rElem) ? rElem : root;
+                var title = recipeElem.TryGetProperty("title", out var titleElem) ? titleElem.GetString() ?? string.Empty : string.Empty;
                 var steps = new List<string>();
-                if (root.TryGetProperty("steps", out var stepsElem) && stepsElem.ValueKind == System.Text.Json.JsonValueKind.Array)
+                if (recipeElem.TryGetProperty("steps", out var stepsElem) && stepsElem.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
                     foreach (var s in stepsElem.EnumerateArray())
                     {
@@ -313,7 +382,7 @@ public class VideoService : IVideoService
                 }
 
                 var ingredients = new List<ExtractedIngredientDto>();
-                if (root.TryGetProperty("ingredients", out var ingElem) && ingElem.ValueKind == System.Text.Json.JsonValueKind.Array)
+                if (recipeElem.TryGetProperty("ingredients", out var ingElem) && ingElem.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
                     foreach (var item in ingElem.EnumerateArray())
                     {
@@ -377,6 +446,8 @@ public class VideoService : IVideoService
         {
             VideoId = video.VideoId,
             RawTranscript = transcript.RawTranscript ?? string.Empty,
+            TranscriptStatus = transcript.Status == "READY" ? "COMPLETED" : transcript.Status,
+            Segments = (segments != null && segments.Count > 0) ? segments : null,
             ExtractedRecipe = extractedRecipe,
             Quota = quota
         };

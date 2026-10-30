@@ -24,4 +24,14 @@ public class FridgeItemDto
     /// Trạng thái độ tươi: FRESH | NON-FRESH.
     /// </summary>
     public string FreshnessStatus { get; set; } = "FRESH";
+
+    /// <summary>
+    /// Số lượng nguyên liệu có trong tủ lạnh ảo.
+    /// </summary>
+    public decimal Quantity { get; set; } = 1;
+
+    /// <summary>
+    /// Đơn vị đong đo của nguyên liệu (VD: "quả", "g", "củ", "miếng").
+    /// </summary>
+    public string Unit { get; set; } = "phần";
 }

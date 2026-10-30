@@ -18,5 +18,15 @@ public class CreateFridgeItemRequest
     /// <summary>
     /// Trạng thái độ tươi của nguyên liệu: FRESH | NON-FRESH (mặc định FRESH).
     /// </summary>
-    public string? FreshnessStatus { get; set; }
+    public string? FreshnessStatus { get; set; } = "FRESH";
+
+    /// <summary>
+    /// Số lượng nguyên liệu (VD: 3, 200, 1.5). Mặc định là 1 nếu không truyền.
+    /// </summary>
+    public decimal Quantity { get; set; } = 1;
+
+    /// <summary>
+    /// Đơn vị đong đo (VD: "quả", "g", "củ", "miếng"). Mặc định theo StandardUnit của nguyên liệu nếu để trống.
+    /// </summary>
+    public string? Unit { get; set; }
 }

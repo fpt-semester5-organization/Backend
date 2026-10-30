@@ -301,6 +301,100 @@ public class MealPlansControllerTests
     }
 
     [Fact]
+    public async Task GetMealSlotSwapHistory_AuthenticatedMember_ShouldReturn200Ok()
+    {
+        // Arrange
+        var userId = 45;
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(ClaimTypes.Role, UserRoles.Member)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        var responseData = new List<MealSlotSwapHistoryDto>
+        {
+            new()
+            {
+                HistoryId = 1,
+                SlotId = 10,
+                OldRecipeId = 101,
+                OldRecipeTitle = "Cơm nấm",
+                OldRecipeCalories = 500m,
+                NewRecipeId = 102,
+                NewRecipeTitle = "Cháo yến mạch",
+                NewRecipeCalories = 450m,
+                SwapReason = "TASTE_PREFERENCE",
+                CaloriesDelta = -50m,
+                SwappedAt = DateTime.UtcNow
+            }
+        };
+
+        _mockService.Setup(s => s.GetMealSlotSwapHistoryAsync(10, userId, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var actionResult = await _controller.GetMealSlotSwapHistory(10, null, CancellationToken.None);
+
+        // Assert
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var apiResponse = objectResult.Value as ApiResponse<IReadOnlyList<MealSlotSwapHistoryDto>>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.StatusCode.Should().Be(200);
+        apiResponse.Data.Should().HaveCount(1);
+        apiResponse.Data![0].OldRecipeTitle.Should().Be("Cơm nấm");
+        apiResponse.Data[0].NewRecipeTitle.Should().Be("Cháo yến mạch");
+        apiResponse.Data[0].SwapReason.Should().Be("TASTE_PREFERENCE");
+    }
+
+    [Fact]
+    public async Task GetMealSlotSwapHistory_WithPlanId_ShouldPassPlanIdToService()
+    {
+        // Arrange
+        var userId = 45;
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(ClaimTypes.Role, UserRoles.Member)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        var responseData = new List<MealSlotSwapHistoryDto>();
+        _mockService.Setup(s => s.GetMealSlotSwapHistoryAsync(10, userId, 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var actionResult = await _controller.GetMealSlotSwapHistory(10, 5, CancellationToken.None);
+
+        // Assert
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status200OK);
+        _mockService.Verify(s => s.GetMealSlotSwapHistoryAsync(10, userId, 5, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetMealSlotSwapHistory_GuestUser_ShouldThrowForbidden()
+    {
+        // Arrange
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "999"),
+            new(ClaimTypes.Role, UserRoles.Guest)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        // Act & Assert
+        var act = () => _controller.GetMealSlotSwapHistory(10, null, CancellationToken.None);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrGuestPersonalizationRestricted);
+    }
+
+    [Fact]
     public async Task PatchMealPlanSlot_AuthenticatedMember_ShouldReturn200Ok()
     {
         // Arrange

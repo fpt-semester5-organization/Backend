@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace VeggieLife.DAL.Entities;
@@ -72,4 +72,6 @@ public partial class User
     public virtual ICollection<ViolationReport> ViolationReportReporterUsers { get; set; } = new List<ViolationReport>();
 
     public virtual ICollection<Vote> Votes { get; set; } = new List<Vote>();
+
+    public virtual ICollection<SystemSetting> SystemSettings { get; set; } = new List<SystemSetting>();
 }

@@ -21,6 +21,13 @@ public class CreateRecipeRequest
     public string Title { get; set; } = string.Empty;
     public int CategoryId { get; set; }
     public int DietarySchoolId { get; set; }
+
+    /// <summary>Mã món ăn nếu chọn từ danh sách đã có (tùy chọn).</summary>
+    public int? FoodId { get; set; }
+
+    /// <summary>Tên món ăn. Nếu chưa tồn tại trong hệ thống sẽ tự động tạo mới.</summary>
+    public string FoodName { get; set; } = string.Empty;
+
     public string? Description { get; set; }
     public List<string> Instructions { get; set; } = new();
     public int PrepTimeMinutes { get; set; } = 15;

@@ -14,6 +14,7 @@ using VeggieLife.BLL.Common.Settings;
 using VeggieLife.BLL.Services.Auth;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.Guest;
+using VeggieLife.BLL.Services.Settings;
 using Xunit;
 
 namespace VeggieLife.Tests.Unit.Services;
@@ -363,5 +364,33 @@ public class GuestServiceTests
         var stt1 = await service.ConsumeTrialQuotaAsync(guestUuid, GuestTrialType.VideoStt);
         stt1.Used.Should().Be(1);
         stt1.Remaining.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetGuestQuotaAsync_WhenAdminConfiguredDynamicChatLimit_ReturnsDynamicLimitAndRemaining()
+    {
+        // Arrange: Admin cấu hình hạn mức khách là 7 lượt thay vì mặc định 3
+        var mockSettings = new Mock<ISystemSettingService>();
+        mockSettings.Setup(s => s.GetIntSettingAsync("CHAT_LIMIT_DAILY_GUEST", 3, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(7);
+
+        var service = new GuestService(
+            _redisService,
+            _mockJwtTokenService.Object,
+            Options.Create(new GuestSecuritySettings()),
+            _mockLogger.Object,
+            settingService: mockSettings.Object);
+
+        var guestUuid = Guid.NewGuid().ToString();
+        await _redisService.SetAsync($"guest_quota:ai:{guestUuid}", 2L);
+
+        // Act
+        var quota = await service.GetGuestQuotaAsync(guestUuid);
+
+        // Assert
+        quota.Should().NotBeNull();
+        quota.Chatbot.Used.Should().Be(2);
+        quota.Chatbot.Limit.Should().Be(7);
+        quota.Chatbot.Remaining.Should().Be(5);
     }
 }

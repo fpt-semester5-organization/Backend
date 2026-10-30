@@ -2267,10 +2267,84 @@ components:
                       type: string
             swapsRemaining:
               type: integer
+            maxSwapsAllowed:
+              type: integer
       required:
       - statusCode
       - message
       - data
+    MealSlotSwapHistoryResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MealSlotSwapHistoryDto'
+      required:
+      - statusCode
+      - message
+      - data
+    MealSlotSwapHistoryDto:
+      type: object
+      properties:
+        historyId:
+          type: integer
+        slotId:
+          type: integer
+        oldRecipeId:
+          type: integer
+        oldRecipeTitle:
+          type: string
+        oldRecipeImageUrl:
+          type: string
+          nullable: true
+        oldRecipeCalories:
+          type: number
+        oldRecipe:
+          type: object
+          properties:
+            recipeId:
+              type: integer
+            title:
+              type: string
+            caloriesKcal:
+              type: number
+            imageUrl:
+              type: string
+              nullable: true
+        newRecipeId:
+          type: integer
+        newRecipeTitle:
+          type: string
+        newRecipeImageUrl:
+          type: string
+          nullable: true
+        newRecipeCalories:
+          type: number
+        newRecipe:
+          type: object
+          properties:
+            recipeId:
+              type: integer
+            title:
+              type: string
+            caloriesKcal:
+              type: number
+            imageUrl:
+              type: string
+              nullable: true
+        swapReason:
+          type: string
+          nullable: true
+        caloriesDelta:
+          type: number
+        swappedAt:
+          type: string
+          format: date-time
     PatchMealPlanSlotRequest:
       type: object
       properties:
@@ -2577,6 +2651,12 @@ components:
               freshnessStatus:
                 type: string
                 enum: *id010
+              quantity:
+                type: number
+                description: Số lượng nguyên liệu trong tủ lạnh ảo
+              unit:
+                type: string
+                description: Đơn vị đong đo (VD: "quả", "g", "củ", "miếng")
       required:
       - statusCode
       - message
@@ -2592,8 +2672,17 @@ components:
           type: string
           maxLength: 100
           description: ≤ 100 ký tự — Mặc định là tên nguyên liệu
+        quantity:
+          type: number
+          description: Số lượng nguyên liệu (VD: 3, 200, 1.5). Mặc định là 1
+        unit:
+          type: string
+          maxLength: 30
+          description: Đơn vị đong đo (VD: "quả", "g", "củ", "miếng"). Mặc định theo StandardUnit
       required:
       - ingredientId
+    AddFridgeItemRequestDto:
+      $ref: '#/components/schemas/CreateFridgeItemRequest'
     CreateFridgeItemResponse:
       type: object
       properties:
@@ -2613,10 +2702,30 @@ components:
             freshnessStatus:
               type: string
               enum: *id010
+            quantity:
+              type: number
+            unit:
+              type: string
       required:
       - statusCode
       - message
       - data
+    FridgeItemResponseDto:
+      type: object
+      properties:
+        inventoryId:
+          type: integer
+        ingredientId:
+          type: integer
+        name:
+          type: string
+        freshnessStatus:
+          type: string
+          enum: *id010
+        quantity:
+          type: number
+        unit:
+          type: string
     UpdateFridgeItemRequest:
       type: object
       properties:
@@ -2630,6 +2739,13 @@ components:
           - FRESH
           - NON-FRESH
           description: FRESH | NON-FRESH
+        quantity:
+          type: number
+          description: Số lượng nguyên liệu cập nhật (> 0)
+        unit:
+          type: string
+          maxLength: 30
+          description: Đơn vị đong đo cập nhật
     UpdateFridgeItemResponse:
       type: object
       properties:
@@ -2649,6 +2765,10 @@ components:
             freshnessStatus:
               type: string
               enum: *id010
+            quantity:
+              type: number
+            unit:
+              type: string
       required:
       - statusCode
       - message
@@ -4615,6 +4735,71 @@ components:
       - statusCode
       - message
       - data
+    AdminSettingDto:
+      type: object
+      properties:
+        settingKey:
+          type: string
+        settingValue:
+          type: string
+        defaultValue:
+          type: string
+        dataType:
+          type: string
+        category:
+          type: string
+        description:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: integer
+          nullable: true
+      required:
+      - settingKey
+      - settingValue
+      - defaultValue
+      - dataType
+      - category
+      - updatedAt
+    UpdateAdminSettingRequest:
+      type: object
+      required:
+      - settingValue
+      properties:
+        settingValue:
+          type: string
+          maxLength: 500
+    ListAdminSettingsResponse:
+      type: object
+      required:
+      - statusCode
+      - message
+      - data
+      properties:
+        statusCode:
+          type: integer
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminSettingDto'
+    GetAdminSettingResponse:
+      type: object
+      required:
+      - statusCode
+      - message
+      - data
+      properties:
+        statusCode:
+          type: integer
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminSettingDto'
 tags:
 - name: AUTH
   description: Phiên Khách & Xác thực
@@ -8190,6 +8375,52 @@ paths:
               $ref: '#/components/schemas/PatchMealPlanSlotRequest'
             example:
               isCompleted: true
+  /meal-plans/slots/{slotId}/swap-history:
+    get:
+      tags:
+      - MEAL
+      operationId: getMealSlotSwapHistory
+      summary: FN-MEAL-03 Xem lịch sử đổi món của bữa ăn
+      description: 'Lấy danh sách các lần đổi món của một bữa ăn (Slot), bao gồm thông tin chi tiết món cũ, món mới, lý do đổi và chênh lệch calo.
+
+        Auth: Bearer (MEMBER | VIP).'
+      x-fn-id: FN-MEAL-03
+      x-status: Approved
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: slotId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+        description: '> 0'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MealSlotSwapHistoryResponse'
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_FORBIDDEN: Không có quyền truy cập.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'ERR_MEAL_PLAN_NOT_FOUND: Bữa ăn không tồn tại hoặc không thuộc về bạn.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /meal-plans/{id}/shopping-list:
     post:
       tags:
@@ -12551,6 +12782,259 @@ paths:
                 $ref: '#/components/schemas/Error'
         '403':
           description: 'ERR_ADM_FORBIDDEN: Claim role khác ADMIN.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/settings:
+    get:
+      tags:
+      - ADM
+      operationId: listAdminSettings
+      summary: FN-ADM-19 Quản lý cấu hình tham số hệ thống
+      description: 'Quản trị tập trung các tham số cấu hình hệ thống: hạn mức thực đơn, hạn ngạch AI, ngưỡng kiểm duyệt, cấu hình mô hình LLM. Lọc theo phân nhóm (?category=MEAL_PLAN, AI_QUOTA, LLMOPS, COMMUNITY, GENERAL).
+
+
+        Auth: Bearer (ADMIN).'
+      x-fn-id: FN-ADM-19
+      x-status: Approved
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: category
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - MEAL_PLAN
+          - AI_QUOTA
+          - LLMOPS
+          - COMMUNITY
+          - GENERAL
+        description: 'Phân nhóm cấu hình: MEAL_PLAN, AI_QUOTA, LLMOPS, COMMUNITY, GENERAL'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListAdminSettingsResponse'
+              example:
+                statusCode: 200
+                message: OK
+                data:
+                - settingKey: MEAL_SWAP_DAILY_LIMIT
+                  settingValue: '21'
+                  defaultValue: '21'
+                  dataType: INT
+                  category: MEAL_PLAN
+                  description: Hạn mức số lần đổi món trong một tuần
+                  updatedAt: '2026-10-28T00:00:00Z'
+                  updatedBy: 1
+                - settingKey: MEAL_SWAP_CALORIE_TOLERANCE_PERCENT
+                  settingValue: '15'
+                  defaultValue: '15'
+                  dataType: INT
+                  category: MEAL_PLAN
+                  description: Dung sai calo cho phép khi đổi món (%)
+                  updatedAt: '2026-10-28T00:00:00Z'
+                  updatedBy: 1
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_ADM_FORBIDDEN: Claim role khác ADMIN.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/settings/{key}:
+    get:
+      tags:
+      - ADM
+      operationId: getAdminSetting
+      summary: FN-ADM-19 Quản lý cấu hình tham số hệ thống
+      description: 'Lấy thông tin chi tiết một tham số cấu hình theo SettingKey.
+
+
+        Auth: Bearer (ADMIN).'
+      x-fn-id: FN-ADM-19
+      x-status: Approved
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Khóa cấu hình (SettingKey)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetAdminSettingResponse'
+              example:
+                statusCode: 200
+                message: OK
+                data:
+                  settingKey: MEAL_SWAP_DAILY_LIMIT
+                  settingValue: '21'
+                  defaultValue: '21'
+                  dataType: INT
+                  category: MEAL_PLAN
+                  description: Hạn mức số lần đổi món trong một tuần
+                  updatedAt: '2026-10-28T00:00:00Z'
+                  updatedBy: 1
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_ADM_FORBIDDEN: Claim role khác ADMIN.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'ERR_ADM_NOT_FOUND: Không tìm thấy cấu hình hệ thống với khóa được chỉ định.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      tags:
+      - ADM
+      operationId: updateAdminSetting
+      summary: FN-ADM-19 Quản lý cấu hình tham số hệ thống
+      description: 'Cập nhật giá trị một tham số cấu hình từ Admin Dashboard. Hệ thống sẽ kiểm tra kiểu dữ liệu (INT, DECIMAL, BOOLEAN, STRING), kiểm tra khoảng 0-100% nếu là tham số phần trăm, ghi nhận AuditLog và xóa cache Redis tương ứng.
+
+
+        Auth: Bearer (ADMIN).'
+      x-fn-id: FN-ADM-19
+      x-status: Approved
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Khóa cấu hình (SettingKey)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAdminSettingRequest'
+            example:
+              settingValue: '25'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetAdminSettingResponse'
+              example:
+                statusCode: 200
+                message: Cập nhật tham số cấu hình thành công.
+                data:
+                  settingKey: MEAL_SWAP_DAILY_LIMIT
+                  settingValue: '25'
+                  defaultValue: '21'
+                  dataType: INT
+                  category: MEAL_PLAN
+                  description: Hạn mức số lần đổi món trong một tuần
+                  updatedAt: '2026-10-28T00:00:00Z'
+                  updatedBy: 1
+        '400':
+          description: 'ERR_VALIDATION: Định dạng giá trị không hợp lệ hoặc vượt ngưỡng phần trăm cho phép (0 - 100%).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_ADM_FORBIDDEN: Claim role khác ADMIN.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'ERR_ADM_NOT_FOUND: Không tìm thấy cấu hình hệ thống với khóa được chỉ định.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/settings/{key}/reset:
+    post:
+      tags:
+      - ADM
+      operationId: resetAdminSetting
+      summary: FN-ADM-19 Quản lý cấu hình tham số hệ thống
+      description: 'Khôi phục giá trị của tham số cấu hình về giá trị mặc định ban đầu (DefaultValue) được định nghĩa trong hệ thống. Ghi nhận AuditLog và xóa cache Redis.
+
+
+        Auth: Bearer (ADMIN).'
+      x-fn-id: FN-ADM-19
+      x-status: Approved
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Khóa cấu hình (SettingKey)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetAdminSettingResponse'
+              example:
+                statusCode: 200
+                message: Khôi phục cấu hình về giá trị mặc định thành công.
+                data:
+                  settingKey: MEAL_SWAP_DAILY_LIMIT
+                  settingValue: '21'
+                  defaultValue: '21'
+                  dataType: INT
+                  category: MEAL_PLAN
+                  description: Hạn mức số lần đổi món trong một tuần
+                  updatedAt: '2026-10-28T00:00:00Z'
+                  updatedBy: 1
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_ADM_FORBIDDEN: Claim role khác ADMIN.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'ERR_ADM_NOT_FOUND: Không tìm thấy cấu hình hệ thống với khóa được chỉ định.'
           content:
             application/json:
               schema:

@@ -4,7 +4,24 @@
 ## Local Project Documentation (Specs, BRs, Data Models, Decision Log)
 project-docs/
 local-docs/
-docs/
+docs/*
+!docs/00.*
+!docs/01.*
+!docs/02.*
+!docs/03.*
+!docs/04.*
+!docs/05.*
+!docs/06.*
+!docs/07.*
+!docs/08.*
+!docs/09.*
+!docs/10.*
+!docs/11.*
+!docs/README.md
+
+*.drawio
+*.drawio.bkp
+*.drawio.bak
 
 ## Build results
 [Bb]in/

@@ -10,6 +10,10 @@ public class AdminModerationQueueItemDto
     public int ReportId { get; set; }
     public string TargetType { get; set; } = string.Empty;
     public int TargetId { get; set; }
+    public int? ParentPostId { get; set; }
+    public string? TargetTitle { get; set; }
+    public string? TargetContent { get; set; }
+    public string? AuthorName { get; set; }
     public string ViolationType { get; set; } = string.Empty;
     public string ReportSource { get; set; } = string.Empty;
     public string EvidenceSummary { get; set; } = string.Empty;

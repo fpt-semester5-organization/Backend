@@ -19,4 +19,6 @@ public class CreateMealPlanResponseData
     public bool GeneratedByAi { get; set; }
     public List<MealSlotDto> Slots { get; set; } = new();
     public MealPlanEditsDto Edits { get; set; } = new();
+    public int MaxSwapsAllowed { get; set; } = 21;
+    public int SwapsRemaining { get; set; } = 21;
 }

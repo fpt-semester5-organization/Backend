@@ -74,6 +74,16 @@ public static class ServiceExtensions
 
             options.Events = new JwtBearerEvents
             {
+                OnMessageReceived = context =>
+                {
+                    var accessToken = context.Request.Query["access_token"];
+                    var path = context.HttpContext.Request.Path;
+                    if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                    {
+                        context.Token = accessToken;
+                    }
+                    return Task.CompletedTask;
+                },
                 OnTokenValidated = async context =>
                 {
                     var redis = context.HttpContext.RequestServices.GetService<IRedisService>();
@@ -99,6 +109,7 @@ public static class ServiceExtensions
                             var isUserBlacklisted = await redis.ExistsAsync($"user_blacklist:{userIdClaim}", context.HttpContext.RequestAborted);
                             if (isUserBlacklisted)
                             {
+                                context.HttpContext.Items["IsUserBanned"] = true;
                                 context.Fail("Tài khoản đã bị tạm khóa hoặc thu hồi quyền truy cập.");
                                 return;
                             }
@@ -108,6 +119,20 @@ public static class ServiceExtensions
                 OnChallenge = async context =>
                 {
                     context.HandleResponse();
+
+                    if (context.HttpContext.Items.ContainsKey("IsUserBanned"))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        context.Response.ContentType = "application/json; charset=utf-8";
+
+                        var bannedResponse = new ApiErrorResponse(
+                            StatusCodes.Status403Forbidden,
+                            ErrorCodes.ErrAuthAccountBanned,
+                            "Tài khoản của bạn đã bị đình chỉ hoặc cấm do vi phạm điều khoản dịch vụ. Vui lòng liên hệ quản trị viên để biết thêm chi tiết.");
+
+                        await context.Response.WriteAsync(JsonSerializer.Serialize(bannedResponse, JsonOptions));
+                        return;
+                    }
                     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     context.Response.ContentType = "application/json; charset=utf-8";
 
@@ -328,6 +353,10 @@ public static class ServiceExtensions
         services.AddScoped<IGoogleAuthClient, GoogleAuthClient>();
         services.AddScoped<IAuthService, AuthService>();
 
+        // Dịch vụ Realtime Notification qua SignalR (FN-REALTIME-01)
+        services.AddSignalR();
+        services.AddScoped<VeggieLife.BLL.Services.Realtime.IUserRealtimeNotifier, VeggieLife.API.Services.Realtime.UserRealtimeNotifier>();
+
         // Cấu hình & Dịch vụ Khách vãng lai (FN-AUTH-01, FN-AUTH-02, BR-GUEST-SEC-01)
         services.Configure<VeggieLife.BLL.Common.Settings.GuestSecuritySettings>(
             configuration.GetSection(VeggieLife.BLL.Common.Settings.GuestSecuritySettings.SectionName));
@@ -360,13 +389,15 @@ public static class ServiceExtensions
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminENumberService, VeggieLife.BLL.Services.Admin.AdminENumberService>();
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminAuditLogService, VeggieLife.BLL.Services.Admin.AdminAuditLogService>();
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminAnalyticsService, VeggieLife.BLL.Services.Admin.AdminAnalyticsService>();
+        services.AddScoped<VeggieLife.BLL.Services.Settings.ISystemSettingService, VeggieLife.BLL.Services.Settings.SystemSettingService>();
 
         // Cấu hình & Dịch vụ tra cứu mã vạch Open Food Facts (FN-BAR-01, FN-BAR-02)
         services.Configure<OpenFoodFactsSettings>(configuration.GetSection(OpenFoodFactsSettings.SectionName));
         services.AddHttpClient<IOpenFoodFactsClient, OpenFoodFactsClient>();
         services.AddScoped<IProductService, ProductService>();
 
-        // Dịch vụ Công thức món chay (FN-POST-01, FN-POST-02)
+        // Dịch vụ Món ăn khái niệm (Food) & Công thức món chay (FN-POST-01, FN-POST-02)
+        services.AddScoped<VeggieLife.BLL.Services.Foods.IFoodService, VeggieLife.BLL.Services.Foods.FoodService>();
         services.AddScoped<VeggieLife.BLL.Services.Recipes.IRecipeService, VeggieLife.BLL.Services.Recipes.RecipeService>();
 
         // Dịch vụ Bài viết cộng đồng (FN-POST-05, FN-POST-06)
@@ -397,7 +428,7 @@ public static class ServiceExtensions
 
                 client.BaseAddress = new System.Uri(baseUrl);
                 client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
-                client.Timeout = System.TimeSpan.FromSeconds(60); // AI Vision cho phép tối đa 60s; MealPlan tự giới hạn 4s nội bộ (BR-ADM-AI-002)
+                client.Timeout = System.TimeSpan.FromSeconds(60); // AI Vision cho phép tối đa 60s; MealPlan tự giới hạn 4s nội bộ (BR-ADM-AI-002)
             });
         services.AddScoped<VeggieLife.BLL.Services.MealPlans.IMealPlanService, VeggieLife.BLL.Services.MealPlans.MealPlanService>();
         services.AddScoped<VeggieLife.BLL.Services.ShoppingLists.IShoppingListService, VeggieLife.BLL.Services.ShoppingLists.ShoppingListService>();
@@ -436,7 +467,7 @@ public static class ServiceExtensions
 
                 client.BaseAddress = new System.Uri(baseUrl);
                 client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
-                client.Timeout = System.TimeSpan.FromSeconds(15);
+                client.Timeout = System.TimeSpan.FromSeconds(30);
             });
 
         // Dịch vụ Chatbot tư vấn dinh dưỡng (FN-CHAT-01..06)
