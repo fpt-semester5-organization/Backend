@@ -397,7 +397,7 @@ public static class ServiceExtensions
 
                 client.BaseAddress = new System.Uri(baseUrl);
                 client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
-                client.Timeout = System.TimeSpan.FromSeconds(4); // Ràng buộc BR-ADM-AI-002: quá 4s chuyển sang Fallback
+                client.Timeout = System.TimeSpan.FromSeconds(60); // AI Vision cho phép tối đa 60s; MealPlan tự giới hạn 4s nội bộ (BR-ADM-AI-002)
             });
         services.AddScoped<VeggieLife.BLL.Services.MealPlans.IMealPlanService, VeggieLife.BLL.Services.MealPlans.MealPlanService>();
         services.AddScoped<VeggieLife.BLL.Services.ShoppingLists.IShoppingListService, VeggieLife.BLL.Services.ShoppingLists.ShoppingListService>();

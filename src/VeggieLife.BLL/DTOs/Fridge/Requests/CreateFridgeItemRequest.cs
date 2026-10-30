@@ -6,12 +6,17 @@ namespace VeggieLife.BLL.DTOs.Fridge.Requests;
 public class CreateFridgeItemRequest
 {
     /// <summary>
-    /// Mã nguyên liệu trong hệ thống (bắt buộc > 0).
+    /// Mã nguyên liệu trong hệ thống (tùy chọn, nếu không truyền sẽ tự động tìm/tạo từ CustomItemName).
     /// </summary>
-    public int IngredientId { get; set; }
+    public int? IngredientId { get; set; }
 
     /// <summary>
-    /// Tên tùy chỉnh do người dùng đặt (tùy chọn, tối đa 100 ký tự). Mặc định là tên nguyên liệu gốc.
+    /// Tên tùy chỉnh do người dùng đặt (tối đa 100 ký tự). Mặc định là tên nguyên liệu gốc.
     /// </summary>
     public string? CustomItemName { get; set; }
+
+    /// <summary>
+    /// Trạng thái độ tươi của nguyên liệu: FRESH | NON-FRESH (mặc định FRESH).
+    /// </summary>
+    public string? FreshnessStatus { get; set; }
 }

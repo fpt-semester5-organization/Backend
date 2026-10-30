@@ -196,8 +196,15 @@ public class FridgeService : IFridgeService
                 "AI tạm ngắt mạch (BR-ADM-AI-002). Vui lòng thử lại sau.");
         }
 
+        if (aiResult == null)
+        {
+            throw AppException.ServiceUnavailable(
+                ErrorCodes.ErrAiCircuitOpen,
+                "Không thể kết nối đến AI-Service hoặc AI xử lý quá thời gian. Vui lòng thử lại sau.");
+        }
+
         // Danh sách nguyên liệu AI thô
-        var rawAiItems = aiResult?.Items ?? GetDefaultSimulatedItems();
+        var rawAiItems = aiResult.Items;
 
         // =========================================================================
         // BƯỚC 4: KIỂM TRA CẢNH BÁO TRƯỜNG PHÁI & THỊT/ĐỘNG VẬT (BR-ADM-CNT-003, D109)
@@ -271,31 +278,37 @@ public class FridgeService : IFridgeService
                 }
             }
 
-            if (highestSim >= 0.80 && bestMatch != null)
+            if (highestSim < 0.50 || bestMatch == null)
             {
-                var dto = new DetectedFridgeIngredientDto
+                // Tự động tạo nguyên liệu vào danh mục nếu chưa có để đảm bảo luôn lưu được vào kho tủ lạnh
+                var maxId = allIngredients.Any() ? allIngredients.Max(i => i.IngredientId) : 100;
+                bestMatch = new Ingredient
                 {
-                    InventoryId = null, // Sẽ được điền sau khi lưu vào DB (nếu là Thành viên)
-                    IngredientId = bestMatch.IngredientId,
-                    Name = bestMatch.IngredientName,
-                    FreshnessStatus = freshness,
-                    Box2D = rawItem.Box2D
+                    IngredientId = maxId + 1,
+                    IngredientName = rawName,
+                    StandardUnit = rawItem.Unit ?? "g",
+                    DefaultStallType = "PRODUCE",
+                    FoodGroup = rawItem.IsAnimalProduct ? "ANIMAL" : (rawItem.FoodGroup ?? "PLANT"),
+                    CaloriesPer100g = 50m
                 };
-                detectedList.Add(dto);
-                matchedItemsForSave.Add((dto, bestMatch));
+                _db.Ingredients.Add(bestMatch);
+                await _db.SaveChangesAsync(ct);
+                allIngredients.Add(bestMatch);
             }
-            else
+
+            var dto = new DetectedFridgeIngredientDto
             {
-                // Không khớp >= 80%: không lưu vào DB, trả về để người dùng chọn thủ công
-                detectedList.Add(new DetectedFridgeIngredientDto
-                {
-                    InventoryId = null,
-                    IngredientId = null,
-                    Name = rawName,
-                    FreshnessStatus = freshness,
-                    Box2D = rawItem.Box2D
-                });
-            }
+                InventoryId = null, // Sẽ được điền sau khi lưu vào DB (nếu là Thành viên)
+                IngredientId = bestMatch.IngredientId,
+                Name = rawName, // Giữ tên nguyên bản trực quan theo ảnh
+                FreshnessStatus = freshness,
+                Box2D = rawItem.Box2D,
+                Quantity = rawItem.Quantity,
+                Amount = rawItem.Amount,
+                Unit = rawItem.Unit
+            };
+            detectedList.Add(dto);
+            matchedItemsForSave.Add((dto, bestMatch));
         }
 
         // =========================================================================
@@ -471,9 +484,9 @@ public class FridgeService : IFridgeService
         CreateFridgeItemRequest request,
         CancellationToken ct = default)
     {
-        if (request == null || request.IngredientId <= 0)
+        if (request == null)
         {
-            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã nguyên liệu (ingredientId) bắt buộc và phải lớn hơn 0.");
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Dữ liệu yêu cầu không hợp lệ.");
         }
 
         if (!string.IsNullOrWhiteSpace(request.CustomItemName) && request.CustomItemName.Length > 100)
@@ -481,26 +494,73 @@ public class FridgeService : IFridgeService
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Tên tùy chỉnh nguyên liệu không được vượt quá 100 ký tự.");
         }
 
-        var ingredient = await _db.Ingredients.FindAsync(new object[] { request.IngredientId }, ct);
-        if (ingredient == null)
+        // 1. Tìm hoặc tự động tạo nguyên liệu trong danh mục nếu chưa có
+        Ingredient? ingredient = null;
+        if (request.IngredientId.HasValue && request.IngredientId.Value > 0)
         {
-            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Nguyên liệu không tồn tại trong danh mục hệ thống.");
+            ingredient = await _db.Ingredients.FindAsync(new object[] { request.IngredientId.Value }, ct);
         }
 
-        // Mỗi nguyên liệu chỉ một dòng cho mỗi người dùng (BR-USR-08)
-        var existing = await _db.FridgeInventories.AnyAsync(f => f.UserId == userId && f.IngredientId == request.IngredientId, ct);
-        if (existing)
+        if (ingredient == null && !string.IsNullOrWhiteSpace(request.CustomItemName))
         {
-            throw AppException.Conflict(ErrorCodes.ErrFridgeItemExists, "Nguyên liệu đã có trong tủ.");
+            var rawName = request.CustomItemName.Trim();
+            var parenIdx = rawName.IndexOf('(');
+            var cleanName = parenIdx > 0 ? rawName.Substring(0, parenIdx).Trim() : rawName;
+
+            var existingDbIng = await _db.Ingredients.FirstOrDefaultAsync(i => i.IngredientName.ToLower() == cleanName.ToLower(), ct);
+            if (existingDbIng == null)
+            {
+                var ingIds = await _db.Ingredients.Select(i => i.IngredientId).ToListAsync(ct);
+                var maxId = ingIds.Count > 0 ? ingIds.Max() : 100;
+                existingDbIng = new Ingredient
+                {
+                    IngredientId = maxId + 1,
+                    IngredientName = cleanName,
+                    StandardUnit = "g",
+                    DefaultStallType = "PRODUCE",
+                    FoodGroup = "PLANT",
+                    IsAllium = false,
+                    CaloriesPer100g = 50m
+                };
+                _db.Ingredients.Add(existingDbIng);
+                await _db.SaveChangesAsync(ct);
+            }
+            ingredient = existingDbIng;
+            request.IngredientId = ingredient.IngredientId;
+        }
+
+        if (ingredient == null)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Vui lòng chọn hoặc nhập tên nguyên liệu hợp lệ.");
         }
 
         var customName = string.IsNullOrWhiteSpace(request.CustomItemName) ? ingredient.IngredientName : request.CustomItemName.Trim();
+        var freshness = string.Equals(request.FreshnessStatus, "NON-FRESH", StringComparison.OrdinalIgnoreCase) ? "NON-FRESH" : "FRESH";
+
+        // 2. Nếu nguyên liệu ĐÃ CÓ trong tủ: tự động UPSERT (cập nhật số lượng/tên tùy chỉnh và độ tươi)
+        var existing = await _db.FridgeInventories.FirstOrDefaultAsync(f => f.UserId == userId && f.IngredientId == ingredient.IngredientId, ct);
+        if (existing != null)
+        {
+            existing.CustomItemName = customName;
+            existing.FreshnessStatus = freshness;
+            await _db.SaveChangesAsync(ct);
+
+            return new FridgeItemDto
+            {
+                InventoryId = existing.InventoryId,
+                IngredientId = existing.IngredientId,
+                Name = existing.CustomItemName,
+                FreshnessStatus = existing.FreshnessStatus
+            };
+        }
+
+        // 3. Nếu chưa có trong tủ: thêm mới
         var newItem = new FridgeInventory
         {
             UserId = userId,
-            IngredientId = request.IngredientId,
+            IngredientId = ingredient.IngredientId,
             CustomItemName = customName,
-            FreshnessStatus = "FRESH"
+            FreshnessStatus = freshness
         };
 
         _db.FridgeInventories.Add(newItem);
