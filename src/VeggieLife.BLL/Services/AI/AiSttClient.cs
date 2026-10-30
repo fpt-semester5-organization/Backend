@@ -40,7 +40,7 @@ public class AiSttClient : IAiSttClient
             _client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
         }
 
-        _client.Timeout = TimeSpan.FromSeconds(120);
+        _client.Timeout = TimeSpan.FromSeconds(300);
     }
 
     public async Task<AiSttResultDto?> ExtractRecipeFromVideoAsync(string videoUrl, CancellationToken ct = default)
