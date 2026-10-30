@@ -348,7 +348,6 @@ public class VideoService : IVideoService
             {
                 using var doc = System.Text.Json.JsonDocument.Parse(transcript.ExtractedRecipeJson);
                 var root = doc.RootElement;
-
                 // Trích xuất segments nếu có
                 if (root.TryGetProperty("segments", out var segElem) && segElem.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
@@ -365,11 +364,14 @@ public class VideoService : IVideoService
                     }
                 }
 
-                // Trích xuất recipe
-                var recipeElem = root.TryGetProperty("recipe", out var rElem) ? rElem : root;
-                var title = recipeElem.TryGetProperty("title", out var titleElem) ? titleElem.GetString() ?? string.Empty : string.Empty;
+                // Trích xuất recipe (hỗ trợ cả recipe lồng trong "recipe" hoặc ở root, hỗ trợ cả camelCase và PascalCase)
+                var recipeElem = (root.TryGetProperty("recipe", out var rElem) || root.TryGetProperty("Recipe", out rElem)) ? rElem : root;
+                var title = (recipeElem.TryGetProperty("title", out var titleElem) || recipeElem.TryGetProperty("Title", out titleElem))
+                    ? titleElem.GetString() ?? string.Empty
+                    : string.Empty;
+
                 var steps = new List<string>();
-                if (recipeElem.TryGetProperty("steps", out var stepsElem) && stepsElem.ValueKind == System.Text.Json.JsonValueKind.Array)
+                if ((recipeElem.TryGetProperty("steps", out var stepsElem) || recipeElem.TryGetProperty("Steps", out stepsElem)) && stepsElem.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
                     foreach (var s in stepsElem.EnumerateArray())
                     {
@@ -382,7 +384,7 @@ public class VideoService : IVideoService
                 }
 
                 var ingredients = new List<ExtractedIngredientDto>();
-                if (recipeElem.TryGetProperty("ingredients", out var ingElem) && ingElem.ValueKind == System.Text.Json.JsonValueKind.Array)
+if ((recipeElem.TryGetProperty("ingredients", out var ingElem) || recipeElem.TryGetProperty("Ingredients", out ingElem)) && ingElem.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
                     foreach (var item in ingElem.EnumerateArray())
                     {
@@ -395,13 +397,13 @@ public class VideoService : IVideoService
                         }
                         else if (item.ValueKind == System.Text.Json.JsonValueKind.Object)
                         {
-                            var name = item.TryGetProperty("name", out var n) ? n.GetString() ?? string.Empty : string.Empty;
+                            var name = (item.TryGetProperty("name", out var n) || item.TryGetProperty("Name", out n)) ? n.GetString() ?? string.Empty : string.Empty;
                             decimal? qty = null;
-                            if (item.TryGetProperty("quantity", out var q) && q.TryGetDecimal(out var dec))
+                            if ((item.TryGetProperty("quantity", out var q) || item.TryGetProperty("Quantity", out q)) && q.TryGetDecimal(out var dec))
                             {
                                 qty = dec;
                             }
-                            var unit = item.TryGetProperty("unit", out var u) ? u.GetString() : null;
+                            var unit = (item.TryGetProperty("unit", out var u) || item.TryGetProperty("Unit", out u)) ? u.GetString() : null;
                             ingredients.Add(new ExtractedIngredientDto { Name = name, Quantity = qty, Unit = unit });
                         }
                     }

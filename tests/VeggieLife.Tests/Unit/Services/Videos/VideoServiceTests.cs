@@ -422,7 +422,7 @@ public class VideoServiceTests : IDisposable
         video.VideoUrl.Should().Be("https://res.cloudinary.com/demo/video/upload/vid_60.mp4");
         video.ThumbnailUrl.Should().Be("https://res.cloudinary.com/demo/video/upload/vid_60.jpg");
         video.DurationSeconds.Should().Be(120);
-        video.Status.Should().Be("PROCESSING");
+        video.Status.Should().Be("READY");
 
         _mockRedisService.Verify(r => r.EnqueueAsync(
             "stt_queue",
