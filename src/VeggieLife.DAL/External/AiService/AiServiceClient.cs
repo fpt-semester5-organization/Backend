@@ -43,7 +43,7 @@ public class AiServiceClient : IAiServiceClient
             _httpClient.DefaultRequestHeaders.Add("X-Internal-Api-Key", _settings.InternalApiKey);
         }
 
-        _httpClient.Timeout = TimeSpan.FromSeconds(_settings.TimeoutSeconds > 0 ? _settings.TimeoutSeconds : 60);
+        _httpClient.Timeout = TimeSpan.FromSeconds(Math.Max(_settings.TimeoutSeconds, 60));
     }
 
     public bool IsCircuitOpen

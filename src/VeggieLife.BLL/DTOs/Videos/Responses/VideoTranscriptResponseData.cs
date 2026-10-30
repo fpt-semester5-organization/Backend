@@ -19,6 +19,17 @@ public class VideoTranscriptResponseData
     public string RawTranscript { get; set; } = string.Empty;
 
     /// <summary>
+    /// Trạng thái phiên âm (COMPLETED, PENDING, FAILED).
+    /// </summary>
+    public string TranscriptStatus { get; set; } = "COMPLETED";
+
+    /// <summary>
+    /// Các phân đoạn có mốc thời gian (nếu có từ AI service).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<TranscriptSegmentDto>? Segments { get; set; }
+
+    /// <summary>
     /// Công thức nấu ăn đã trích xuất cấu trúc hóa từ bản phiên âm.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -29,6 +40,16 @@ public class VideoTranscriptResponseData
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public VideoTranscriptQuotaDto? Quota { get; set; }
+}
+
+/// <summary>
+/// DTO phân đoạn lời thoại theo mốc thời gian (SCR-21 / đồng bộ video).
+/// </summary>
+public class TranscriptSegmentDto
+{
+    public double Start { get; set; }
+    public double End { get; set; }
+    public string Text { get; set; } = string.Empty;
 }
 
 /// <summary>
