@@ -146,11 +146,14 @@ else
 
 // 10. Pipeline: Authentication & Authorization
 app.UseAuthentication();
+app.UseMiddleware<UserBlacklistMiddleware>();
 app.UseMiddleware<GuestSecurityMiddleware>();
 app.UseAuthorization();
 
 // 11. Pipeline: Map Controllers & Custom Health Checks
 app.MapControllers();
+app.MapHub<VeggieLife.API.Hubs.UserHub>("/hubs/user");
+app.MapHub<VeggieLife.API.Hubs.UserHub>("/hubs/auth");
 app.MapCustomHealthCheck();
 
 app.Run();

@@ -74,6 +74,16 @@ public static class ServiceExtensions
 
             options.Events = new JwtBearerEvents
             {
+                OnMessageReceived = context =>
+                {
+                    var accessToken = context.Request.Query["access_token"];
+                    var path = context.HttpContext.Request.Path;
+                    if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                    {
+                        context.Token = accessToken;
+                    }
+                    return Task.CompletedTask;
+                },
                 OnTokenValidated = async context =>
                 {
                     var redis = context.HttpContext.RequestServices.GetService<IRedisService>();
@@ -99,6 +109,7 @@ public static class ServiceExtensions
                             var isUserBlacklisted = await redis.ExistsAsync($"user_blacklist:{userIdClaim}", context.HttpContext.RequestAborted);
                             if (isUserBlacklisted)
                             {
+                                context.HttpContext.Items["IsUserBanned"] = true;
                                 context.Fail("Tài khoản đã bị tạm khóa hoặc thu hồi quyền truy cập.");
                                 return;
                             }
@@ -108,6 +119,20 @@ public static class ServiceExtensions
                 OnChallenge = async context =>
                 {
                     context.HandleResponse();
+
+                    if (context.HttpContext.Items.ContainsKey("IsUserBanned"))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        context.Response.ContentType = "application/json; charset=utf-8";
+
+                        var bannedResponse = new ApiErrorResponse(
+                            StatusCodes.Status403Forbidden,
+                            ErrorCodes.ErrAuthAccountBanned,
+                            "Tài khoản của bạn đã bị đình chỉ hoặc cấm do vi phạm điều khoản dịch vụ. Vui lòng liên hệ quản trị viên để biết thêm chi tiết.");
+
+                        await context.Response.WriteAsync(JsonSerializer.Serialize(bannedResponse, JsonOptions));
+                        return;
+                    }
                     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     context.Response.ContentType = "application/json; charset=utf-8";
 
@@ -327,6 +352,10 @@ public static class ServiceExtensions
         services.Configure<GoogleAuthSettings>(configuration.GetSection(GoogleAuthSettings.SectionName));
         services.AddScoped<IGoogleAuthClient, GoogleAuthClient>();
         services.AddScoped<IAuthService, AuthService>();
+
+        // Dịch vụ Realtime Notification qua SignalR (FN-REALTIME-01)
+        services.AddSignalR();
+        services.AddScoped<VeggieLife.BLL.Services.Realtime.IUserRealtimeNotifier, VeggieLife.API.Services.Realtime.UserRealtimeNotifier>();
 
         // Cấu hình & Dịch vụ Khách vãng lai (FN-AUTH-01, FN-AUTH-02, BR-GUEST-SEC-01)
         services.Configure<VeggieLife.BLL.Common.Settings.GuestSecuritySettings>(

@@ -11,6 +11,7 @@ using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.Admin.Moderation;
 using VeggieLife.BLL.Services.Cache;
+using VeggieLife.BLL.Services.Realtime;
 using VeggieLife.BLL.Services.Knowledge;
 using VeggieLife.BLL.Validators.Admin;
 using VeggieLife.DAL.Context;
@@ -26,18 +27,21 @@ public class AdminModerationService : IAdminModerationService
     private readonly AppDbContext _db;
     private readonly IRedisService _redis;
     private readonly IKnowledgeSyncQueue _knowledgeSyncQueue;
+    private readonly IUserRealtimeNotifier? _realtimeNotifier;
     private readonly ILogger<AdminModerationService> _logger;
 
     public AdminModerationService(
         AppDbContext db,
         IRedisService redis,
         IKnowledgeSyncQueue knowledgeSyncQueue,
-        ILogger<AdminModerationService> logger)
+        ILogger<AdminModerationService> logger,
+        IUserRealtimeNotifier? realtimeNotifier = null)
     {
         _db = db;
         _redis = redis;
         _knowledgeSyncQueue = knowledgeSyncQueue;
         _logger = logger;
+        _realtimeNotifier = realtimeNotifier;
     }
 
     /// <summary>
@@ -502,10 +506,24 @@ public class AdminModerationService : IAdminModerationService
             {
                 foreach (var tokenHash in activeHashes)
                 {
-                    await _redis.RemoveAsync($"jwt_blacklist:{tokenHash}", ct);
+                    await _redis.RemoveAsync($"refresh:{tokenHash}", ct);
                 }
             }
             await _redis.RemoveAsync(userSessionsKey, ct);
+            await _redis.RemoveAsync($"admin_session:{userId}", ct);
+
+            // Blacklist tài khoản trong Redis 30 ngày (BR-AUTH-004)
+            await _redis.SetAsync($"user_blacklist:{userId}", true, TimeSpan.FromDays(30), ct);
+
+            // Gửi thông điệp SignalR Force Logout realtime
+            if (_realtimeNotifier != null)
+            {
+                await _realtimeNotifier.NotifyForceLogoutAsync(
+                    userId,
+                    "Tài khoản của bạn đã bị khóa do vi phạm tiêu chuẩn cộng đồng nhiều lần.",
+                    "BAN",
+                    ct);
+            }
         }
         catch (Exception ex)
         {
