@@ -18,7 +18,7 @@ docs/*
 !docs/10.*
 !docs/11.*
 !docs/README.md
-!docs/SECURITY_CHECKLIST_REPORT.md
+
 *.drawio
 *.drawio.bkp
 *.drawio.bak

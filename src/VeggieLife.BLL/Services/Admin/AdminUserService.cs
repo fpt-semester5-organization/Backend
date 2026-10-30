@@ -12,6 +12,7 @@ using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.Admin.Users;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.Email;
+using VeggieLife.BLL.Services.Realtime;
 using VeggieLife.BLL.Validators.Admin;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
@@ -31,18 +32,21 @@ public class AdminUserService : IAdminUserService
     private readonly AppDbContext _db;
     private readonly IRedisService _redis;
     private readonly IEmailService _emailService;
+    private readonly IUserRealtimeNotifier? _realtimeNotifier;
     private readonly ILogger<AdminUserService> _logger;
 
     public AdminUserService(
         AppDbContext db,
         IRedisService redis,
         IEmailService emailService,
-        ILogger<AdminUserService> logger)
+        ILogger<AdminUserService> logger,
+        IUserRealtimeNotifier? realtimeNotifier = null)
     {
         _db = db;
         _redis = redis;
         _emailService = emailService;
         _logger = logger;
+        _realtimeNotifier = realtimeNotifier;
     }
 
     /// <summary>
@@ -249,6 +253,16 @@ public class AdminUserService : IAdminUserService
                     : TimeSpan.FromDays(30);
 
                 await _redis.SetAsync($"user_blacklist:{targetUser.UserId}", true, blacklistDuration, ct);
+
+                // Gửi thông báo SignalR ForceLogout realtime tới client bị cấm
+                if (_realtimeNotifier != null && normalizedAction is AdminSanctionActions.Suspend or AdminSanctionActions.Ban)
+                {
+                    await _realtimeNotifier.NotifyForceLogoutAsync(
+                        targetUser.UserId,
+                        request.Reason ?? "Tài khoản của bạn đã bị tạm khóa hoặc cấm do vi phạm điều khoản dịch vụ.",
+                        normalizedAction,
+                        ct);
+                }
             }
             catch (Exception ex)
             {
