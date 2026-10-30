@@ -96,7 +96,7 @@ public class SttProcessingWorker : BackgroundService
                     video.VideoTranscript.RawTranscript = aiResult.RawTranscript;
                     video.VideoTranscript.ExtractedRecipeJson = JsonSerializer.Serialize(aiResult.Recipe, JsonOptions);
                     video.VideoTranscript.SttModelVersion = aiResult.SttModelVersion ?? "faster-whisper-small-int8";
-                    video.VideoTranscript.Status = "READY";
+                    video.VideoTranscript.Status = "COMPLETED";
                     video.VideoTranscript.CompletedAt = DateTime.UtcNow;
 
                     video.Status = "READY";
@@ -107,12 +107,11 @@ public class SttProcessingWorker : BackgroundService
                 }
                 else
                 {
-                    _logger.LogWarning("AI Service không bóc tách được nội dung cho video id={VideoId}. Đánh dấu FAILED.", job.VideoId);
+                    _logger.LogWarning("AI Service không bóc tách được nội dung cho video id={VideoId}. Đánh dấu VideoTranscript FAILED.", job.VideoId);
                     if (video.VideoTranscript != null)
                     {
                         video.VideoTranscript.Status = "FAILED";
                     }
-                    video.Status = "FAILED";
                     video.UpdatedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync(stoppingToken);
                 }

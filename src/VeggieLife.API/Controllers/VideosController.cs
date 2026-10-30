@@ -26,6 +26,7 @@ public class VideosController : BaseApiController
         _videoService = videoService;
     }
 
+
     /// <summary>
     /// FN-POST-08: Tải video hoặc ảnh lên (Cloudinary).
     /// Gắn vào một bài viết hoặc công thức; video mới kích hoạt bóc tách công thức ngầm và lưu CSDL với trạng thái 'PROCESSING'.
@@ -195,9 +196,9 @@ public class VideosController : BaseApiController
     }
 
     /// <summary>
-    /// Phân giải mã định danh của khách vãng lai từ Claim, Header hoặc Cookie.
+    /// Phân giải mã định danh của khách vãng lai từ Claim, Header, Cookie hoặc IP.
     /// </summary>
-    private string? ResolveGuestId()
+    private string ResolveGuestId()
     {
         if (!string.IsNullOrEmpty(CurrentGuestUuid))
         {
@@ -206,12 +207,12 @@ public class VideosController : BaseApiController
 
         if (Request.Headers.TryGetValue("X-Guest-UUID", out var uuidHeader) && !string.IsNullOrEmpty(uuidHeader.FirstOrDefault()))
         {
-            return uuidHeader.FirstOrDefault();
+            return uuidHeader.FirstOrDefault()!;
         }
 
         if (Request.Headers.TryGetValue("X-Guest-Id", out var idHeader) && !string.IsNullOrEmpty(idHeader.FirstOrDefault()))
         {
-            return idHeader.FirstOrDefault();
+            return idHeader.FirstOrDefault()!;
         }
 
         if (Request.Cookies.TryGetValue("guest_uuid", out var cookieValue) && !string.IsNullOrEmpty(cookieValue))
@@ -219,6 +220,7 @@ public class VideosController : BaseApiController
             return cookieValue;
         }
 
-        return null;
+        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown-guest";
+        return $"guest-ip-{clientIp}";
     }
 }

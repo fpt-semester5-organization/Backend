@@ -161,12 +161,16 @@ public class PostService : IPostService
                 Title = p.Title,
                 AuthorName = p.User.FullName,
                 AuthorAvatarUrl = p.User.AvatarUrl,
-                ImageUrl = p.ImageUrl,
+                ImageUrl = p.ImageUrl ?? p.Videos.Where(v => v.Status == "READY").Select(v => v.ThumbnailUrl).FirstOrDefault(),
                 VoteCount = p.Votes.Count,
                 CommentCount = p.Comments.Count(c => !c.IsSoftDeleted),
                 CreatedAt = p.CreatedAt,
                 ModerationStatus = isAuthorQuery ? p.ModerationStatus : null,
-                Visibility = isAuthorQuery ? p.Visibility : null
+                Visibility = isAuthorQuery ? p.Visibility : null,
+                HasVideo = p.Videos.Any(v => v.Status == "READY"),
+                Type = p.Videos.Any(v => v.Status == "READY") ? "VIDEO" : "POST",
+                VideoId = p.Videos.Where(v => v.Status == "READY").Select(v => (int?)v.VideoId).FirstOrDefault(),
+                VideoUrl = p.Videos.Where(v => v.Status == "READY").Select(v => v.VideoUrl).FirstOrDefault()
             })
             .ToListAsync(ct);
 
@@ -224,7 +228,7 @@ public class PostService : IPostService
 
         // 4. Video đính kèm
         var videos = post.Videos
-            .Where(v => v.Status == "READY")
+            .Where(v => v.Status == "READY" || v.Status == "PROCESSING")
             .OrderBy(v => v.VideoId)
             .Select(v => new PostVideoDto
             {
@@ -232,7 +236,8 @@ public class PostService : IPostService
                 Title = v.Title,
                 VideoUrl = v.VideoUrl,
                 ThumbnailUrl = v.ThumbnailUrl,
-                DurationSeconds = v.DurationSeconds
+                DurationSeconds = v.DurationSeconds,
+                Status = v.Status
             })
             .ToList();
 
