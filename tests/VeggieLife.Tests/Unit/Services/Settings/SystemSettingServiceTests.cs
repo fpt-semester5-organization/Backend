@@ -77,6 +77,17 @@ public class SystemSettingServiceTests : IDisposable
             },
             new SystemSetting
             {
+                SettingKey = "LEGAL_DOCUMENTS",
+                SettingValue = "{\"user_agreement\":\"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png\"}",
+                DefaultValue = "{\"user_agreement\":\"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png\"}",
+                DataType = "STRING",
+                Category = "GENERAL",
+                Description = "Tài liệu pháp lý VeggieLife",
+                LegalDocumentsUrl = "{\"user_agreement\":\"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png\"}",
+                UpdatedAt = DateTime.UtcNow
+            },
+            new SystemSetting
+            {
                 SettingKey = "FEATURE_COMMUNITY_ENABLED",
                 SettingValue = "true",
                 DefaultValue = "true",
@@ -266,5 +277,40 @@ public class SystemSettingServiceTests : IDisposable
         var resetAudit = await _db.AuditLogs.FirstOrDefaultAsync(a => a.Action == "RESET_SYSTEM_SETTING" && a.TargetId == "MEAL_SWAP_LIMIT_DRAFT");
         resetAudit.Should().NotBeNull();
         resetAudit!.NewValue.Should().Contain("21");
+    }
+    [Fact]
+    public async Task GetSettingByKeyAsync_WhenLegalDocumentsSetting_ReturnsLegalDocumentsUrl()
+    {
+        // Act
+        var result = await _service.GetSettingByKeyAsync("LEGAL_DOCUMENTS");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.SettingKey.Should().Be("LEGAL_DOCUMENTS");
+        result.LegalDocumentsUrl.Should().Contain("Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png");
+        result.SettingValue.Should().Contain("Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png");
+    }
+
+    [Fact]
+    public async Task UpdateSettingAsync_WhenUpdatingLegalDocumentsUrl_UpdatesBothSettingValueAndLegalDocumentsUrl()
+    {
+        // Arrange
+        const string newUrl = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png";
+        var request = new UpdateSystemSettingRequest
+        {
+            SettingValue = newUrl,
+            LegalDocumentsUrl = newUrl
+        };
+
+        // Act
+        var result = await _service.UpdateSettingAsync("LEGAL_DOCUMENTS", request, AdminId);
+
+        // Assert
+        result.SettingValue.Should().Be(newUrl);
+        result.LegalDocumentsUrl.Should().Be(newUrl);
+
+        var dbSetting = await _db.SystemSettings.FindAsync("LEGAL_DOCUMENTS");
+        dbSetting!.SettingValue.Should().Be(newUrl);
+        dbSetting.LegalDocumentsUrl.Should().Be(newUrl);
     }
 }

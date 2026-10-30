@@ -146,6 +146,10 @@ public class SystemSettingService : ISystemSettingService
 
         var oldValue = setting.SettingValue;
         setting.SettingValue = trimmedNewValue;
+        if (request.LegalDocumentsUrl != null)
+        {
+            setting.LegalDocumentsUrl = request.LegalDocumentsUrl.Trim();
+        }
         setting.UpdatedAt = DateTime.UtcNow;
         setting.UpdatedBy = adminId;
 
@@ -338,6 +342,7 @@ public class SystemSettingService : ISystemSettingService
             DataType = setting.DataType,
             Category = setting.Category,
             Description = setting.Description,
+            LegalDocumentsUrl = setting.LegalDocumentsUrl,
             UpdatedAt = setting.UpdatedAt,
             UpdatedBy = setting.UpdatedBy
         };

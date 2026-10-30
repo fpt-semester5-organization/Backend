@@ -210,11 +210,14 @@ public partial class AppDbContext
 
             entity.Property(e => e.SettingValue)
                 .HasColumnName("Setting_Value")
-                .HasMaxLength(500);
+                .HasMaxLength(2000);
 
             entity.Property(e => e.DefaultValue)
                 .HasColumnName("Default_Value")
-                .HasMaxLength(500);
+                .HasMaxLength(2000);
+
+            entity.Property(e => e.LegalDocumentsUrl)
+                .HasColumnName("Legal_Documents_Url");
 
             entity.Property(e => e.DataType)
                 .HasColumnName("Data_Type")
