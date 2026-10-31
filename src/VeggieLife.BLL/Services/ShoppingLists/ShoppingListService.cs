@@ -79,10 +79,15 @@ public class ShoppingListService : IShoppingListService
                 "Thực đơn này đã có danh sách đi chợ.");
         }
 
-        // Tổng hợp nguyên liệu của 21 bữa và cộng dồn nguyên liệu trùng
+        // Tổng hợp nguyên liệu theo số ngày được chọn (hoặc toàn bộ thực đơn)
         var aggregatedDict = new Dictionary<int, AggregatedIngredientCollector>();
 
-        foreach (var slot in plan.MealSlots)
+        var sortedSlots = plan.MealSlots.OrderBy(s => s.SlotId).ToList();
+        var effectiveSlots = (request.DaysCount.HasValue && request.DaysCount.Value > 0)
+            ? sortedSlots.Take(request.DaysCount.Value * 3).ToList()
+            : sortedSlots;
+
+        foreach (var slot in effectiveSlots)
         {
             if (slot.Recipe == null)
             {
@@ -115,10 +120,14 @@ public class ShoppingListService : IShoppingListService
             }
         }
 
+        var effectiveDays = request.DaysCount.HasValue && request.DaysCount.Value > 0
+            ? Math.Min(request.DaysCount.Value, Math.Max(1, (int)Math.Ceiling(sortedSlots.Count / 3.0)))
+            : Math.Max(1, (int)Math.Ceiling(sortedSlots.Count / 3.0));
+
         var shoppingList = new ShoppingList
         {
             PlanId = plan.PlanId,
-            ListTitle = $"Danh sách đi chợ - {plan.PlanName}",
+            ListTitle = $"Danh sách đi chợ ({effectiveDays} ngày) - {plan.PlanName}",
             TargetShoppingDate = request.TargetShoppingDate ?? plan.StartDate,
             Status = "PENDING",
             IsOfflineSynced = false,
@@ -254,6 +263,7 @@ public class ShoppingListService : IShoppingListService
         return new GetShoppingListResponseData
         {
             ListId = list.ListId,
+            PlanId = list.PlanId,
             Status = list.Status,
             Progress = new ShoppingListProgressDto
             {

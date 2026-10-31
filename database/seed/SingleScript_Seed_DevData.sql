@@ -255,7 +255,7 @@ BEGIN
     USING (
         VALUES
             (@MemberId, @VeganSchoolId, 'FEMALE', CAST('1998-05-15' AS DATE), 162.0, 52.0, 50.0, 19.8, 1250.0, 1800.0, 1800.0, 1, 'MIEN_BAC', 'MAINTAIN')
-    ) AS source (User_ID, Dietary_School_ID, Gender, Date_Of_Birth, Height_Cm, Current_Weight_Kg, Target_Weight_Kg, BMI_Value, BMR_Kcal, TDEE_Kcal, Target_Daily_Calories, Requires_Allium_Free, Region_Preference, Health_Goal)
+    ) AS source (User_ID, Dietary_School_ID, Gender, Date_Of_Birth, Height_Cm, Current_Weight_Kg, Target_Weight_Kg, BMI_Value, BMR_Kcal, TDEE_Kcal, Target_Daily_Calories, Requires_Allium_Free, Region_Preference, HealthGoal)
     ON (target.User_ID = source.User_ID)
     WHEN MATCHED THEN
         UPDATE SET 
@@ -265,11 +265,11 @@ BEGIN
             target.Current_Weight_Kg = source.Current_Weight_Kg,
             target.Requires_Allium_Free = source.Requires_Allium_Free,
             target.Region_Preference = source.Region_Preference,
-            target.Health_Goal = source.Health_Goal,
+            target.HealthGoal = source.HealthGoal,
             target.Updated_At = @Now
     WHEN NOT MATCHED BY TARGET THEN
-        INSERT (User_ID, Dietary_School_ID, Gender, Date_Of_Birth, Height_Cm, Current_Weight_Kg, Target_Weight_Kg, BMI_Value, BMR_Kcal, TDEE_Kcal, Target_Daily_Calories, Requires_Allium_Free, Region_Preference, Health_Goal, Created_At, Updated_At)
-        VALUES (source.User_ID, source.Dietary_School_ID, source.Gender, source.Date_Of_Birth, source.Height_Cm, source.Current_Weight_Kg, source.Target_Weight_Kg, source.BMI_Value, source.BMR_Kcal, source.TDEE_Kcal, source.Target_Daily_Calories, source.Requires_Allium_Free, source.Region_Preference, source.Health_Goal, @Now, @Now);
+        INSERT (User_ID, Dietary_School_ID, Gender, Date_Of_Birth, Height_Cm, Current_Weight_Kg, Target_Weight_Kg, BMI_Value, BMR_Kcal, TDEE_Kcal, Target_Daily_Calories, Requires_Allium_Free, Region_Preference, HealthGoal, Created_At, Updated_At)
+        VALUES (source.User_ID, source.Dietary_School_ID, source.Gender, source.Date_Of_Birth, source.Height_Cm, source.Current_Weight_Kg, source.Target_Weight_Kg, source.BMI_Value, source.BMR_Kcal, source.TDEE_Kcal, source.Target_Daily_Calories, source.Requires_Allium_Free, source.Region_Preference, source.HealthGoal, @Now, @Now);
 END;
 
 IF @VipId IS NOT NULL AND @LactoOvoSchoolId IS NOT NULL
@@ -278,7 +278,7 @@ BEGIN
     USING (
         VALUES
             (@VipId, @LactoOvoSchoolId, 'MALE', CAST('1995-10-20' AS DATE), 175.0, 68.0, 65.0, 22.2, 1600.0, 2200.0, 2200.0, 0, 'MIEN_NAM', 'MAINTAIN')
-    ) AS source (User_ID, Dietary_School_ID, Gender, Date_Of_Birth, Height_Cm, Current_Weight_Kg, Target_Weight_Kg, BMI_Value, BMR_Kcal, TDEE_Kcal, Target_Daily_Calories, Requires_Allium_Free, Region_Preference, Health_Goal)
+    ) AS source (User_ID, Dietary_School_ID, Gender, Date_Of_Birth, Height_Cm, Current_Weight_Kg, Target_Weight_Kg, BMI_Value, BMR_Kcal, TDEE_Kcal, Target_Daily_Calories, Requires_Allium_Free, Region_Preference, HealthGoal)
     ON (target.User_ID = source.User_ID)
     WHEN MATCHED THEN
         UPDATE SET 
@@ -288,11 +288,11 @@ BEGIN
             target.Current_Weight_Kg = source.Current_Weight_Kg,
             target.Requires_Allium_Free = source.Requires_Allium_Free,
             target.Region_Preference = source.Region_Preference,
-            target.Health_Goal = source.Health_Goal,
+            target.HealthGoal = source.HealthGoal,
             target.Updated_At = @Now
     WHEN NOT MATCHED BY TARGET THEN
-        INSERT (User_ID, Dietary_School_ID, Gender, Date_Of_Birth, Height_Cm, Current_Weight_Kg, Target_Weight_Kg, BMI_Value, BMR_Kcal, TDEE_Kcal, Target_Daily_Calories, Requires_Allium_Free, Region_Preference, Health_Goal, Created_At, Updated_At)
-        VALUES (source.User_ID, source.Dietary_School_ID, source.Gender, source.Date_Of_Birth, source.Height_Cm, source.Current_Weight_Kg, source.Target_Weight_Kg, source.BMI_Value, source.BMR_Kcal, source.TDEE_Kcal, source.Target_Daily_Calories, source.Requires_Allium_Free, source.Region_Preference, source.Health_Goal, @Now, @Now);
+        INSERT (User_ID, Dietary_School_ID, Gender, Date_Of_Birth, Height_Cm, Current_Weight_Kg, Target_Weight_Kg, BMI_Value, BMR_Kcal, TDEE_Kcal, Target_Daily_Calories, Requires_Allium_Free, Region_Preference, HealthGoal, Created_At, Updated_At)
+        VALUES (source.User_ID, source.Dietary_School_ID, source.Gender, source.Date_Of_Birth, source.Height_Cm, source.Current_Weight_Kg, source.Target_Weight_Kg, source.BMI_Value, source.BMR_Kcal, source.TDEE_Kcal, source.Target_Daily_Calories, source.Requires_Allium_Free, source.Region_Preference, source.HealthGoal, @Now, @Now);
 END;
 
 -- ============================================================================
