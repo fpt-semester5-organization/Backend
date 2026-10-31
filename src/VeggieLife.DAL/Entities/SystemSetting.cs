@@ -20,6 +20,8 @@ public partial class SystemSetting
 
     public string? Description { get; set; }
 
+    public string? LegalDocumentsUrl { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 
     public int? UpdatedBy { get; set; }

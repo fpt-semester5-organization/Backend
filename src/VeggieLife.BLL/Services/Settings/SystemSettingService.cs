@@ -23,6 +23,7 @@ namespace VeggieLife.BLL.Services.Settings;
 public class SystemSettingService : ISystemSettingService
 {
     private const string CacheKeyPrefix = "sys_setting:";
+    private const string CacheKeyLegalDocuments = "sys_setting:legal_documents:all";
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(30);
 
     private readonly AppDbContext _db;
@@ -146,6 +147,10 @@ public class SystemSettingService : ISystemSettingService
 
         var oldValue = setting.SettingValue;
         setting.SettingValue = trimmedNewValue;
+        if (request.LegalDocumentsUrl != null)
+        {
+            setting.LegalDocumentsUrl = request.LegalDocumentsUrl.Trim();
+        }
         setting.UpdatedAt = DateTime.UtcNow;
         setting.UpdatedBy = adminId;
 
@@ -170,6 +175,10 @@ public class SystemSettingService : ISystemSettingService
         try
         {
             await _redis.SetAsync(cacheKey, trimmedNewValue, CacheTtl, ct);
+            if (key.StartsWith("LEGAL_", StringComparison.OrdinalIgnoreCase))
+            {
+                await _redis.RemoveAsync(CacheKeyLegalDocuments, ct);
+            }
         }
         catch (Exception ex)
         {
@@ -215,6 +224,10 @@ public class SystemSettingService : ISystemSettingService
         try
         {
             await _redis.SetAsync(cacheKey, setting.DefaultValue, CacheTtl, ct);
+            if (key.StartsWith("LEGAL_", StringComparison.OrdinalIgnoreCase))
+            {
+                await _redis.RemoveAsync(CacheKeyLegalDocuments, ct);
+            }
         }
         catch (Exception ex)
         {
@@ -338,8 +351,115 @@ public class SystemSettingService : ISystemSettingService
             DataType = setting.DataType,
             Category = setting.Category,
             Description = setting.Description,
+            LegalDocumentsUrl = setting.LegalDocumentsUrl,
             UpdatedAt = setting.UpdatedAt,
             UpdatedBy = setting.UpdatedBy
         };
+    }
+
+    public async Task<VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData> GetLegalDocumentsAsync(CancellationToken ct = default)
+    {
+        // 1. Kiểm tra Redis Cache
+        try
+        {
+            var cached = await _redis.GetAsync<VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData>(CacheKeyLegalDocuments, ct);
+            if (cached != null)
+            {
+                return cached;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi đọc Redis cache cho danh mục tài liệu pháp lý. Chuyển sang đọc Database.");
+        }
+
+        const string defaultUserAgreement = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png";
+        const string defaultPrivacyPolicy = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png";
+        const string defaultTermsOfService = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png";
+        const string defaultVeganDisclaimer = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png";
+
+        var result = new VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData
+        {
+            UserAgreementUrl = defaultUserAgreement,
+            PrivacyPolicyUrl = defaultPrivacyPolicy,
+            TermsOfServiceUrl = defaultTermsOfService,
+            VeganDisclaimerUrl = defaultVeganDisclaimer,
+            MedicalDisclaimer = "Khuyến nghị mang tính chất tham khảo dinh dưỡng, vui lòng tham vấn ý kiến bác sĩ chuyên khoa đối với các bệnh lý nền.",
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        try
+        {
+            var legalSettings = await _db.SystemSettings
+                .AsNoTracking()
+                .Where(s => s.SettingKey == "LEGAL_DOCUMENTS" || s.SettingKey.StartsWith("LEGAL_"))
+                .ToListAsync(ct);
+
+            var mainSetting = legalSettings.FirstOrDefault(s => s.SettingKey == "LEGAL_DOCUMENTS");
+            if (mainSetting != null)
+            {
+                result.UpdatedAt = mainSetting.UpdatedAt;
+                var rawJson = !string.IsNullOrWhiteSpace(mainSetting.LegalDocumentsUrl)
+                    ? mainSetting.LegalDocumentsUrl
+                    : mainSetting.SettingValue;
+
+                if (!string.IsNullOrWhiteSpace(rawJson) && rawJson.TrimStart().StartsWith("{"))
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(rawJson);
+                        var root = doc.RootElement;
+                        if (root.TryGetProperty("user_agreement", out var ua) || root.TryGetProperty("userAgreement", out ua))
+                            result.UserAgreementUrl = ua.GetString() ?? result.UserAgreementUrl;
+                        if (root.TryGetProperty("privacy_policy", out var pp) || root.TryGetProperty("privacyPolicy", out pp))
+                            result.PrivacyPolicyUrl = pp.GetString() ?? result.PrivacyPolicyUrl;
+                        if (root.TryGetProperty("terms_of_service", out var tos) || root.TryGetProperty("termsOfService", out tos))
+                            result.TermsOfServiceUrl = tos.GetString() ?? result.TermsOfServiceUrl;
+                        if (root.TryGetProperty("vegan_disclaimer", out var vd) || root.TryGetProperty("veganDisclaimer", out vd))
+                            result.VeganDisclaimerUrl = vd.GetString() ?? result.VeganDisclaimerUrl;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Lỗi giải mã JSON cấu hình LEGAL_DOCUMENTS.");
+                    }
+                }
+            }
+
+            foreach (var item in legalSettings)
+            {
+                var url = !string.IsNullOrWhiteSpace(item.LegalDocumentsUrl) ? item.LegalDocumentsUrl : item.SettingValue;
+                if (string.IsNullOrWhiteSpace(url)) continue;
+
+                if (string.Equals(item.SettingKey, "LEGAL_USER_AGREEMENT_URL", StringComparison.OrdinalIgnoreCase))
+                    result.UserAgreementUrl = url;
+                else if (string.Equals(item.SettingKey, "LEGAL_PRIVACY_POLICY_URL", StringComparison.OrdinalIgnoreCase))
+                    result.PrivacyPolicyUrl = url;
+                else if (string.Equals(item.SettingKey, "LEGAL_TERMS_OF_SERVICE_URL", StringComparison.OrdinalIgnoreCase))
+                    result.TermsOfServiceUrl = url;
+                else if (string.Equals(item.SettingKey, "LEGAL_VEGAN_DISCLAIMER_URL", StringComparison.OrdinalIgnoreCase))
+                    result.VeganDisclaimerUrl = url;
+
+                if (item.UpdatedAt > (result.UpdatedAt ?? DateTime.MinValue))
+                {
+                    result.UpdatedAt = item.UpdatedAt;
+                }
+            }
+
+            // Lưu cache Redis
+            try
+            {
+                await _redis.SetAsync(CacheKeyLegalDocuments, result, CacheTtl, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Không thể lưu Redis cache cho danh mục tài liệu pháp lý.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi truy vấn Database cho danh mục tài liệu pháp lý. Sử dụng giá trị fallback.");
+        }
+
+        return result;
     }
 }

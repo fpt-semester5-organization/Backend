@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Hosting;
 using VeggieLife.BLL.Common.Constants;
+using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.Auth;
 using VeggieLife.BLL.Services.Auth;
 using VeggieLife.BLL.Services.Email;
@@ -66,6 +67,21 @@ public class AuthController : BaseApiController
         });
 
         return OkResponse(result, "Khởi tạo phiên khách thành công.");
+    }
+
+    /// <summary>
+    /// Tra cứu các tài liệu pháp lý bắt buộc (Bản cam kết người dùng, Chính sách bảo mật dữ liệu, Điều khoản dịch vụ, Quy chuẩn thuần chay &amp; Miễn trừ y tế) phục vụ người dùng xem khi đăng ký tài khoản (FN-AUTH-04).
+    /// </summary>
+    /// <param name="ct">Cancellation Token.</param>
+    /// <returns>HTTP 200 OK cùng các liên kết văn bản pháp lý định dạng hình ảnh PNG độ phân giải cao.</returns>
+    [HttpGet("legal-documents")]
+    [HttpGet("/api/v1/legal-documents")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<LegalDocumentsResponseData>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetLegalDocuments(CancellationToken ct)
+    {
+        var result = await _authService.GetLegalDocumentsAsync(ct);
+        return OkResponse(result, "Tra cứu tài liệu pháp lý thành công.");
     }
 
     /// <summary>
