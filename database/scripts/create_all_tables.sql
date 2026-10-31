@@ -1554,12 +1554,13 @@ BEGIN
     );
 
     CREATE NONCLUSTERED INDEX [IX_Foods_Category_ID] ON [dbo].[Foods]([Category_ID] ASC);
+END;
+GO
 
-    IF OBJECT_ID(N'[dbo].[FoodCategories]', N'U') IS NOT NULL
-    BEGIN
-        ALTER TABLE [dbo].[Foods] ADD CONSTRAINT [FK_Foods_FoodCategories]
-            FOREIGN KEY ([Category_ID]) REFERENCES [dbo].[FoodCategories]([Category_ID]);
-    END;
+IF OBJECT_ID(N'[dbo].[FoodCategories]', N'U') IS NOT NULL AND OBJECT_ID(N'[dbo].[FK_Foods_FoodCategories]', N'F') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[Foods] ADD CONSTRAINT [FK_Foods_FoodCategories]
+        FOREIGN KEY ([Category_ID]) REFERENCES [dbo].[FoodCategories]([Category_ID]);
 END;
 GO
 
@@ -1587,10 +1588,22 @@ IF NOT EXISTS (
 )
 BEGIN
     ALTER TABLE [dbo].[Recipes] ADD [Food_ID] INT NULL;
+END;
+GO
 
+IF OBJECT_ID(N'[dbo].[Foods]', N'U') IS NOT NULL AND OBJECT_ID(N'[dbo].[FK_Recipes_Foods]', N'F') IS NULL
+BEGIN
     ALTER TABLE [dbo].[Recipes] ADD CONSTRAINT [FK_Recipes_Foods]
         FOREIGN KEY ([Food_ID]) REFERENCES [dbo].[Foods]([Food_ID]);
+END;
+GO
 
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'[dbo].[Recipes]')
+      AND name = 'IX_Recipes_Food_ID'
+)
+BEGIN
     CREATE NONCLUSTERED INDEX [IX_Recipes_Food_ID] ON [dbo].[Recipes]([Food_ID] ASC);
 END;
 GO

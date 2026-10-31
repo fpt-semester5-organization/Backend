@@ -3,12 +3,12 @@ using System.ComponentModel.DataAnnotations;
 namespace VeggieLife.BLL.DTOs.MealPlans.Requests;
 
 /// <summary>
-/// Yêu cầu sinh thực đơn 7 ngày bằng AI (FN-MEAL-01).
+/// Yêu cầu sinh thực đơn dinh dưỡng bằng AI (FN-MEAL-01).
 /// </summary>
 public class CreateMealPlanRequest
 {
     /// <summary>
-    /// Ngày bắt đầu thực đơn (YYYY-MM-DD), bắt buộc phải là ngày Thứ Hai và không ở quá khứ.
+    /// Ngày bắt đầu thực đơn (YYYY-MM-DD), có thể bắt đầu vào bất kỳ ngày nào trong tuần (không ở quá 7 ngày trong quá khứ).
     /// </summary>
     [Required(ErrorMessage = "Ngày bắt đầu là bắt buộc.")]
     public string StartDate { get; set; } = null!;
@@ -29,6 +29,12 @@ public class CreateMealPlanRequest
     /// Ưu tiên món dùng nguyên liệu trong tủ lạnh ảo (mặc định: false).
     /// </summary>
     public bool UseFridge { get; set; } = false;
+
+    /// <summary>
+    /// Số ngày muốn lập thực đơn (1 đến 30 ngày, mặc định 7 ngày).
+    /// </summary>
+    [Range(1, 30, ErrorMessage = "Số ngày lập thực đơn phải từ 1 đến 30 ngày.")]
+    public int? NumberOfDays { get; set; } = 7;
 
     /// <summary>
     /// Ghi chú tùy chỉnh tự do cho AI, tối đa 200 ký tự (BR-USR-MEAL-CI-01, D88).

@@ -16,4 +16,9 @@ public class CreateMealPlanShoppingListRequest
     /// Ngày dự kiến đi chợ (YYYY-MM-DD, tùy chọn).
     /// </summary>
     public DateOnly? TargetShoppingDate { get; set; }
+
+    /// <summary>
+    /// Số ngày muốn gom nguyên liệu đi chợ (tùy chọn; mặc định: toàn bộ số ngày của thực đơn).
+    /// </summary>
+    public int? DaysCount { get; set; }
 }

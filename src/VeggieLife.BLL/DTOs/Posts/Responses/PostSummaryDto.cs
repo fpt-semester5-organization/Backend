@@ -58,4 +58,24 @@ public class PostSummaryDto
     /// Chỉ hiển thị khi tác giả tra cứu danh sách bài viết của chính mình (authorId == currentUserId).
     /// </summary>
     public string? Visibility { get; set; }
+
+    /// <summary>
+    /// Đánh dấu bài viết có kèm video hay không.
+    /// </summary>
+    public bool HasVideo { get; set; }
+
+    /// <summary>
+    /// Phân loại bài viết ("POST" hoặc "VIDEO").
+    /// </summary>
+    public string Type { get; set; } = "POST";
+
+    /// <summary>
+    /// Mã định danh video đính kèm (nếu có).
+    /// </summary>
+    public int? VideoId { get; set; }
+
+    /// <summary>
+    /// Đường dẫn phát video đính kèm (nếu có).
+    /// </summary>
+    public string? VideoUrl { get; set; }
 }

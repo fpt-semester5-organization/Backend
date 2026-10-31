@@ -67,15 +67,38 @@ public static class DevInMemoryDataSeeder
         db.FoodCategories.AddRange(soupCategory, braisedCategory, stirFryCategory, riceCategory, hiddenCategory);
 
         // 3. Nguyên liệu thực phẩm (Ingredients)
-        var tofuSilken = new Ingredient { IngredientId = 39, IngredientName = "Đậu hũ non", StandardUnit = "g", DefaultStallType = "PLANT_PROTEIN", FoodGroup = "PLANT", CaloriesPer100g = 76m };
-        var mushroomStraw = new Ingredient { IngredientId = 90, IngredientName = "Nấm rơm tươi", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 32m };
-        var mushroomShiitake = new Ingredient { IngredientId = 84, IngredientName = "Nấm hương tươi", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 34m };
-        var mushroomKingOyster = new Ingredient { IngredientId = 82, IngredientName = "Nấm đùi gà", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 35m };
-        var mushroomEnoki = new Ingredient { IngredientId = 85, IngredientName = "Nấm kim châm tươi", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 37m };
-        var tofuFried = new Ingredient { IngredientId = 38, IngredientName = "Đậu hũ chiên vàng", StandardUnit = "g", DefaultStallType = "PLANT_PROTEIN", FoodGroup = "PLANT", CaloriesPer100g = 271m };
-        var sweetCorn = new Ingredient { IngredientId = 5, IngredientName = "Bắp ngọt tươi", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 86m };
-        var butterDairy = new Ingredient { IngredientId = 10, IngredientName = "Bơ lạt từ sữa bò", StandardUnit = "g", DefaultStallType = "DAIRY", FoodGroup = "DAIRY", CaloriesPer100g = 717m };
-        db.Ingredients.AddRange(tofuSilken, mushroomStraw, mushroomShiitake, mushroomKingOyster, mushroomEnoki, tofuFried, sweetCorn, butterDairy);
+        var ingredients = new List<Ingredient>
+        {
+            new() { IngredientId = 1, IngredientName = "Cà chua chín đỏ (Cà chua)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 18m },
+            new() { IngredientId = 2, IngredientName = "Cà rốt củ tươi (Cà rốt)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 41m },
+            new() { IngredientId = 3, IngredientName = "Dưa leo tươi (Dưa chuột)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 15m },
+            new() { IngredientId = 4, IngredientName = "Bắp cải tím (Bắp cải tím)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 31m },
+            new() { IngredientId = 5, IngredientName = "Bắp ngọt tươi (Ngô ngọt / Bắp ngô)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 86m },
+            new() { IngredientId = 6, IngredientName = "Xà lách lụa tươi (Xà lách)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 15m },
+            new() { IngredientId = 7, IngredientName = "Hành lá tươi (Hành lá / Hành hoa)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 32m },
+            new() { IngredientId = 8, IngredientName = "Rau muống tươi (Rau muống)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 19m },
+            new() { IngredientId = 9, IngredientName = "Khoai tây tươi (Khoai tây)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 77m },
+            new() { IngredientId = 10, IngredientName = "Bơ lạt từ sữa bò", StandardUnit = "g", DefaultStallType = "DAIRY", FoodGroup = "DAIRY", CaloriesPer100g = 717m },
+            new() { IngredientId = 11, IngredientName = "Bí đỏ hạt đậu (Bí ngô / Bí đỏ)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 26m },
+            new() { IngredientId = 12, IngredientName = "Bông cải xanh (Broccoli / Súp lơ xanh)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 34m },
+            new() { IngredientId = 13, IngredientName = "Bắp cải trắng (Bắp cải)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 25m },
+            new() { IngredientId = 14, IngredientName = "Đậu nành Nhật (Edamame / Đậu nành non)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 122m },
+            new() { IngredientId = 15, IngredientName = "Trứng cút tươi (Trứng cút)", StandardUnit = "quả", DefaultStallType = "PRODUCE", FoodGroup = "EGG", CaloriesPer100g = 158m },
+            new() { IngredientId = 16, IngredientName = "Trứng gà tươi (Trứng gà)", StandardUnit = "quả", DefaultStallType = "PRODUCE", FoodGroup = "EGG", CaloriesPer100g = 143m },
+            new() { IngredientId = 17, IngredientName = "Ớt chuông đỏ (Ớt chuông)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 31m },
+            new() { IngredientId = 18, IngredientName = "Hành tây củ trắng (Hành tây)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 40m },
+            new() { IngredientId = 19, IngredientName = "Tỏi củ tươi (Tỏi)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 149m },
+            new() { IngredientId = 20, IngredientName = "Gừng củ tươi (Gừng)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 80m },
+            new() { IngredientId = 21, IngredientName = "Chanh quả tươi (Chanh)", StandardUnit = "quả", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 29m },
+            new() { IngredientId = 22, IngredientName = "Nấm đùi gà (King Oyster)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 35m },
+            new() { IngredientId = 38, IngredientName = "Đậu hũ chiên vàng (Đậu phụ chiên / Đậu phụ)", StandardUnit = "g", DefaultStallType = "PLANT_PROTEIN", FoodGroup = "PLANT", CaloriesPer100g = 271m },
+            new() { IngredientId = 39, IngredientName = "Đậu hũ non (Đậu phụ non)", StandardUnit = "g", DefaultStallType = "PLANT_PROTEIN", FoodGroup = "PLANT", CaloriesPer100g = 76m },
+            new() { IngredientId = 82, IngredientName = "Nấm đùi gà", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 35m },
+            new() { IngredientId = 84, IngredientName = "Nấm hương tươi (Shiitake)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 34m },
+            new() { IngredientId = 85, IngredientName = "Nấm kim châm tươi", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 37m },
+            new() { IngredientId = 90, IngredientName = "Nấm rơm tươi", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 32m },
+        };
+        db.Ingredients.AddRange(ingredients);
 
         // 4. Người dùng mẫu (Users) - Mật khẩu chung: Veggie@2026
         var passwordHash = BCrypt.Net.BCrypt.HashPassword("Veggie@2026");
