@@ -384,7 +384,7 @@ public class VideoService : IVideoService
                 }
 
                 var ingredients = new List<ExtractedIngredientDto>();
-if ((recipeElem.TryGetProperty("ingredients", out var ingElem) || recipeElem.TryGetProperty("Ingredients", out ingElem)) && ingElem.ValueKind == System.Text.Json.JsonValueKind.Array)
+                if ((recipeElem.TryGetProperty("ingredients", out var ingElem) || recipeElem.TryGetProperty("Ingredients", out ingElem)) && ingElem.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
                     foreach (var item in ingElem.EnumerateArray())
                     {
