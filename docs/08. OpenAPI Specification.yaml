@@ -1980,7 +1980,7 @@ components:
         startDate:
           type: string
           format: date
-          description: YYYY-MM-DD, là ngày Thứ Hai, không trong quá khứ
+          description: YYYY-MM-DD, có thể bắt đầu vào bất kỳ ngày nào trong tuần, không ở quá 7 ngày trong quá khứ
         budgetTier:
           type: string
           enum:

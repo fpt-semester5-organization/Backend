@@ -33,8 +33,8 @@ public class MealPlansController : BaseApiController
     }
 
     /// <summary>
-    /// FN-MEAL-01: Sinh thực đơn tuần bằng AI.
-    /// Sinh thực đơn 7 ngày × 3 bữa (21 bữa) từ hồ sơ sức khỏe, trường phái, dị ứng, mức ngân sách.
+    /// FN-MEAL-01: Sinh thực đơn dinh dưỡng bằng AI.
+    /// Cho phép tạo thực đơn linh hoạt theo số ngày (DurationDays từ 1 đến 30 ngày) và có thể bắt đầu vào bất kỳ ngày nào trong tuần.
     /// Thực đơn ở trạng thái DRAFT để người dùng xem và tùy chỉnh.
     /// Hạn mức tuần: Free 1 thực đơn/tuần, VIP 3 thực đơn/tuần.
     /// </summary>
@@ -58,7 +58,7 @@ public class MealPlansController : BaseApiController
 
     /// <summary>
     /// FN-MEAL-01: Sinh thực đơn linh hoạt số ngày (1 đến 30 ngày) bằng AI.
-    /// Cho phép người dùng tùy chọn số ngày thực đơn (DurationDays) thay vì mặc định 7 ngày.
+    /// Cho phép người dùng tùy chọn số ngày thực đơn (DurationDays từ 1 đến 30 ngày) và bắt đầu vào bất kỳ ngày nào trong tuần.
     /// </summary>
     [HttpPost("custom-days")]
     [HttpPost("flexible")]

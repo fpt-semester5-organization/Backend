@@ -3,12 +3,12 @@ using System.ComponentModel.DataAnnotations;
 namespace VeggieLife.BLL.DTOs.MealPlans.Requests;
 
 /// <summary>
-/// Yêu cầu sinh thực đơn 7 ngày bằng AI (FN-MEAL-01).
+/// Yêu cầu sinh thực đơn dinh dưỡng bằng AI (FN-MEAL-01).
 /// </summary>
 public class CreateMealPlanRequest
 {
     /// <summary>
-    /// Ngày bắt đầu thực đơn (YYYY-MM-DD), bắt buộc phải là ngày Thứ Hai và không ở quá khứ.
+    /// Ngày bắt đầu thực đơn (YYYY-MM-DD), có thể bắt đầu vào bất kỳ ngày nào trong tuần (không ở quá 7 ngày trong quá khứ).
     /// </summary>
     [Required(ErrorMessage = "Ngày bắt đầu là bắt buộc.")]
     public string StartDate { get; set; } = null!;

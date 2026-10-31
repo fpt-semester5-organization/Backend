@@ -1813,4 +1813,37 @@ public class MealPlanServiceTests : IDisposable
         await act.Should().ThrowAsync<AppException>()
             .Where(e => e.ErrorCode == ErrorCodes.ErrValidation);
     }
+    [Fact]
+    public async Task CreateMealPlanAsync_WhenStartingOnWednesday_SucceedsAndMapsDaysStartingFromWed()
+    {
+        // Arrange
+        var userId = 808;
+        SetupTestUserAndProfile(userId);
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var daysUntilWed = ((int)DayOfWeek.Wednesday - (int)today.DayOfWeek + 7) % 7;
+        if (daysUntilWed == 0) daysUntilWed = 7;
+        var nextWednesday = today.AddDays(daysUntilWed);
+
+        var req = new CreateMealPlanRequest
+        {
+            StartDate = nextWednesday.ToString("yyyy-MM-dd"),
+            BudgetTier = "STANDARD",
+            DurationDays = 3
+        };
+
+        // Act
+        var result = await _service.CreateMealPlanAsync(userId, UserRoles.Member, req);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.StartDate.Should().Be(nextWednesday.ToString("yyyy-MM-dd"));
+        result.DurationDays.Should().Be(3);
+        result.Slots.Should().HaveCount(9);
+
+        // Ngày 1 phải là WED, ngày 2 là THU, ngày 3 là FRI
+        result.Slots.Take(3).All(s => s.DayOfWeek == "WED").Should().BeTrue();
+        result.Slots.Skip(3).Take(3).All(s => s.DayOfWeek == "THU").Should().BeTrue();
+        result.Slots.Skip(6).Take(3).All(s => s.DayOfWeek == "FRI").Should().BeTrue();
+    }
 }

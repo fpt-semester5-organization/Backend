@@ -471,14 +471,18 @@ public class MealPlanService : IMealPlanService
                 var candidateSlots = new List<(string DayOfWeek, string MealType, int RecipeId)>();
                 var allSlotsValid = true;
 
-                foreach (var s in aiResponse.Slots)
+                for (var i = 0; i < aiResponse.Slots.Count; i++)
                 {
+                    var s = aiResponse.Slots[i];
                     if (!candidateLookup.ContainsKey(s.RecipeId))
                     {
                         allSlotsValid = false;
                         break;
                     }
-                    candidateSlots.Add((s.DayOfWeek, s.MealType, s.RecipeId));
+                    var dayIdx = i / 3;
+                    var slotDate = startDate.AddDays(dayIdx);
+                    var dayCode = MapDayOfWeek(slotDate.DayOfWeek);
+                    candidateSlots.Add((dayCode, s.MealType, s.RecipeId));
                 }
 
                 if (!allSlotsValid)
@@ -1045,11 +1049,10 @@ public class MealPlanService : IMealPlanService
             a.Note == "ACTIVE", ct);
         var postDeployUsed = Math.Max(postDeployAudit, plan.PlanStatus == "ACTIVE" ? (plan.MaxSwapsAllowed - plan.SwapsRemaining) : 0);
 
-        var dayOrder = DaysOfWeek.Select((d, idx) => (d, idx)).ToDictionary(x => x.d, x => x.idx, StringComparer.OrdinalIgnoreCase);
         var mealOrder = MealTypes.Select((m, idx) => (m, idx)).ToDictionary(x => x.m, x => x.idx, StringComparer.OrdinalIgnoreCase);
 
         var slots = plan.MealSlots
-            .OrderBy(s => dayOrder.GetValueOrDefault(s.DayOfWeek, 99))
+            .OrderBy(s => s.SlotId)
             .ThenBy(s => mealOrder.GetValueOrDefault(s.MealType, 99))
             .Select(s => new MealSlotDto
             {
@@ -1806,12 +1809,27 @@ public class MealPlanService : IMealPlanService
         var daysList = new List<MealPlanDayNutritionDto>();
         decimal totalKcalWeek = 0m;
 
-        foreach (var day in DaysOfWeek)
+        var durationDays = plan.DurationDays > 0 ? plan.DurationDays : (plan.MealSlots.Count / 3);
+        if (durationDays <= 0) durationDays = plan.MealSlots.Count > 0 ? 1 : 7;
+
+        var sortedSlots = plan.MealSlots
+            .OrderBy(s => s.SlotId)
+            .ThenBy(s => mealOrder.GetValueOrDefault(s.MealType, 99))
+            .ToList();
+
+        for (var i = 0; i < durationDays; i++)
         {
-            var daySlots = plan.MealSlots
-                .Where(s => string.Equals(s.DayOfWeek, day, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(s => mealOrder.GetValueOrDefault(s.MealType, 99))
-                .ToList();
+            var dayDate = plan.StartDate.AddDays(i);
+            var day = MapDayOfWeek(dayDate.DayOfWeek);
+
+            var daySlots = sortedSlots.Skip(i * 3).Take(3).ToList();
+            if (daySlots.Count == 0)
+            {
+                daySlots = plan.MealSlots
+                    .Where(s => string.Equals(s.DayOfWeek, day, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(s => mealOrder.GetValueOrDefault(s.MealType, 99))
+                    .ToList();
+            }
 
             var dayKcal = daySlots.Sum(s => s.Recipe?.CaloriesKcal ?? 0m);
             totalKcalWeek += dayKcal;
