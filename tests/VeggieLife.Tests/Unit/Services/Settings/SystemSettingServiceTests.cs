@@ -313,4 +313,66 @@ public class SystemSettingServiceTests : IDisposable
         dbSetting!.SettingValue.Should().Be(newUrl);
         dbSetting.LegalDocumentsUrl.Should().Be(newUrl);
     }
+
+    [Fact]
+    public async Task GetLegalDocumentsAsync_WhenInCache_ReturnsCachedResult()
+    {
+        // Arrange
+        var cachedData = new VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData
+        {
+            UserAgreementUrl = "https://custom.cloudinary.com/user_agreement.png",
+            PrivacyPolicyUrl = "https://custom.cloudinary.com/privacy.png",
+            TermsOfServiceUrl = "https://custom.cloudinary.com/terms.png",
+            VeganDisclaimerUrl = "https://custom.cloudinary.com/vegan.png",
+            MedicalDisclaimer = "Custom medical disclaimer",
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _mockRedis.Setup(r => r.GetAsync<VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData>("sys_setting:legal_documents:all", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cachedData);
+
+        // Act
+        var result = await _service.GetLegalDocumentsAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.UserAgreementUrl.Should().Be("https://custom.cloudinary.com/user_agreement.png");
+        result.PrivacyPolicyUrl.Should().Be("https://custom.cloudinary.com/privacy.png");
+        result.MedicalDisclaimer.Should().Be("Custom medical disclaimer");
+    }
+
+    [Fact]
+    public async Task GetLegalDocumentsAsync_WhenCacheMiss_ReadsFromDbAndPopulatesCache()
+    {
+        // Arrange
+        _mockRedis.Setup(r => r.GetAsync<VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData>("sys_setting:legal_documents:all", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData?)null);
+
+        // Act
+        var result = await _service.GetLegalDocumentsAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.UserAgreementUrl.Should().Contain("Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png");
+        result.PrivacyPolicyUrl.Should().Contain("Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png");
+        result.MedicalDisclaimer.Should().Contain("Khuyến nghị mang tính chất tham khảo dinh dưỡng");
+
+        _mockRedis.Verify(r => r.SetAsync("sys_setting:legal_documents:all", It.IsAny<VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateSettingAsync_WhenUpdatingLegalSetting_InvalidatesLegalDocumentsCache()
+    {
+        // Arrange
+        var request = new UpdateSystemSettingRequest
+        {
+            SettingValue = "https://example.com/new-user-agreement.png"
+        };
+
+        // Act
+        await _service.UpdateSettingAsync("LEGAL_DOCUMENTS", request, AdminId);
+
+        // Assert
+        _mockRedis.Verify(r => r.RemoveAsync("sys_setting:legal_documents:all", It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

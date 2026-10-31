@@ -30,6 +30,7 @@ public class AuthService : IAuthService
     private readonly IJwtTokenService _jwtTokenService;
     private readonly ILogger<AuthService> _logger;
     private readonly VeggieLife.DAL.External.Google.IGoogleAuthClient? _googleAuthClient;
+    private readonly VeggieLife.BLL.Services.Settings.ISystemSettingService? _settingService;
 
     private const int OtpExpirySeconds = 300; // 5 phút
     private const int LockoutMinutes = 15; // 15 phút khóa khi sai 5 lần
@@ -41,7 +42,8 @@ public class AuthService : IAuthService
         IEmailService emailService,
         IJwtTokenService jwtTokenService,
         ILogger<AuthService> logger,
-        VeggieLife.DAL.External.Google.IGoogleAuthClient? googleAuthClient = null)
+        VeggieLife.DAL.External.Google.IGoogleAuthClient? googleAuthClient = null,
+        VeggieLife.BLL.Services.Settings.ISystemSettingService? settingService = null)
     {
         _dbContext = dbContext;
         _redisService = redisService;
@@ -49,6 +51,7 @@ public class AuthService : IAuthService
         _jwtTokenService = jwtTokenService;
         _logger = logger;
         _googleAuthClient = googleAuthClient;
+        _settingService = settingService;
     }
 
     public async Task<RegisterResponse> RegisterAsync(RegisterRequest request, CancellationToken ct = default)
@@ -1565,5 +1568,23 @@ public class AuthService : IAuthService
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(bytes);
+    }
+
+    public async Task<LegalDocumentsResponseData> GetLegalDocumentsAsync(CancellationToken ct = default)
+    {
+        if (_settingService != null)
+        {
+            return await _settingService.GetLegalDocumentsAsync(ct);
+        }
+
+        return new LegalDocumentsResponseData
+        {
+            UserAgreementUrl = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png",
+            PrivacyPolicyUrl = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png",
+            TermsOfServiceUrl = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png",
+            VeganDisclaimerUrl = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png",
+            MedicalDisclaimer = "Khuyến nghị mang tính chất tham khảo dinh dưỡng, vui lòng tham vấn ý kiến bác sĩ chuyên khoa đối với các bệnh lý nền.",
+            UpdatedAt = DateTime.UtcNow
+        };
     }
 }

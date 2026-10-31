@@ -59,5 +59,10 @@ public interface IAuthService
     /// Hỗ trợ tự động tạo tài khoản ACTIVE, liên kết tài khoản mật khẩu hiện có (BR-USR-AUTH-02), cấp cặp token (BR-AUTH-004), hợp nhất khách (BR-GUEST-AUTH-01).
     /// </summary>
     Task<LoginWithGoogleResponse> LoginWithGoogleAsync(LoginWithGoogleRequest request, string? clientIp = null, string? userAgent = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lấy danh sách liên kết các tài liệu pháp lý (Bản cam kết, Chính sách bảo mật, Điều khoản dịch vụ, Quy chuẩn chay) phục vụ luồng đăng ký tài khoản (FN-AUTH-04).
+    /// </summary>
+    Task<LegalDocumentsResponseData> GetLegalDocumentsAsync(CancellationToken ct = default);
 }
 

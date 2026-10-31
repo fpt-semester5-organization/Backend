@@ -62,6 +62,39 @@ components:
       - statusCode
       - message
       - data
+    LegalDocumentsResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: Tra cứu tài liệu pháp lý thành công.
+        data:
+          $ref: '#/components/schemas/LegalDocumentsData'
+    LegalDocumentsData:
+      type: object
+      properties:
+        userAgreementUrl:
+          type: string
+          description: Đường dẫn ảnh văn bản Bản Cam Kết Và Thỏa Thuận Đăng Ký Người Dùng.
+        privacyPolicyUrl:
+          type: string
+          description: Đường dẫn ảnh văn bản Chính Sách Bảo Mật Dữ Liệu VeggieLife.
+        termsOfServiceUrl:
+          type: string
+          description: Đường dẫn ảnh văn bản Điều Khoản Sử Dụng Dịch Vụ VeggieLife.
+        veganDisclaimerUrl:
+          type: string
+          description: Đường dẫn ảnh văn bản Quy Chuẩn Ẩm Thực Chay Và Miễn Trừ Y Tế VeggieLife.
+        medicalDisclaimer:
+          type: string
+          description: Khuyến nghị miễn trừ y khoa chuẩn hệ thống theo quy định D108.
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
     GetGuestQuotaResponse:
       type: object
       properties:
@@ -4931,6 +4964,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /auth/legal-documents:
+    get:
+      tags:
+      - AUTH
+      operationId: getLegalDocuments
+      summary: FN-AUTH-04 Tra cứu danh mục tài liệu & thỏa thuận pháp lý
+      description: 'Lấy các liên kết hình ảnh Cloudinary độ phân giải cao của 4 văn bản pháp lý (Bản cam kết người dùng, Chính sách bảo mật, Điều khoản dịch vụ, Quy chuẩn thuần chay & Miễn trừ y tế) phục vụ người dùng xem khi đăng ký tài khoản.
+        
+        Auth: Public (AllowAnonymous).'
+      x-fn-id: FN-AUTH-04
+      x-status: Approved
+      security: []
+      responses:
+        '200':
+          description: Tra cứu tài liệu pháp lý thành công.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegalDocumentsResponse'
+              example:
+                statusCode: 200
+                message: Tra cứu tài liệu pháp lý thành công.
+                data:
+                  userAgreementUrl: https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png
+                  privacyPolicyUrl: https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png
+                  termsOfServiceUrl: https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png
+                  veganDisclaimerUrl: https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png
+                  medicalDisclaimer: Khuyến nghị mang tính chất tham khảo dinh dưỡng, vui lòng tham vấn ý kiến bác sĩ chuyên khoa đối với các bệnh lý nền.
+                  updatedAt: '2026-10-31T00:00:00Z'
   /auth/register:
     post:
       tags:
