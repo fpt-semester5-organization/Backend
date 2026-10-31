@@ -31,6 +31,12 @@ public class CreateMealPlanRequest
     public bool UseFridge { get; set; } = false;
 
     /// <summary>
+    /// Số ngày muốn lập thực đơn (1 đến 30 ngày, mặc định 7 ngày).
+    /// </summary>
+    [Range(1, 30, ErrorMessage = "Số ngày lập thực đơn phải từ 1 đến 30 ngày.")]
+    public int? NumberOfDays { get; set; } = 7;
+
+    /// <summary>
     /// Ghi chú tùy chỉnh tự do cho AI, tối đa 200 ký tự (BR-USR-MEAL-CI-01, D88).
     /// </summary>
     [MaxLength(200, ErrorMessage = "Ghi chú tùy chỉnh tối đa 200 ký tự.")]

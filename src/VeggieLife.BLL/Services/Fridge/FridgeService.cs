@@ -196,8 +196,15 @@ public class FridgeService : IFridgeService
                 "AI tạm ngắt mạch (BR-ADM-AI-002). Vui lòng thử lại sau.");
         }
 
+        if (aiResult == null)
+        {
+            throw AppException.ServiceUnavailable(
+                ErrorCodes.ErrAiCircuitOpen,
+                "Không thể kết nối đến AI-Service hoặc AI xử lý quá thời gian. Vui lòng thử lại sau.");
+        }
+
         // Danh sách nguyên liệu AI thô
-        var rawAiItems = aiResult?.Items ?? GetDefaultSimulatedItems();
+        var rawAiItems = aiResult.Items;
 
         // =========================================================================
         // BƯỚC 4: KIỂM TRA CẢNH BÁO TRƯỜNG PHÁI & THỊT/ĐỘNG VẬT (BR-ADM-CNT-003, D109)
@@ -279,7 +286,10 @@ public class FridgeService : IFridgeService
                     IngredientId = bestMatch.IngredientId,
                     Name = bestMatch.IngredientName,
                     FreshnessStatus = freshness,
-                    Box2D = rawItem.Box2D
+                    Box2D = rawItem.Box2D,
+                    Quantity = rawItem.Quantity,
+                    Amount = rawItem.Amount,
+                    Unit = rawItem.Unit
                 };
                 detectedList.Add(dto);
                 matchedItemsForSave.Add((dto, bestMatch));
@@ -293,7 +303,10 @@ public class FridgeService : IFridgeService
                     IngredientId = null,
                     Name = rawName,
                     FreshnessStatus = freshness,
-                    Box2D = rawItem.Box2D
+                    Box2D = rawItem.Box2D,
+                    Quantity = rawItem.Quantity,
+                    Amount = rawItem.Amount,
+                    Unit = rawItem.Unit
                 });
             }
         }
@@ -475,9 +488,9 @@ public class FridgeService : IFridgeService
         CreateFridgeItemRequest request,
         CancellationToken ct = default)
     {
-        if (request == null || request.IngredientId <= 0)
+        if (request == null)
         {
-            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã nguyên liệu (ingredientId) bắt buộc và phải lớn hơn 0.");
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Dữ liệu yêu cầu không hợp lệ.");
         }
 
         if (!string.IsNullOrWhiteSpace(request.CustomItemName) && request.CustomItemName.Length > 100)
@@ -490,29 +503,64 @@ public class FridgeService : IFridgeService
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Số lượng nguyên liệu (quantity) không được âm.");
         }
 
-        var ingredient = await _db.Ingredients.FindAsync(new object[] { request.IngredientId }, ct);
+        // 1. Tìm hoặc tự động tạo nguyên liệu trong danh mục nếu chưa có
+        Ingredient? ingredient = null;
+        if (request.IngredientId.HasValue && request.IngredientId.Value > 0)
+        {
+            ingredient = await _db.Ingredients.FindAsync(new object[] { request.IngredientId.Value }, ct);
+        }
+
+        if (ingredient == null && !string.IsNullOrWhiteSpace(request.CustomItemName))
+        {
+            var rawName = request.CustomItemName.Trim();
+            var parenIdx = rawName.IndexOf('(');
+            var cleanName = parenIdx > 0 ? rawName.Substring(0, parenIdx).Trim() : rawName;
+
+            var existingDbIng = await _db.Ingredients.FirstOrDefaultAsync(i => i.IngredientName.ToLower() == cleanName.ToLower(), ct);
+            if (existingDbIng == null)
+            {
+                var ingIds = await _db.Ingredients.Select(i => i.IngredientId).ToListAsync(ct);
+                var maxId = ingIds.Count > 0 ? ingIds.Max() : 100;
+                existingDbIng = new Ingredient
+                {
+                    IngredientId = maxId + 1,
+                    IngredientName = cleanName,
+                    StandardUnit = "g",
+                    DefaultStallType = "PRODUCE",
+                    FoodGroup = "PLANT",
+                    IsAllium = false,
+                    CaloriesPer100g = 50m
+                };
+                _db.Ingredients.Add(existingDbIng);
+                await _db.SaveChangesAsync(ct);
+            }
+            ingredient = existingDbIng;
+            request.IngredientId = ingredient.IngredientId;
+        }
+
         if (ingredient == null)
         {
-            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Nguyên liệu không tồn tại trong danh mục hệ thống.");
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Vui lòng chọn hoặc nhập tên nguyên liệu hợp lệ.");
         }
 
         // Mỗi nguyên liệu chỉ một dòng cho mỗi người dùng (BR-USR-08)
-        var existing = await _db.FridgeInventories.AnyAsync(f => f.UserId == userId && f.IngredientId == request.IngredientId, ct);
+        var existing = await _db.FridgeInventories.AnyAsync(f => f.UserId == userId && f.IngredientId == ingredient.IngredientId, ct);
         if (existing)
         {
             throw AppException.Conflict(ErrorCodes.ErrFridgeItemExists, "Nguyên liệu đã có trong tủ.");
         }
 
         var customName = string.IsNullOrWhiteSpace(request.CustomItemName) ? ingredient.IngredientName : request.CustomItemName.Trim();
+        var freshness = string.Equals(request.FreshnessStatus, "NON-FRESH", StringComparison.OrdinalIgnoreCase) ? "NON-FRESH" : "FRESH";
         var quantity = request.Quantity > 0 ? request.Quantity : 1.0m;
         var unit = !string.IsNullOrWhiteSpace(request.Unit) ? request.Unit.Trim() : ingredient.StandardUnit;
 
         var newItem = new FridgeInventory
         {
             UserId = userId,
-            IngredientId = request.IngredientId,
+            IngredientId = ingredient.IngredientId,
             CustomItemName = customName,
-            FreshnessStatus = "FRESH",
+            FreshnessStatus = freshness,
             Quantity = quantity,
             Unit = unit
         };

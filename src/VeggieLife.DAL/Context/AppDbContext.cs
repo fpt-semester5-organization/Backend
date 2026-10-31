@@ -740,7 +740,7 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValueSql("(sysdatetime())")
                 .HasColumnName("Created_At");
             entity.Property(e => e.ImageUrl)
-                .HasMaxLength(255)
+                .HasMaxLength(1000)
                 .IsUnicode(false)
                 .HasColumnName("Image_Url");
             entity.Property(e => e.ModerationStatus)
@@ -868,7 +868,7 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValue("MEDIUM")
                 .HasColumnName("Difficulty_Level");
             entity.Property(e => e.ImageUrl)
-                .HasMaxLength(255)
+                .HasMaxLength(1000)
                 .IsUnicode(false)
                 .HasColumnName("Image_Url");
             entity.Property(e => e.IsVerified).HasColumnName("Is_Verified");
@@ -1278,13 +1278,13 @@ public partial class AppDbContext : DbContext
                 .IsUnicode(false)
                 .HasDefaultValue("PROCESSING");
             entity.Property(e => e.ThumbnailUrl)
-                .HasMaxLength(255)
+                .HasMaxLength(1000)
                 .IsUnicode(false)
                 .HasColumnName("Thumbnail_Url");
             entity.Property(e => e.Title).HasMaxLength(150);
             entity.Property(e => e.UpdatedAt).HasColumnName("Updated_At");
             entity.Property(e => e.VideoUrl)
-                .HasMaxLength(255)
+                .HasMaxLength(1000)
                 .IsUnicode(false)
                 .HasColumnName("Video_Url");
             entity.Property(e => e.ViewCount).HasColumnName("View_Count");
