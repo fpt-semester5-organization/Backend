@@ -1,7 +1,9 @@
+using System.Collections.Generic;
+
 namespace VeggieLife.BLL.DTOs.MealPlans.Responses;
 
 /// <summary>
-/// Chi tiết một bữa ăn trong kế hoạch thực đơn 7 ngày (21 bữa).
+/// Chi tiết một bữa ăn trong kế hoạch thực đơn.
 /// </summary>
 public class MealSlotDto
 {
@@ -23,7 +25,22 @@ public class MealSlotDto
     public bool IsCompleted { get; set; }
 
     /// <summary>
+    /// Ghi chú lưu ý riêng cho món ăn này.
+    /// </summary>
+    public string? Notes { get; set; }
+
+    /// <summary>
     /// Thông tin công thức món ăn.
     /// </summary>
     public MealSlotRecipeDto? Recipe { get; set; }
+
+    /// <summary>
+    /// Số lần đã đổi món cho bữa ăn này.
+    /// </summary>
+    public int SwapCount { get; set; }
+
+    /// <summary>
+    /// Danh sách toàn bộ lịch sử các món đã đổi trước đó.
+    /// </summary>
+    public List<MealSlotSwapHistoryDto> SwapHistories { get; set; } = new();
 }

@@ -174,11 +174,16 @@ public class MealPlanService : IMealPlanService
             sw.Stop();
 
             // 11. Lưu thực đơn vào cơ sở dữ liệu qua Transaction
+            var daysCount = request.NumberOfDays.HasValue && request.NumberOfDays.Value > 0
+                ? Math.Clamp(request.NumberOfDays.Value, 1, 30)
+                : 7;
+
             var responseData = await SaveMealPlanTransactionAsync(
                 userId,
                 userRole,
                 profile.DietarySchoolId,
                 startDate,
+                daysCount,
                 targetCalories,
                 request.BudgetTier.ToUpperInvariant(),
                 request.CustomInstructions,
@@ -785,11 +790,24 @@ public class MealPlanService : IMealPlanService
         return bestTriplet;
     }
 
+    private static string GetDayOfWeekCode(DateOnly date) => date.DayOfWeek switch
+    {
+        System.DayOfWeek.Monday => "MON",
+        System.DayOfWeek.Tuesday => "TUE",
+        System.DayOfWeek.Wednesday => "WED",
+        System.DayOfWeek.Thursday => "THU",
+        System.DayOfWeek.Friday => "FRI",
+        System.DayOfWeek.Saturday => "SAT",
+        System.DayOfWeek.Sunday => "SUN",
+        _ => "MON"
+    };
+
     private async Task<CreateMealPlanResponseData> SaveMealPlanTransactionAsync(
         int userId,
         string userRole,
         int dietarySchoolId,
         DateOnly startDate,
+        int daysCount,
         decimal targetDailyKcal,
         string budgetTier,
         string? customInstructions,
@@ -806,13 +824,14 @@ public class MealPlanService : IMealPlanService
         var preDeployLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct);
         var postDeployLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
 
+        var safeDays = Math.Clamp(daysCount, 1, 30);
         var mealPlan = new MealPlan
         {
             UserId = userId,
             DietarySchoolId = dietarySchoolId,
-            PlanName = $"Thực đơn tuần {startDate:dd/MM}",
+            PlanName = safeDays < 7 ? $"Thực đơn {safeDays} ngày ({startDate:dd/MM})" : $"Thực đơn tuần {startDate:dd/MM}",
             StartDate = startDate,
-            EndDate = startDate.AddDays(6),
+            EndDate = startDate.AddDays(safeDays - 1),
             TargetDailyKcal = Math.Round(targetDailyKcal, 1),
             BudgetTier = budgetTier,
             CustomInstructions = customInstructions,
@@ -826,7 +845,19 @@ public class MealPlanService : IMealPlanService
         _db.MealPlans.Add(mealPlan);
         await _db.SaveChangesAsync(ct);
 
-        var mealSlotEntities = slots.Select(s => new MealSlot
+        var finalSlots = new List<(string DayOfWeek, string MealType, int RecipeId)>();
+        for (var dayIndex = 0; dayIndex < safeDays; dayIndex++)
+        {
+            var dayCode = GetDayOfWeekCode(startDate.AddDays(dayIndex));
+            foreach (var mealType in MealTypes)
+            {
+                var slotIdx = finalSlots.Count;
+                var sourceSlot = slots[slotIdx % slots.Count];
+                finalSlots.Add((dayCode, mealType, sourceSlot.RecipeId));
+            }
+        }
+
+        var mealSlotEntities = finalSlots.Select(s => new MealSlot
         {
             PlanId = mealPlan.PlanId,
             RecipeId = s.RecipeId,
@@ -883,6 +914,7 @@ public class MealPlanService : IMealPlanService
                 DayOfWeek = s.DayOfWeek,
                 MealType = s.MealType,
                 IsCompleted = s.IsCompleted,
+                Notes = s.Notes,
                 Recipe = recipe != null ? new MealSlotRecipeDto
                 {
                     RecipeId = recipe.RecipeId,
@@ -955,6 +987,12 @@ public class MealPlanService : IMealPlanService
         var plan = await _db.MealPlans
             .Include(p => p.MealSlots)
                 .ThenInclude(ms => ms.Recipe)
+            .Include(p => p.MealSlots)
+                .ThenInclude(ms => ms.SwapHistories)
+                    .ThenInclude(sh => sh.OldRecipe)
+            .Include(p => p.MealSlots)
+                .ThenInclude(ms => ms.SwapHistories)
+                    .ThenInclude(sh => sh.NewRecipe)
             .FirstOrDefaultAsync(p => p.PlanId == id && p.UserId == userId, ct);
 
         if (plan == null)
@@ -978,25 +1016,56 @@ public class MealPlanService : IMealPlanService
             a.Note == "ACTIVE", ct);
         var postDeployUsed = Math.Max(postDeployAudit, plan.PlanStatus == "ACTIVE" ? (plan.MaxSwapsAllowed - plan.SwapsRemaining) : 0);
 
-        var dayOrder = DaysOfWeek.Select((d, idx) => (d, idx)).ToDictionary(x => x.d, x => x.idx, StringComparer.OrdinalIgnoreCase);
-        var mealOrder = MealTypes.Select((m, idx) => (m, idx)).ToDictionary(x => x.m, x => x.idx, StringComparer.OrdinalIgnoreCase);
-
         var slots = plan.MealSlots
-            .OrderBy(s => dayOrder.GetValueOrDefault(s.DayOfWeek, 99))
-            .ThenBy(s => mealOrder.GetValueOrDefault(s.MealType, 99))
+            .OrderBy(s => s.SlotId)
             .Select(s => new MealSlotDto
             {
                 SlotId = s.SlotId,
                 DayOfWeek = s.DayOfWeek,
                 MealType = s.MealType,
                 IsCompleted = s.IsCompleted,
+                Notes = s.Notes,
                 Recipe = s.Recipe != null ? new MealSlotRecipeDto
                 {
                     RecipeId = s.Recipe.RecipeId,
                     Title = s.Recipe.Title,
                     CaloriesKcal = s.Recipe.CaloriesKcal,
                     ImageUrl = s.Recipe.ImageUrl
-                } : null
+                } : null,
+                SwapCount = s.SwapHistories.Count,
+                SwapHistories = s.SwapHistories
+                    .OrderByDescending(h => h.SwappedAt)
+                    .Select(h => new MealSlotSwapHistoryDto
+                    {
+                        HistoryId = h.SwapHistoryId,
+                        SlotId = h.SlotId,
+                        OldRecipeId = h.OldRecipeId,
+                        OldRecipeTitle = h.OldRecipe?.Title ?? string.Empty,
+                        OldRecipeImageUrl = h.OldRecipe?.ImageUrl,
+                        OldRecipeCalories = h.OldRecipe?.CaloriesKcal ?? 0,
+                        OldRecipe = h.OldRecipe != null ? new MealSlotRecipeDto
+                        {
+                            RecipeId = h.OldRecipe.RecipeId,
+                            Title = h.OldRecipe.Title,
+                            CaloriesKcal = h.OldRecipe.CaloriesKcal,
+                            ImageUrl = h.OldRecipe.ImageUrl
+                        } : null,
+                        NewRecipeId = h.NewRecipeId,
+                        NewRecipeTitle = h.NewRecipe?.Title ?? string.Empty,
+                        NewRecipeImageUrl = h.NewRecipe?.ImageUrl,
+                        NewRecipeCalories = h.NewRecipe?.CaloriesKcal ?? 0,
+                        NewRecipe = h.NewRecipe != null ? new MealSlotRecipeDto
+                        {
+                            RecipeId = h.NewRecipe.RecipeId,
+                            Title = h.NewRecipe.Title,
+                            CaloriesKcal = h.NewRecipe.CaloriesKcal,
+                            ImageUrl = h.NewRecipe.ImageUrl
+                        } : null,
+                        SwapReason = h.SwapReason,
+                        CaloriesDelta = h.CaloriesDelta,
+                        SwappedAt = h.SwappedAt
+                    })
+                    .ToList()
             })
             .ToList();
 
@@ -1185,68 +1254,141 @@ public class MealPlanService : IMealPlanService
                 "Không tìm thấy công thức món cũ để tính toán thay thế.");
         }
 
-        var calorieTolerancePercent = await _settingService.GetIntSettingAsync("MEAL_SWAP_CALORIE_TOLERANCE_PERCENT", 15, ct);
-        var toleranceFactor = calorieTolerancePercent / 100m;
-        var oldCalories = oldRecipe.CaloriesKcal;
-        var minKcal = oldCalories * (1m - toleranceFactor);
-        var maxKcal = oldCalories * (1m + toleranceFactor);
+        Recipe newRecipe;
+        var oldRecipeId = oldRecipe.RecipeId;
 
-        var userAllergenIds = await _db.UserAllergies
-            .Where(ua => ua.UserId == userId)
-            .Select(ua => ua.AllergenId)
-            .ToListAsync(ct);
-
-        var allergicIngredientIds = await _db.IngredientAllergens
-            .Where(ia => userAllergenIds.Contains(ia.AllergenId))
-            .Select(ia => ia.IngredientId)
-            .Distinct()
-            .ToListAsync(ct);
-
-        var forbiddenIngredientSet = new HashSet<int>(allergicIngredientIds);
-
-        var hp = await _db.HealthProfiles.FirstOrDefaultAsync(h => h.UserId == userId, ct);
-        var requiresAllium = (hp?.RequiresAlliumFree == true);
-        ParseForbiddenRules(plan.DietarySchool.ForbiddenFoodRules, requiresAllium,
-            out var forbiddenFoodGroups, out var requiresAlliumFree);
-
-        var excludedIds = new HashSet<int>(request?.ExcludedRecipeIds ?? Enumerable.Empty<int>())
+        if (request?.NewRecipeId.HasValue == true && request.NewRecipeId.Value > 0)
         {
-            oldRecipe.RecipeId
-        };
+            var chosenRecipe = await _db.Recipes
+                .Include(r => r.RecipeIngredients)
+                    .ThenInclude(ri => ri.Ingredient)
+                .FirstOrDefaultAsync(r => r.RecipeId == request.NewRecipeId.Value && r.Status == "APPROVED_ACTIVE", ct);
 
-        var allCandidates = await _db.Recipes
-            .Include(r => r.RecipeIngredients)
-                .ThenInclude(ri => ri.Ingredient)
-            .Where(r => r.Status == "APPROVED_ACTIVE" && !excludedIds.Contains(r.RecipeId))
-            .ToListAsync(ct);
-
-        var filteredCandidates = FilterCandidateRecipes(
-            allCandidates,
-            forbiddenIngredientSet,
-            forbiddenFoodGroups,
-            requiresAlliumFree);
-
-        var substituteCandidates = filteredCandidates
-            .Where(r => r.CaloriesKcal >= minKcal && r.CaloriesKcal <= maxKcal)
-            .OrderBy(r => Math.Abs(r.CaloriesKcal - oldCalories))
-            .ToList();
-
-        if (substituteCandidates.Count == 0)
+            if (chosenRecipe == null)
+            {
+                throw AppException.NotFound(
+                    ErrorCodes.ErrRecipeStructureInvalid,
+                    "Không tìm thấy món ăn được chọn để thay thế hoặc món ăn chưa được duyệt.");
+            }
+            newRecipe = chosenRecipe;
+        }
+        else
         {
-            throw AppException.UnprocessableEntity(
-                ErrorCodes.ErrMealNoSubstitute,
-                "Không có món thay thế phù hợp.");
+            var calorieTolerancePercent = await _settingService.GetIntSettingAsync("MEAL_SWAP_CALORIE_TOLERANCE_PERCENT", 15, ct);
+            var toleranceFactor = calorieTolerancePercent / 100m;
+            var oldCalories = oldRecipe.CaloriesKcal;
+
+            // Ngưỡng dung sai cơ sở: 15% nhưng tối thiểu +/- 150 kcal (để các món ít calo như nước chấm, canh thanh nhẹ không bị rỗng kết quả)
+            var baseDelta = Math.Max(150m, oldCalories * toleranceFactor);
+            var minKcal = Math.Max(0m, oldCalories - baseDelta);
+            var maxKcal = oldCalories + baseDelta;
+
+            var userAllergenIds = await _db.UserAllergies
+                .Where(ua => ua.UserId == userId)
+                .Select(ua => ua.AllergenId)
+                .ToListAsync(ct);
+
+            var allergicIngredientIds = await _db.IngredientAllergens
+                .Where(ia => userAllergenIds.Contains(ia.AllergenId))
+                .Select(ia => ia.IngredientId)
+                .Distinct()
+                .ToListAsync(ct);
+
+            var forbiddenIngredientSet = new HashSet<int>(allergicIngredientIds);
+
+            var hp = await _db.HealthProfiles.FirstOrDefaultAsync(h => h.UserId == userId, ct);
+            var requiresAllium = (hp?.RequiresAlliumFree == true);
+            ParseForbiddenRules(plan.DietarySchool.ForbiddenFoodRules, requiresAllium,
+                out var forbiddenFoodGroups, out var requiresAlliumFree);
+
+            var excludedIds = new HashSet<int>(request?.ExcludedRecipeIds ?? Enumerable.Empty<int>())
+            {
+                oldRecipe.RecipeId
+            };
+
+            var allCandidates = await _db.Recipes
+                .Include(r => r.RecipeIngredients)
+                    .ThenInclude(ri => ri.Ingredient)
+                .Where(r => r.Status == "APPROVED_ACTIVE" && !excludedIds.Contains(r.RecipeId))
+                .ToListAsync(ct);
+
+            var filteredCandidates = FilterCandidateRecipes(
+                allCandidates,
+                forbiddenIngredientSet,
+                forbiddenFoodGroups,
+                requiresAlliumFree);
+
+            // Nếu đã loại trừ quá nhiều món khiến không còn ứng viên nào, nới lỏng danh sách loại trừ chỉ giữ lại oldRecipeId
+            if (filteredCandidates.Count == 0 && excludedIds.Count > 1)
+            {
+                var fallbackCandidates = await _db.Recipes
+                    .Include(r => r.RecipeIngredients)
+                        .ThenInclude(ri => ri.Ingredient)
+                    .Where(r => r.Status == "APPROVED_ACTIVE" && r.RecipeId != oldRecipe.RecipeId)
+                    .ToListAsync(ct);
+
+                filteredCandidates = FilterCandidateRecipes(
+                    fallbackCandidates,
+                    forbiddenIngredientSet,
+                    forbiddenFoodGroups,
+                    requiresAlliumFree);
+            }
+
+            // Giai đoạn 1: Tìm món trong khoảng dung sai calo cơ sở
+            var substituteCandidates = filteredCandidates
+                .Where(r => r.CaloriesKcal >= minKcal && r.CaloriesKcal <= maxKcal)
+                .OrderBy(r => Math.Abs(r.CaloriesKcal - oldCalories))
+                .ToList();
+
+            // Giai đoạn 2 (Fallback): Nới rộng khoảng calo (+-350 kcal hoặc 40%)
+            if (substituteCandidates.Count == 0)
+            {
+                var expandedDelta = Math.Max(350m, oldCalories * 0.4m);
+                var expandedMinKcal = Math.Max(0m, oldCalories - expandedDelta);
+                var expandedMaxKcal = oldCalories + expandedDelta;
+
+                substituteCandidates = filteredCandidates
+                    .Where(r => r.CaloriesKcal >= expandedMinKcal && r.CaloriesKcal <= expandedMaxKcal)
+                    .OrderBy(r => Math.Abs(r.CaloriesKcal - oldCalories))
+                    .ToList();
+            }
+
+            // Giai đoạn 3 (Fallback): Lấy các món có calo gần nhất trong toàn bộ danh sách hợp lệ
+            if (substituteCandidates.Count == 0 && filteredCandidates.Count > 0)
+            {
+                substituteCandidates = filteredCandidates
+                    .OrderBy(r => Math.Abs(r.CaloriesKcal - oldCalories))
+                    .Take(10)
+                    .ToList();
+            }
+
+            if (substituteCandidates.Count == 0)
+            {
+                throw AppException.UnprocessableEntity(
+                    ErrorCodes.ErrMealNoSubstitute,
+                    "Không có món thay thế phù hợp với trường phái ăn chay hoặc danh sách dị ứng của bạn.");
+            }
+
+            // Chọn ngẫu nhiên trong top 3 món gần nhất để không lặp lại món vừa thấy
+            var topPickCount = Math.Min(3, substituteCandidates.Count);
+            var topPicks = substituteCandidates.Take(topPickCount).ToList();
+            newRecipe = topPicks[Random.Shared.Next(topPicks.Count)];
         }
 
-        var newRecipe = substituteCandidates[0];
-        var oldRecipeId = oldRecipe.RecipeId;
         var newRecipeId = newRecipe.RecipeId;
-
         slot.RecipeId = newRecipeId;
         plan.SwapsRemaining--;
 
+        if (!string.IsNullOrWhiteSpace(request?.CustomNote))
+        {
+            var trimmedNote = request.CustomNote.Trim();
+            slot.Notes = trimmedNote.Length > 200 ? trimmedNote.Substring(0, 200) : trimmedNote;
+        }
+
         var caloriesDelta = Math.Round(newRecipe.CaloriesKcal - oldRecipe.CaloriesKcal, 1);
-        var swapReason = request?.SwapReason ?? "TASTE_PREFERENCE";
+        var swapReason = !string.IsNullOrWhiteSpace(request?.SwapReason)
+            ? request.SwapReason
+            : (request?.NewRecipeId.HasValue == true ? "MANUAL_SELECTION" : "TASTE_PREFERENCE");
 
         // Ghi nhận lịch sử đổi món vào bảng MealSlotSwapHistories
         var swapHistory = new MealSlotSwapHistory
@@ -1272,9 +1414,42 @@ public class MealPlanService : IMealPlanService
             Note = currentPhase,
             CreatedAt = DateTime.UtcNow
         };
-        _db.AuditLogs.Add(auditLog);
-
-        await _db.SaveChangesAsync(ct);
+        var slotHistories = await _db.MealSlotSwapHistories
+            .Include(h => h.OldRecipe)
+            .Include(h => h.NewRecipe)
+            .Where(h => h.SlotId == slot.SlotId)
+            .OrderByDescending(h => h.SwappedAt)
+            .Select(h => new MealSlotSwapHistoryDto
+            {
+                HistoryId = h.SwapHistoryId,
+                SlotId = h.SlotId,
+                OldRecipeId = h.OldRecipeId,
+                OldRecipeTitle = h.OldRecipe.Title,
+                OldRecipeImageUrl = h.OldRecipe.ImageUrl,
+                OldRecipeCalories = h.OldRecipe.CaloriesKcal,
+                OldRecipe = new MealSlotRecipeDto
+                {
+                    RecipeId = h.OldRecipe.RecipeId,
+                    Title = h.OldRecipe.Title,
+                    CaloriesKcal = h.OldRecipe.CaloriesKcal,
+                    ImageUrl = h.OldRecipe.ImageUrl
+                },
+                NewRecipeId = h.NewRecipeId,
+                NewRecipeTitle = h.NewRecipe.Title,
+                NewRecipeImageUrl = h.NewRecipe.ImageUrl,
+                NewRecipeCalories = h.NewRecipe.CaloriesKcal,
+                NewRecipe = new MealSlotRecipeDto
+                {
+                    RecipeId = h.NewRecipe.RecipeId,
+                    Title = h.NewRecipe.Title,
+                    CaloriesKcal = h.NewRecipe.CaloriesKcal,
+                    ImageUrl = h.NewRecipe.ImageUrl
+                },
+                SwapReason = h.SwapReason,
+                CaloriesDelta = h.CaloriesDelta,
+                SwappedAt = h.SwappedAt
+            })
+            .ToListAsync(ct);
 
         return new UpdateMealPlanSlotResponseData
         {
@@ -1284,13 +1459,16 @@ public class MealPlanService : IMealPlanService
                 DayOfWeek = slot.DayOfWeek,
                 MealType = slot.MealType,
                 IsCompleted = slot.IsCompleted,
+                Notes = slot.Notes,
                 Recipe = new MealSlotRecipeDto
                 {
                     RecipeId = newRecipe.RecipeId,
                     Title = newRecipe.Title,
                     CaloriesKcal = newRecipe.CaloriesKcal,
                     ImageUrl = newRecipe.ImageUrl
-                }
+                },
+                SwapCount = slotHistories.Count,
+                SwapHistories = slotHistories
             },
             SwapsRemaining = plan.SwapsRemaining,
             MaxSwapsAllowed = plan.MaxSwapsAllowed

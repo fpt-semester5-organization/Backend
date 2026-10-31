@@ -9,6 +9,8 @@ public class GetShoppingListResponseData
 {
     public int ListId { get; set; }
 
+    public int PlanId { get; set; }
+
     public string Status { get; set; } = "PENDING";
 
     public ShoppingListProgressDto Progress { get; set; } = new ShoppingListProgressDto();
