@@ -1980,7 +1980,7 @@ components:
         startDate:
           type: string
           format: date
-          description: YYYY-MM-DD, là ngày Thứ Hai, không trong quá khứ
+          description: YYYY-MM-DD, có thể bắt đầu vào bất kỳ ngày nào trong tuần, không ở quá 7 ngày trong quá khứ
         budgetTier:
           type: string
           enum:
@@ -8110,6 +8110,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /meal-plans/custom-days:
+    post:
+      tags:
+      - MEAL
+      operationId: createMealPlanCustomDays
+      summary: FN-MEAL-01 Sinh thực đơn linh hoạt số ngày bằng AI
+      description: 'Sinh thực đơn linh hoạt số ngày (1 đến 30 ngày) x 3 bữa từ hồ sơ sức khỏe, trường phái, dị ứng và mức ngân sách. Thực đơn ở trạng thái DRAFT.
+
+        Auth: Bearer (MEMBER | VIP).'
+      x-fn-id: FN-MEAL-01
+      x-status: Approved
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMealPlanRequest'
+      responses:
+        '201':
+          description: Đã tạo thực đơn nháp.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateMealPlanResponse'
+        '400':
+          description: 'ERR_VALIDATION: Dữ liệu không hợp lệ.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_QUOTA_MEAL_PLAN_EXCEEDED: Hết hạn mức tạo thực đơn.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /meal-plans/{id}:
     get:
       tags:
@@ -8411,6 +8455,64 @@ paths:
                 $ref: '#/components/schemas/Error'
         '403':
           description: 'ERR_FORBIDDEN: Không có quyền truy cập.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'ERR_MEAL_PLAN_NOT_FOUND: Bữa ăn không tồn tại hoặc không thuộc về bạn.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /meal-plans/slots/{slotId}/swap-by-note:
+    post:
+      tags:
+      - MEAL
+      operationId: swapMealSlotByNote
+      summary: FN-MEAL-03 Đổi món theo ghi chú/khẩu vị người dùng bằng AI
+      description: 'Gom 100 món ứng viên, đóng gói toàn bộ công thức gửi qua AI để chọn món tối ưu nhất theo ghi chú.
+
+        Auth: Bearer (MEMBER | VIP).'
+      x-fn-id: FN-MEAL-03
+      x-status: Approved
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: slotId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+        description: '> 0'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwapMealSlotByNoteRequest'
+      responses:
+        '200':
+          description: Đã đổi món theo yêu cầu.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateMealPlanSlotResponse'
+        '400':
+          description: 'ERR_VALIDATION: Ghi chú đổi món không hợp lệ.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_QUOTA_MEAL_SWAP_EXCEEDED: Hết hạn mức đổi món.'
           content:
             application/json:
               schema:

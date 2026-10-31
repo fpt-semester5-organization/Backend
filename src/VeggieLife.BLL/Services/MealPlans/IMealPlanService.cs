@@ -8,12 +8,12 @@ using VeggieLife.BLL.DTOs.MealPlans.Responses;
 namespace VeggieLife.BLL.Services.MealPlans;
 
 /// <summary>
-/// Interface dịch vụ quản lý và tạo thực đơn 7 ngày bằng AI (FN-MEAL-01..08).
+/// Interface dịch vụ quản lý và tạo thực đơn dinh dưỡng bằng AI (FN-MEAL-01..08).
 /// </summary>
 public interface IMealPlanService
 {
     /// <summary>
-    /// FN-MEAL-01: Sinh thực đơn 7 ngày x 3 bữa (21 bữa) bằng AI phù hợp hồ sơ sức khỏe và dị ứng.
+    /// FN-MEAL-01: Sinh thực đơn linh hoạt số ngày x 3 bữa bằng AI phù hợp hồ sơ sức khỏe và dị ứng.
     /// Kiểm tra hạn mức tuần, lọc trước công thức hợp lệ, kiểm tra calo lệch tối đa 10%,
     /// hỗ trợ tự động chuyển sang Fallback Engine khi AI quá 4 giây hoặc mạch AI mở.
     /// </summary>
@@ -33,7 +33,7 @@ public interface IMealPlanService
         CancellationToken ct = default);
 
     /// <summary>
-    /// FN-MEAL-02: Xem chi tiết 21 bữa ăn trong một thực đơn và số lần đổi món còn lại.
+    /// FN-MEAL-02: Xem chi tiết các bữa ăn trong một thực đơn và số lần đổi món còn lại.
     /// </summary>
     Task<CreateMealPlanResponseData> GetMealPlanByIdAsync(
         int id,
@@ -51,7 +51,7 @@ public interface IMealPlanService
 
     /// <summary>
     /// FN-MEAL-03: Đổi một bữa sang món thay thế tương đương (cùng trường phái, không dị ứng, calo chênh lệch &lt;= 15%).
-    /// Hạn mức: tối đa 21 lần đổi ở giai đoạn DRAFT và 21 lần đổi ở giai đoạn ACTIVE.
+    /// Hạn mức: linh hoạt theo MaxSwapsAllowed ở giai đoạn DRAFT và ACTIVE.
     /// </summary>
     Task<UpdateMealPlanSlotResponseData> UpdateMealPlanSlotAsync(
         int id,
@@ -59,6 +59,17 @@ public interface IMealPlanService
         int userId,
         string userRole,
         UpdateMealPlanSlotRequest request,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// FN-MEAL-03: Đổi món theo ghi chú/khẩu vị người dùng bằng AI (cào 100 món ứng viên đóng gói gửi AI).
+    /// </summary>
+    Task<UpdateMealPlanSlotResponseData> SwapMealSlotByNoteAsync(
+        int slotId,
+        int userId,
+        string userRole,
+        SwapMealSlotByNoteRequest request,
+        int? planId = null,
         CancellationToken ct = default);
 
     /// <summary>

@@ -1529,4 +1529,321 @@ public class MealPlanServiceTests : IDisposable
             });
         }
     }
+
+    // =========================================================================
+    // TASK EXTENSION: Flexible Duration Days (1-30 Days) & 100 Candidates with Full Details
+    // =========================================================================
+
+    private void SetupTestUserAndProfile(int userId)
+    {
+        _db.Users.Add(new User
+        {
+            UserId = userId,
+            Email = $"test_user_{userId}@veggielife.vn",
+            FullName = $"Test User {userId}",
+            Role = UserRoles.Member,
+            AccountStatus = "ACTIVE"
+        });
+        _db.HealthProfiles.Add(new HealthProfile
+        {
+            UserId = userId,
+            DietarySchoolId = 1, // Vegan
+            Gender = "MALE",
+            DateOfBirth = new DateOnly(1990, 1, 1),
+            HeightCm = 175m,
+            CurrentWeightKg = 70m,
+            BmiValue = 22.8m,
+            BmrKcal = 1600m,
+            TdeeKcal = 2000m,
+            TargetDailyCalories = 2000m,
+            RequiresAlliumFree = false,
+            RegionPreference = "MIEN_BAC",
+            HealthGoal = "MAINTAIN"
+        });
+        _db.SaveChanges();
+    }
+
+    [Fact]
+    public async Task CreateMealPlan_WithCustomDurationDays_Success()
+    {
+        // Arrange
+        var userId = 801;
+        SetupTestUserAndProfile(userId);
+        var monday = GetNextMonday();
+
+        var request = new CreateMealPlanRequest
+        {
+            StartDate = monday.ToString("yyyy-MM-dd"),
+            BudgetTier = "STANDARD",
+            DurationDays = 3 // 3 ngày => 9 bữa
+        };
+
+        // Act
+        var result = await _service.CreateMealPlanAsync(userId, UserRoles.Member, request);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.DurationDays.Should().Be(3);
+        result.StartDate.Should().Be(monday.ToString("yyyy-MM-dd"));
+        result.EndDate.Should().Be(monday.AddDays(2).ToString("yyyy-MM-dd"));
+        result.Slots.Should().HaveCount(9);
+        result.MaxSwapsAllowed.Should().Be(9);
+        result.SwapsRemaining.Should().Be(9);
+    }
+
+    [Fact]
+    public async Task CreateMealPlan_WithFiveDays_Success()
+    {
+        // Arrange
+        var userId = 802;
+        SetupTestUserAndProfile(userId);
+        var monday = GetNextMonday();
+
+        var request = new CreateMealPlanRequest
+        {
+            StartDate = monday.ToString("yyyy-MM-dd"),
+            BudgetTier = "STANDARD",
+            DurationDays = 5 // 5 ngày => 15 bữa
+        };
+
+        // Act
+        var result = await _service.CreateMealPlanAsync(userId, UserRoles.Member, request);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.DurationDays.Should().Be(5);
+        result.EndDate.Should().Be(monday.AddDays(4).ToString("yyyy-MM-dd"));
+        result.Slots.Should().HaveCount(15);
+    }
+
+    [Fact]
+    public async Task CreateMealPlan_PackagesCandidateRecipesWithFullDetails_ToAiService()
+    {
+        // Arrange
+        var userId = 803;
+        SetupTestUserAndProfile(userId);
+        var monday = GetNextMonday();
+
+        AiMealPlanRequest? capturedAiRequest = null;
+        _mockAiClient.Setup(c => c.GenerateMealPlanAsync(It.IsAny<AiMealPlanRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<AiMealPlanRequest, CancellationToken>((req, _) => capturedAiRequest = req)
+            .ReturnsAsync((AiMealPlanRequest req, CancellationToken _) => null); // Fallback to engine
+
+        var request = new CreateMealPlanRequest
+        {
+            StartDate = monday.ToString("yyyy-MM-dd"),
+            BudgetTier = "STANDARD",
+            DurationDays = 7
+        };
+
+        // Act
+        var result = await _service.CreateMealPlanAsync(userId, UserRoles.Member, request);
+
+        // Assert
+        capturedAiRequest.Should().NotBeNull();
+        capturedAiRequest!.DurationDays.Should().Be(7);
+        capturedAiRequest.CandidateRecipes.Should().NotBeEmpty();
+        capturedAiRequest.CandidateRecipes.Count.Should().BeLessThanOrEqualTo(100);
+
+        var firstCandidate = capturedAiRequest.CandidateRecipes.First();
+        firstCandidate.RecipeId.Should().BeGreaterThan(0);
+        firstCandidate.Title.Should().NotBeNullOrWhiteSpace();
+        firstCandidate.Instructions.Should().NotBeNullOrWhiteSpace();
+        firstCandidate.PrepTimeMinutes.Should().BeGreaterThan(0);
+        firstCandidate.CookTimeMinutes.Should().BeGreaterThan(0);
+        firstCandidate.Servings.Should().BeGreaterThan(0);
+        firstCandidate.Ingredients.Should().NotBeEmpty();
+        firstCandidate.Ingredients[0].IngredientName.Should().NotBeNullOrWhiteSpace();
+        firstCandidate.Ingredients[0].Unit.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task CreateMealPlan_DurationDaysInvalid_ThrowsBadRequest()
+    {
+        // Arrange: DurationDays = 35 (> 30)
+        var userId = 804;
+        SetupTestUserAndProfile(userId);
+        var monday = GetNextMonday();
+
+        var request = new CreateMealPlanRequest
+        {
+            StartDate = monday.ToString("yyyy-MM-dd"),
+            BudgetTier = "STANDARD",
+            DurationDays = 35
+        };
+
+        // Act & Assert
+        var act = () => _service.CreateMealPlanAsync(userId, UserRoles.Member, request);
+        await act.Should().ThrowAsync<AppException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ErrValidation);
+    }
+
+    // =========================================================================
+    // TASK EXTENSION: Swap Meal Slot By Note (Using AI & 100 Candidates)
+    // =========================================================================
+
+    [Fact]
+    public async Task SwapMealSlotByNote_WithAiResponse_Success()
+    {
+        // Arrange: Tạo thực đơn trước
+        var userId = 805;
+        SetupTestUserAndProfile(userId);
+        var monday = GetNextMonday();
+
+        var createReq = new CreateMealPlanRequest
+        {
+            StartDate = monday.ToString("yyyy-MM-dd"),
+            BudgetTier = "STANDARD",
+            DurationDays = 7
+        };
+        var plan = await _service.CreateMealPlanAsync(userId, UserRoles.Member, createReq);
+        var targetSlot = plan.Slots.First();
+        var oldRecipeId = targetSlot.Recipe!.RecipeId;
+
+        // Chọn một recipe khác làm kết quả AI trả về
+        var otherRecipe = await _db.Recipes.FirstAsync(r => r.RecipeId != oldRecipeId && r.Status == "APPROVED_ACTIVE");
+
+        _mockAiClient.Setup(c => c.SwapMealByNoteAsync(It.IsAny<AiSwapMealByNoteRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiSwapMealByNoteResponse
+            {
+                Success = true,
+                SelectedRecipeId = otherRecipe.RecipeId,
+                Reason = "Món ăn thanh đạm, ít dầu mỡ, nhiều chất xơ theo yêu cầu"
+            });
+
+        var swapReq = new SwapMealSlotByNoteRequest
+        {
+            Note = "Muốn ăn món canh thanh đạm ít dầu mỡ"
+        };
+
+        // Act
+        var result = await _service.SwapMealSlotByNoteAsync(targetSlot.SlotId, userId, UserRoles.Member, swapReq, plan.PlanId);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Slot.Recipe!.RecipeId.Should().Be(otherRecipe.RecipeId);
+        result.SwapsRemaining.Should().Be(plan.SwapsRemaining - 1);
+
+        // Kiểm tra lịch sử đổi món đã lưu vào database
+        var history = await _service.GetMealSlotSwapHistoryAsync(targetSlot.SlotId, userId, plan.PlanId);
+        history.Should().HaveCount(1);
+        history[0].OldRecipeId.Should().Be(oldRecipeId);
+        history[0].NewRecipeId.Should().Be(otherRecipe.RecipeId);
+        history[0].SwapReason.Should().Contain("thanh đạm");
+    }
+
+    [Fact]
+    public async Task SwapMealSlotByNote_FallbackEngine_WhenAiUnavailable_Success()
+    {
+        // Arrange: Tạo thực đơn trước
+        var userId = 806;
+        SetupTestUserAndProfile(userId);
+        var monday = GetNextMonday();
+
+        var createReq = new CreateMealPlanRequest
+        {
+            StartDate = monday.ToString("yyyy-MM-dd"),
+            BudgetTier = "STANDARD",
+            DurationDays = 7
+        };
+        var plan = await _service.CreateMealPlanAsync(userId, UserRoles.Member, createReq);
+        var targetSlot = plan.Slots.First();
+        var oldRecipeId = targetSlot.Recipe!.RecipeId;
+
+        // Giả lập AI trả về null (timeout hoặc lỗi mạng)
+        _mockAiClient.Setup(c => c.SwapMealByNoteAsync(It.IsAny<AiSwapMealByNoteRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AiSwapMealByNoteResponse?)null);
+
+        var swapReq = new SwapMealSlotByNoteRequest
+        {
+            Note = "Nấm rơm xào đậu hũ"
+        };
+
+        // Act
+        var result = await _service.SwapMealSlotByNoteAsync(targetSlot.SlotId, userId, UserRoles.Member, swapReq, plan.PlanId);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Slot.Recipe!.RecipeId.Should().NotBe(oldRecipeId);
+        result.SwapsRemaining.Should().Be(plan.SwapsRemaining - 1);
+
+        var history = await _service.GetMealSlotSwapHistoryAsync(targetSlot.SlotId, userId, plan.PlanId);
+        history.Should().HaveCount(1);
+        history[0].SwapReason.Should().Be("Nấm rơm xào đậu hũ");
+    }
+
+    [Fact]
+    public async Task SwapMealSlotByNote_UnauthorizedSlot_ThrowsNotFound()
+    {
+        // Arrange: Tạo thực đơn cho User 807
+        var userId = 807;
+        SetupTestUserAndProfile(userId);
+        var monday = GetNextMonday();
+
+        var createReq = new CreateMealPlanRequest
+        {
+            StartDate = monday.ToString("yyyy-MM-dd"),
+            BudgetTier = "STANDARD"
+        };
+        var plan = await _service.CreateMealPlanAsync(userId, UserRoles.Member, createReq);
+        var targetSlot = plan.Slots.First();
+
+        var swapReq = new SwapMealSlotByNoteRequest
+        {
+            Note = "Đổi món"
+        };
+
+        // Act & Assert: User 999 gọi đổi slot của User 807
+        var act = () => _service.SwapMealSlotByNoteAsync(targetSlot.SlotId, 999, UserRoles.Member, swapReq, plan.PlanId);
+        await act.Should().ThrowAsync<AppException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ErrMealPlanNotFound);
+    }
+
+    [Fact]
+    public async Task SwapMealSlotByNote_EmptyNote_ThrowsBadRequest()
+    {
+        // Arrange
+        var swapReq = new SwapMealSlotByNoteRequest
+        {
+            Note = "   "
+        };
+
+        // Act & Assert
+        var act = () => _service.SwapMealSlotByNoteAsync(1, 1, UserRoles.Member, swapReq);
+        await act.Should().ThrowAsync<AppException>()
+            .Where(e => e.ErrorCode == ErrorCodes.ErrValidation);
+    }
+    [Fact]
+    public async Task CreateMealPlanAsync_WhenStartingOnWednesday_SucceedsAndMapsDaysStartingFromWed()
+    {
+        // Arrange
+        var userId = 808;
+        SetupTestUserAndProfile(userId);
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var daysUntilWed = ((int)DayOfWeek.Wednesday - (int)today.DayOfWeek + 7) % 7;
+        if (daysUntilWed == 0) daysUntilWed = 7;
+        var nextWednesday = today.AddDays(daysUntilWed);
+
+        var req = new CreateMealPlanRequest
+        {
+            StartDate = nextWednesday.ToString("yyyy-MM-dd"),
+            BudgetTier = "STANDARD",
+            DurationDays = 3
+        };
+
+        // Act
+        var result = await _service.CreateMealPlanAsync(userId, UserRoles.Member, req);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.StartDate.Should().Be(nextWednesday.ToString("yyyy-MM-dd"));
+        result.DurationDays.Should().Be(3);
+        result.Slots.Should().HaveCount(9);
+
+        // Ngày 1 phải là WED, ngày 2 là THU, ngày 3 là FRI
+        result.Slots.Take(3).All(s => s.DayOfWeek == "WED").Should().BeTrue();
+        result.Slots.Skip(3).Take(3).All(s => s.DayOfWeek == "THU").Should().BeTrue();
+        result.Slots.Skip(6).Take(3).All(s => s.DayOfWeek == "FRI").Should().BeTrue();
+    }
 }

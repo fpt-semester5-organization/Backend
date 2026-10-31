@@ -150,7 +150,6 @@ public static class MealPlanPdfExporter
                         header.Cell().Background(Colors.Green.Lighten4).Padding(4).AlignRight().Text("Tổng Calo").Bold();
                     });
 
-                    var dayNames = new[] { "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN" };
                     var dayLabels = new Dictionary<string, string>
                     {
                         ["MON"] = "Thứ Hai",
@@ -162,12 +161,32 @@ public static class MealPlanPdfExporter
                         ["SUN"] = "Chủ Nhật"
                     };
 
-                    int dayIdx = 0;
-                    foreach (var day in dayNames)
+                    var sortedSlots = plan.MealSlots.OrderBy(s => s.SlotId).ToList();
+                    var durationDays = plan.DurationDays > 0 ? plan.DurationDays : (sortedSlots.Count / 3);
+                    if (durationDays <= 0) durationDays = sortedSlots.Count > 0 ? (sortedSlots.Count / 3 > 0 ? sortedSlots.Count / 3 : 1) : 7;
+
+                    for (var dayIdx = 0; dayIdx < durationDays; dayIdx++)
                     {
-                        var slots = plan.MealSlots
-                            .Where(s => string.Equals(s.DayOfWeek, day, StringComparison.OrdinalIgnoreCase))
-                            .ToList();
+                        var dayDate = plan.StartDate.AddDays(dayIdx);
+                        var day = dayDate.DayOfWeek switch
+                        {
+                            DayOfWeek.Monday => "MON",
+                            DayOfWeek.Tuesday => "TUE",
+                            DayOfWeek.Wednesday => "WED",
+                            DayOfWeek.Thursday => "THU",
+                            DayOfWeek.Friday => "FRI",
+                            DayOfWeek.Saturday => "SAT",
+                            DayOfWeek.Sunday => "SUN",
+                            _ => "MON"
+                        };
+
+                        var slots = sortedSlots.Skip(dayIdx * 3).Take(3).ToList();
+                        if (slots.Count == 0)
+                        {
+                            slots = plan.MealSlots
+                                .Where(s => string.Equals(s.DayOfWeek, day, StringComparison.OrdinalIgnoreCase))
+                                .ToList();
+                        }
 
                         var breakfast = slots.FirstOrDefault(s => string.Equals(s.MealType, "BREAKFAST", StringComparison.OrdinalIgnoreCase));
                         var lunch = slots.FirstOrDefault(s => string.Equals(s.MealType, "LUNCH", StringComparison.OrdinalIgnoreCase));
@@ -176,13 +195,12 @@ public static class MealPlanPdfExporter
                         var dayKcal = slots.Sum(s => s.Recipe?.CaloriesKcal ?? 0m);
                         var bg = (dayIdx % 2 == 0) ? Colors.White : Colors.Grey.Lighten4;
 
-                        table.Cell().Background(bg).Padding(4).Text(dayLabels.GetValueOrDefault(day, day)).SemiBold();
+                        var dayDisplay = $"{dayLabels.GetValueOrDefault(day, day)} ({dayDate:dd/MM})";
+                        table.Cell().Background(bg).Padding(4).Text(dayDisplay).SemiBold();
                         table.Cell().Background(bg).Padding(4).Text(breakfast?.Recipe?.Title ?? "—").FontSize(9);
                         table.Cell().Background(bg).Padding(4).Text(lunch?.Recipe?.Title ?? "—").FontSize(9);
                         table.Cell().Background(bg).Padding(4).Text(dinner?.Recipe?.Title ?? "—").FontSize(9);
                         table.Cell().Background(bg).Padding(4).AlignRight().Text($"{dayKcal:N0} kcal").FontSize(9).Bold();
-
-                        dayIdx++;
                     }
                 });
             }

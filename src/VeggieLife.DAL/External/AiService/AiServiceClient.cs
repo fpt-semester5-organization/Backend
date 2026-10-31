@@ -91,7 +91,8 @@ public class AiServiceClient : IAiServiceClient
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadFromJsonAsync<AiMealPlanResponse>(cancellationToken: linkedCts.Token);
-                if (result != null && result.Slots != null && result.Slots.Count == 21)
+                var expectedSlotCount = (request.DurationDays > 0 ? request.DurationDays : 7) * 3;
+                if (result != null && result.Slots != null && (result.Slots.Count == expectedSlotCount || (request.DurationDays != 7 && result.Slots.Count > 0)))
                 {
                     result.Success = true; // [BỔ SUNG QUAN TRỌNG]: Xác nhận kết quả hợp lệ
                     result.ExecutionTimeMs = (int)sw.ElapsedMilliseconds;
@@ -125,6 +126,64 @@ public class AiServiceClient : IAiServiceClient
         {
             sw.Stop();
             _logger.LogError(ex, "[AiServiceClient] Lỗi không xác định khi gọi ai-service.");
+            RecordFailure();
+            return null;
+        }
+    }
+
+    public async Task<AiSwapMealByNoteResponse?> SwapMealByNoteAsync(AiSwapMealByNoteRequest request, CancellationToken ct = default)
+    {
+        if (IsCircuitOpen)
+        {
+            _logger.LogWarning("[AiServiceClient] Mạch AI đang mở (Circuit Breaker OPEN). Không thể gọi AI đổi món theo note.");
+            return null;
+        }
+
+        var sw = Stopwatch.StartNew();
+
+        try
+        {
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+
+            var response = await _httpClient.PostAsJsonAsync("/meal/swap-by-note", request, linkedCts.Token);
+            sw.Stop();
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<AiSwapMealByNoteResponse>(cancellationToken: linkedCts.Token);
+                if (result != null && result.SelectedRecipeId > 0)
+                {
+                    result.Success = true;
+                    result.ExecutionTimeMs = (int)sw.ElapsedMilliseconds;
+                    RecordSuccess();
+                    return result;
+                }
+            }
+
+            var statusCode = (int)response.StatusCode;
+            _logger.LogWarning("[AiServiceClient] ai-service /meal/swap-by-note phản hồi HTTP {StatusCode}", statusCode);
+            RecordFailure();
+            return null;
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            sw.Stop();
+            _logger.LogWarning(ex, "[AiServiceClient] Gọi ai-service /meal/swap-by-note bị TIMEOUT quá 4 giây ({ElapsedMs} ms).", sw.ElapsedMilliseconds);
+            RecordFailure();
+            return null;
+        }
+        catch (HttpRequestException ex)
+        {
+            sw.Stop();
+            _logger.LogWarning(ex, "[AiServiceClient] Không thể kết nối tới ai-service ({BaseUrl}) cho swap-by-note.", _httpClient.BaseAddress);
+            RecordFailure();
+            return null;
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            _logger.LogError(ex, "[AiServiceClient] Lỗi không xác định khi gọi ai-service /meal/swap-by-note.");
             RecordFailure();
             return null;
         }
