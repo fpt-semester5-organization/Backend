@@ -80,7 +80,7 @@ public class MealPlanService : IMealPlanService
 
         // 2. Kiểm tra tính hợp lệ của tham số đầu vào (ERR_VALIDATION)
         ValidateInput(request, out var startDate);
-        var durationDays = request.DurationDays > 0 ? request.DurationDays : (request.NumberOfDays ?? 7);
+        var durationDays = request.DurationDays ?? 7;
         durationDays = Math.Clamp(durationDays, 1, 30);
 
         // 3. Khóa chống trùng lặp bằng Redis (meal_gen_lock:{userId}, TTL 30s)
@@ -253,17 +253,15 @@ public class MealPlanService : IMealPlanService
                 "Mức ngân sách không hợp lệ (phải là ECONOMICAL, STANDARD hoặc PREMIUM).");
         }
 
-        if (request.DurationDays == 0)
-        {
-            request.DurationDays = 7;
-        }
-
-        if (request.DurationDays is < 1 or > 30)
+        var duration = request.DurationDays ?? request.NumberOfDays ?? 7;
+        if (duration is < 1 or > 30)
         {
             throw AppException.BadRequest(
                 ErrorCodes.ErrValidation,
                 "Số ngày tạo thực đơn phải từ 1 đến 30 ngày.");
         }
+        request.DurationDays = duration;
+        request.NumberOfDays = duration;
 
         if (!string.IsNullOrWhiteSpace(request.CustomInstructions) && request.CustomInstructions.Length > 200)
         {
@@ -430,6 +428,7 @@ public class MealPlanService : IMealPlanService
                 DietarySchoolCode = profile.DietarySchool.SchoolCode,
                 RequiresAlliumFree = requiresAlliumFree,
                 DurationDays = durationDays,
+                StartDate = startDate.ToString("yyyy-MM-dd"),
                 ForbiddenFoodGroups = forbiddenFoodGroups.ToList(),
                 CustomInstructions = customInstructions,
                 CandidateRecipes = candidateRecipes.Select(r => new AiCandidateRecipeDto
@@ -445,6 +444,7 @@ public class MealPlanService : IMealPlanService
                     Servings = r.Servings,
                     DifficultyLevel = r.DifficultyLevel,
                     UsesFridgeItem = r.RecipeIngredients.Any(ri => fridgeIngredientIds.Contains(ri.IngredientId)),
+                    FavoriteCount = r.ViewCount,
                     Ingredients = r.RecipeIngredients.Select(ri => new AiRecipeIngredientDto
                     {
                         IngredientId = ri.IngredientId,
@@ -1345,17 +1345,13 @@ public class MealPlanService : IMealPlanService
         }
         else if (!string.IsNullOrWhiteSpace(request?.CustomNote))
         {
-            return await SwapMealSlotByNoteAsync(
-                slotId,
-                userId,
-                userRole,
-                new SwapMealSlotByNoteRequest
-                {
-                    Note = request.CustomNote,
-                    ExcludedRecipeIds = request.ExcludedRecipeIds
-                },
-                id,
-                ct);
+            // Chỉ khi người dùng viết thêm ghi chú thì mới gọi AI để gợi ý món theo lưu ý của người dùng
+            var swapByNoteReq = new SwapMealSlotByNoteRequest
+            {
+                Note = request.CustomNote,
+                ExcludedRecipeIds = request.ExcludedRecipeIds
+            };
+            return await SwapMealSlotByNoteAsync(slotId, userId, userRole, swapByNoteReq, id, ct);
         }
         else
         {
@@ -1772,6 +1768,7 @@ public class MealPlanService : IMealPlanService
             CategoryName = r.Category?.CategoryName,
             UsesFridgeItem = false,
             MealTypePreference = slot.MealType,
+            FavoriteCount = r.ViewCount,
             Ingredients = r.RecipeIngredients.Select(ri => new AiRecipeIngredientDto
             {
                 IngredientId = ri.IngredientId,
