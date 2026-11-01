@@ -12,6 +12,7 @@ using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.Common.Helpers;
 using VeggieLife.BLL.DTOs.Fridge.Requests;
 using VeggieLife.BLL.DTOs.Fridge.Responses;
+using AiCostCalculator = VeggieLife.BLL.Services.AI.AiCostCalculator;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.Media;
 using VeggieLife.DAL.Context;
@@ -476,7 +477,7 @@ public class FridgeService : IFridgeService
                 UserId = memberId,
                 FeatureCode = "AI_FRIDGE",
                 TokensConsumed = tokensConsumed,
-                CostEstimateUsd = 0.0005m,
+                CostEstimateUsd = AiCostCalculator.CalculateFromTotal(tokensConsumed),
                 RequestStatus = "SUCCESS",
                 ExecutionTimeMs = executionTime > 0 ? executionTime : 500,
                 CreatedAt = DateTime.UtcNow

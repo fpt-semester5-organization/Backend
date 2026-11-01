@@ -500,7 +500,9 @@ public class ChatService : IChatService
         session.UpdatedAt = DateTime.UtcNow;
 
         // 7. Ghi nhận nhật ký AI Quota & Audit Logs (BR-ADM-AI-003)
-        var totalTokens = (aiResponse.Usage?.PromptTokens ?? 0) + (aiResponse.Usage?.CompletionTokens ?? 0);
+        var promptTokens = aiResponse.Usage?.PromptTokens ?? 0;
+        var completionTokens = aiResponse.Usage?.CompletionTokens ?? 0;
+        var totalTokens = promptTokens + completionTokens;
 
         if (!isGuest)
         {
@@ -509,7 +511,7 @@ public class ChatService : IChatService
                 UserId = (int)userId!.Value,
                 FeatureCode = ChatConstants.FeatureCodeAiChat,
                 TokensConsumed = totalTokens,
-                CostEstimateUsd = 0.0002m,
+                CostEstimateUsd = AiCostCalculator.Calculate(promptTokens, completionTokens),
                 RequestStatus = "SUCCESS",
                 ExecutionTimeMs = aiResponse.Usage?.LatencyMs ?? 0,
                 CreatedAt = DateTime.UtcNow

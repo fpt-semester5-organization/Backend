@@ -12,6 +12,7 @@ using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.MealPlans.Requests;
 using VeggieLife.BLL.DTOs.MealPlans.Responses;
+using AiCostCalculator = VeggieLife.BLL.Services.AI.AiCostCalculator;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.Settings;
 using VeggieLife.DAL.Context;
@@ -938,7 +939,7 @@ public class MealPlanService : IMealPlanService
             UserId = userId,
             FeatureCode = "MEAL_PLAN_GEN",
             TokensConsumed = generatedByAi ? (tokensConsumed > 0 ? tokensConsumed : 450) : 0,
-            CostEstimateUsd = generatedByAi ? 0.0015m : 0m,
+            CostEstimateUsd = generatedByAi ? AiCostCalculator.CalculateFromTotal(tokensConsumed > 0 ? tokensConsumed : 450) : 0m,
             RequestStatus = "SUCCESS",
             ExecutionTimeMs = executionTimeMs,
             CreatedAt = DateTime.UtcNow
