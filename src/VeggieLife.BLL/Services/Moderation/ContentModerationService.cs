@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.DTOs.Ai;
+using VeggieLife.BLL.Services.AI;
 
 namespace VeggieLife.BLL.Services.Moderation;
 
@@ -109,7 +110,7 @@ public class ContentModerationService : IContentModerationService
             ViolationType = isQuarantined ? response.ViolationType : null,
             Note = response.Reasons.Count > 0 ? string.Join("; ", response.Reasons) : "Nội dung an toàn, đạt chuẩn kiểm duyệt.",
             TokensConsumed = response.Usage.PromptTokens + response.Usage.CompletionTokens,
-            CostEstimateUsd = 0.0001m,
+            CostEstimateUsd = AiCostCalculator.Calculate(response.Usage.PromptTokens, response.Usage.CompletionTokens),
             ExecutionTimeMs = response.Usage.LatencyMs,
             Usage = response.Usage,
             Audit = response.Audit
