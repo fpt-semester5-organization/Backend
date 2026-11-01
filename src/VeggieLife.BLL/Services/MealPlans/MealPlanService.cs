@@ -1391,11 +1391,88 @@ public class MealPlanService : IMealPlanService
 
 
 
-            // Giai đoạn 1: Tìm món trong khoảng dung sai calo cơ sở
-            var substituteCandidates = filteredCandidates
-                .Where(r => r.CaloriesKcal >= minKcal && r.CaloriesKcal <= maxKcal)
-                .OrderBy(r => Math.Abs(r.CaloriesKcal - oldCalories))
-                .ToList();
+            var substituteCandidates = new List<Recipe>();
+
+            // Nếu người dùng có gửi kèm CustomNote (ví dụ: "yêu cầu ăn bí đỏ", "thêm nấm"):
+            // Ưu tiên lọc và chấm điểm các món phù hợp với ghi chú trước
+            if (!string.IsNullOrWhiteSpace(request?.CustomNote))
+            {
+                var cleanNote = request.CustomNote.Trim().ToLowerInvariant();
+                var noteDelimiters = new[] { ' ', ',', '.', ';', '!', '?', '+', '-', '/', '_', '(', ')', '[', ']', ':', '"', '\'' };
+                var stopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "yêu", "cầu", "muốn", "thích", "không", "món", "cho", "với", "nhiều", "ít", "được", "mình", "ngày", "bữa", "ăn",
+                    "tôi", "có", "các", "của", "những", "và", "nhưng", "hoặc", "lại", "thì", "là", "ở", "vào", "ra", "lên", "xuống",
+                    "rất", "quá", "này", "đó", "kia", "nào", "thêm", "bớt"
+                };
+                var keywords = cleanNote
+                    .Split(noteDelimiters, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(w => w.Trim().ToLowerInvariant())
+                    .Where(w => w.Length >= 2 && !stopWords.Contains(w))
+                    .ToList();
+
+                if (keywords.Count > 0)
+                {
+                    var scoredByNote = filteredCandidates.Select(r =>
+                    {
+                        var score = 0;
+                        var titleLower = r.Title.ToLowerInvariant();
+                        var descLower = (r.Description ?? string.Empty).ToLowerInvariant();
+                        var ingredientNamesLower = r.RecipeIngredients
+                            .Select(ri => (ri.Ingredient != null ? ri.Ingredient.IngredientName : string.Empty).ToLowerInvariant())
+                            .ToList();
+
+                        // Ưu tiên cụm từ khóa ghép nếu có từ 2 từ trở lên (ví dụ: "bí đỏ", "nấm rơm")
+                        foreach (var kw1 in keywords)
+                        {
+                            foreach (var kw2 in keywords)
+                            {
+                                if (kw1 != kw2)
+                                {
+                                    var phrase = $"{kw1} {kw2}";
+                                    if (titleLower.Contains(phrase)) score += 25;
+                                    if (descLower.Contains(phrase)) score += 12;
+                                    if (ingredientNamesLower.Any(ing => ing.Contains(phrase))) score += 20;
+                                }
+                            }
+                        }
+
+                        // Điểm từng từ khóa riêng lẻ
+                        foreach (var kw in keywords)
+                        {
+                            if (titleLower.Contains(kw)) score += 5;
+                            if (descLower.Contains(kw)) score += 3;
+                            if (ingredientNamesLower.Any(ing => ing.Contains(kw))) score += 4;
+                        }
+
+                        return new { Recipe = r, Score = score, CalorieDiff = Math.Abs(r.CaloriesKcal - oldCalories) };
+                    })
+                    .Where(x => x.Score > 0)
+                    .OrderByDescending(x => x.Score)
+                    .ThenBy(x => x.CalorieDiff)
+                    .ToList();
+
+                    if (scoredByNote.Count > 0)
+                    {
+                        substituteCandidates = scoredByNote.Select(x => x.Recipe).ToList();
+                    }
+                    else
+                    {
+                        throw AppException.UnprocessableEntity(
+                            ErrorCodes.ErrMealNoSubstitute,
+                            $"Không tìm thấy món chay có nguyên liệu hoặc tên phù hợp với ghi chú '{request.CustomNote}'. Vui lòng thử từ khóa khác hoặc duyệt thư viện công thức.");
+                    }
+                }
+            }
+
+            // Giai đoạn 1: Tìm món trong khoảng dung sai calo cơ sở (nếu chưa lọc theo ghi chú)
+            if (substituteCandidates.Count == 0)
+            {
+                substituteCandidates = filteredCandidates
+                    .Where(r => r.CaloriesKcal >= minKcal && r.CaloriesKcal <= maxKcal)
+                    .OrderBy(r => Math.Abs(r.CaloriesKcal - oldCalories))
+                    .ToList();
+            }
 
             // Giai đoạn 2 (Fallback): Nới rộng khoảng calo (+-350 kcal hoặc 40%)
             if (substituteCandidates.Count == 0)
@@ -1445,7 +1522,9 @@ public class MealPlanService : IMealPlanService
         var caloriesDelta = Math.Round(newRecipe.CaloriesKcal - oldRecipe.CaloriesKcal, 1);
         var swapReason = !string.IsNullOrWhiteSpace(request?.SwapReason)
             ? request.SwapReason
-            : (request?.NewRecipeId.HasValue == true ? "MANUAL_SELECTION" : "TASTE_PREFERENCE");
+            : (!string.IsNullOrWhiteSpace(request?.CustomNote)
+                ? request.CustomNote
+                : (request?.NewRecipeId.HasValue == true ? "MANUAL_SELECTION" : "TASTE_PREFERENCE"));
 
         // Ghi nhận lịch sử đổi món vào bảng MealSlotSwapHistories
         var swapHistory = new MealSlotSwapHistory
@@ -1721,10 +1800,18 @@ public class MealPlanService : IMealPlanService
         if (selectedRecipe == null)
         {
             _logger.LogInformation("[MealPlanService] Dùng Fallback Engine cho đổi món theo ghi chú.");
-            var noteKeywords = request.Note
-                .Split(new[] { ' ', ',', '.', ';', '!', '?' }, StringSplitOptions.RemoveEmptyEntries)
-                .Where(w => w.Length >= 2)
+            var cleanNote = request.Note.Trim().ToLowerInvariant();
+            var noteDelimiters = new[] { ' ', ',', '.', ';', '!', '?', '+', '-', '/', '_', '(', ')', '[', ']', ':', '"', '\'' };
+            var stopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "yêu", "cầu", "muốn", "thích", "không", "món", "cho", "với", "nhiều", "ít", "được", "mình", "ngày", "bữa", "ăn",
+                "tôi", "có", "các", "của", "những", "và", "nhưng", "hoặc", "lại", "thì", "là", "ở", "vào", "ra", "lên", "xuống",
+                "rất", "quá", "này", "đó", "kia", "nào", "thêm", "bớt"
+            };
+            var noteKeywords = cleanNote
+                .Split(noteDelimiters, StringSplitOptions.RemoveEmptyEntries)
                 .Select(w => w.Trim().ToLowerInvariant())
+                .Where(w => w.Length >= 2 && !stopWords.Contains(w))
                 .ToList();
 
             var scoredCandidates = candidateRecipes.Select(r =>
@@ -1736,6 +1823,22 @@ public class MealPlanService : IMealPlanService
                     .Select(ri => (ri.Ingredient != null ? ri.Ingredient.IngredientName : string.Empty).ToLowerInvariant())
                     .ToList();
 
+                // Ưu tiên cụm từ khóa ghép nếu có từ 2 từ trở lên (ví dụ: "bí đỏ", "nấm rơm")
+                foreach (var kw1 in noteKeywords)
+                {
+                    foreach (var kw2 in noteKeywords)
+                    {
+                        if (kw1 != kw2)
+                        {
+                            var phrase = $"{kw1} {kw2}";
+                            if (titleLower.Contains(phrase)) score += 25;
+                            if (descLower.Contains(phrase)) score += 12;
+                            if (ingredientNamesLower.Any(ing => ing.Contains(phrase))) score += 20;
+                        }
+                    }
+                }
+
+                // Điểm từng từ khóa riêng lẻ
                 foreach (var kw in noteKeywords)
                 {
                     if (titleLower.Contains(kw)) score += 5;
@@ -1749,7 +1852,17 @@ public class MealPlanService : IMealPlanService
             .ThenBy(x => x.CalorieDiff)
             .ToList();
 
-            selectedRecipe = scoredCandidates[0].Recipe;
+            var positiveMatches = scoredCandidates.Where(x => x.Score > 0).ToList();
+            if (positiveMatches.Count > 0)
+            {
+                selectedRecipe = positiveMatches[0].Recipe;
+            }
+            else
+            {
+                throw AppException.UnprocessableEntity(
+                    ErrorCodes.ErrMealNoSubstitute,
+                    $"Không tìm thấy món chay có nguyên liệu hoặc tên phù hợp với ghi chú '{request.Note}'. Vui lòng thử từ khóa khác hoặc duyệt thư viện công thức.");
+            }
             resolvedReason = request.Note;
         }
 
@@ -1788,6 +1901,43 @@ public class MealPlanService : IMealPlanService
 
         await _db.SaveChangesAsync(ct);
 
+        var slotHistories = await _db.MealSlotSwapHistories
+            .Include(h => h.OldRecipe)
+            .Include(h => h.NewRecipe)
+            .Where(h => h.SlotId == slot.SlotId)
+            .OrderByDescending(h => h.SwappedAt)
+            .Select(h => new MealSlotSwapHistoryDto
+            {
+                HistoryId = h.SwapHistoryId,
+                SlotId = h.SlotId,
+                OldRecipeId = h.OldRecipeId,
+                OldRecipeTitle = h.OldRecipe != null ? h.OldRecipe.Title : string.Empty,
+                OldRecipeImageUrl = h.OldRecipe != null ? h.OldRecipe.ImageUrl : null,
+                OldRecipeCalories = h.OldRecipe != null ? h.OldRecipe.CaloriesKcal : 0m,
+                OldRecipe = h.OldRecipe != null ? new MealSlotRecipeDto
+                {
+                    RecipeId = h.OldRecipe.RecipeId,
+                    Title = h.OldRecipe.Title,
+                    CaloriesKcal = h.OldRecipe.CaloriesKcal,
+                    ImageUrl = h.OldRecipe.ImageUrl
+                } : null,
+                NewRecipeId = h.NewRecipeId,
+                NewRecipeTitle = h.NewRecipe != null ? h.NewRecipe.Title : string.Empty,
+                NewRecipeImageUrl = h.NewRecipe != null ? h.NewRecipe.ImageUrl : null,
+                NewRecipeCalories = h.NewRecipe != null ? h.NewRecipe.CaloriesKcal : 0m,
+                NewRecipe = h.NewRecipe != null ? new MealSlotRecipeDto
+                {
+                    RecipeId = h.NewRecipe.RecipeId,
+                    Title = h.NewRecipe.Title,
+                    CaloriesKcal = h.NewRecipe.CaloriesKcal,
+                    ImageUrl = h.NewRecipe.ImageUrl
+                } : null,
+                SwapReason = h.SwapReason,
+                CaloriesDelta = h.CaloriesDelta,
+                SwappedAt = h.SwappedAt
+            })
+            .ToListAsync(ct);
+
         return new UpdateMealPlanSlotResponseData
         {
             Slot = new MealSlotDto
@@ -1796,13 +1946,16 @@ public class MealPlanService : IMealPlanService
                 DayOfWeek = slot.DayOfWeek,
                 MealType = slot.MealType,
                 IsCompleted = slot.IsCompleted,
+                Notes = slot.Notes,
                 Recipe = new MealSlotRecipeDto
                 {
                     RecipeId = selectedRecipe.RecipeId,
                     Title = selectedRecipe.Title,
                     CaloriesKcal = selectedRecipe.CaloriesKcal,
                     ImageUrl = selectedRecipe.ImageUrl
-                }
+                },
+                SwapCount = slotHistories.Count,
+                SwapHistories = slotHistories
             },
             SwapsRemaining = plan.SwapsRemaining,
             MaxSwapsAllowed = plan.MaxSwapsAllowed

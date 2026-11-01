@@ -1846,4 +1846,73 @@ public class MealPlanServiceTests : IDisposable
         result.Slots.Skip(3).Take(3).All(s => s.DayOfWeek == "THU").Should().BeTrue();
         result.Slots.Skip(6).Take(3).All(s => s.DayOfWeek == "FRI").Should().BeTrue();
     }
+
+    [Fact]
+    public async Task UpdateMealPlanSlot_WithCustomNote_Pumpkin_SelectsPumpkinRecipe()
+    {
+        // Arrange
+        var userId = 809;
+        SetupTestUserAndProfile(userId);
+        var monday = GetNextMonday();
+
+        var createReq = new CreateMealPlanRequest
+        {
+            StartDate = monday.ToString("yyyy-MM-dd"),
+            BudgetTier = "STANDARD",
+            DurationDays = 7
+        };
+        var plan = await _service.CreateMealPlanAsync(userId, UserRoles.Member, createReq);
+        var targetSlot = plan.Slots.First();
+
+        var updateReq = new UpdateMealPlanSlotRequest
+        {
+            CustomNote = "yêu cầu ăn bí đỏ +"
+        };
+
+        // Act
+        var result = await _service.UpdateMealPlanSlotAsync(plan.PlanId, targetSlot.SlotId, userId, UserRoles.Member, updateReq);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Slot.Recipe.Should().NotBeNull();
+        result.Slot.Recipe!.Title.ToLowerInvariant().Should().Contain("bí đỏ");
+        result.Slot.SwapCount.Should().Be(1);
+        result.Slot.SwapHistories.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task SwapMealSlotByNote_ReturnsSwapHistoriesAndSwapCount()
+    {
+        // Arrange
+        var userId = 810;
+        SetupTestUserAndProfile(userId);
+        var monday = GetNextMonday();
+
+        var createReq = new CreateMealPlanRequest
+        {
+            StartDate = monday.ToString("yyyy-MM-dd"),
+            BudgetTier = "STANDARD",
+            DurationDays = 7
+        };
+        var plan = await _service.CreateMealPlanAsync(userId, UserRoles.Member, createReq);
+        var targetSlot = plan.Slots.First();
+
+        _mockAiClient.Setup(c => c.SwapMealByNoteAsync(It.IsAny<AiSwapMealByNoteRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AiSwapMealByNoteResponse?)null);
+
+        var swapReq = new SwapMealSlotByNoteRequest
+        {
+            Note = "bí đỏ hạt sen"
+        };
+
+        // Act
+        var result = await _service.SwapMealSlotByNoteAsync(targetSlot.SlotId, userId, UserRoles.Member, swapReq, plan.PlanId);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Slot.Recipe.Should().NotBeNull();
+        result.Slot.Recipe!.Title.ToLowerInvariant().Should().Contain("bí đỏ");
+        result.Slot.SwapCount.Should().Be(1);
+        result.Slot.SwapHistories.Should().HaveCount(1);
+    }
 }
