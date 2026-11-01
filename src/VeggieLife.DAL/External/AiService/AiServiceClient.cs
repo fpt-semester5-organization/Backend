@@ -81,8 +81,9 @@ public class AiServiceClient : IAiServiceClient
 
         try
         {
-            // Thiết lập timeout 4 giây bằng CancellationTokenSource kết hợp (BR-ADM-AI-002)
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+            // Thiết lập timeout theo cấu hình (mặc định tối thiểu 25 giây cho sinh thực đơn 21 slots)
+            var timeoutSec = _settings.TimeoutSeconds > 0 ? Math.Max(_settings.TimeoutSeconds, 25) : 25;
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSec));
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
             var response = await _httpClient.PostAsJsonAsync("/meal/generate", request, linkedCts.Token);
@@ -102,15 +103,15 @@ public class AiServiceClient : IAiServiceClient
             }
 
             var statusCode = (int)response.StatusCode;
-            _logger.LogWarning("[AiServiceClient] ai-service phản hồi lỗi HTTP {StatusCode}", statusCode);
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken: ct);
+            _logger.LogWarning("[AiServiceClient] ai-service phản hồi lỗi HTTP {StatusCode}: {ErrorBody}", statusCode, errorBody);
             RecordFailure();
             return null;
         }
         catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
         {
-            // Quá 4 giây timeout (BR-ADM-AI-002)
             sw.Stop();
-            _logger.LogWarning(ex, "[AiServiceClient] Gọi ai-service bị TIMEOUT quá 4 giây ({ElapsedMs} ms).", sw.ElapsedMilliseconds);
+            _logger.LogWarning(ex, "[AiServiceClient] Gọi ai-service bị TIMEOUT ({ElapsedMs} ms).", sw.ElapsedMilliseconds);
             RecordFailure();
             return null;
         }
@@ -143,7 +144,8 @@ public class AiServiceClient : IAiServiceClient
 
         try
         {
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+            var timeoutSec = 15;
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSec));
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
             var response = await _httpClient.PostAsJsonAsync("/meal/swap-by-note", request, linkedCts.Token);
@@ -169,7 +171,7 @@ public class AiServiceClient : IAiServiceClient
         catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
         {
             sw.Stop();
-            _logger.LogWarning(ex, "[AiServiceClient] Gọi ai-service /meal/swap-by-note bị TIMEOUT quá 4 giây ({ElapsedMs} ms).", sw.ElapsedMilliseconds);
+            _logger.LogWarning(ex, "[AiServiceClient] Gọi ai-service /meal/swap-by-note bị TIMEOUT ({ElapsedMs} ms).", sw.ElapsedMilliseconds);
             RecordFailure();
             return null;
         }

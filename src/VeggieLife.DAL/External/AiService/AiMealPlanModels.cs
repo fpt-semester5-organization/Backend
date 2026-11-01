@@ -12,6 +12,7 @@ public class AiMealPlanRequest
     public string DietarySchoolCode { get; set; } = null!;
     public bool RequiresAlliumFree { get; set; }
     public int DurationDays { get; set; } = 7;
+    public string? StartDate { get; set; }
     public List<string> ForbiddenFoodGroups { get; set; } = new();
     public List<int> ExcludedRecipeIds { get; set; } = new();
     public List<AiCandidateRecipeDto> CandidateRecipes { get; set; } = new();
@@ -48,6 +49,7 @@ public class AiCandidateRecipeDto
     public string? CategoryName { get; set; }
     public bool UsesFridgeItem { get; set; }
     public string? MealTypePreference { get; set; }
+    public int FavoriteCount { get; set; }
     public List<AiRecipeIngredientDto> Ingredients { get; set; } = new();
 }
 
@@ -99,7 +101,7 @@ public class AiMealPlanResponse
 }
 
 /// <summary>
-/// Vị trí bữa ăn do AI đề xuất.
+/// Vị trí bữa ăn do AI đề xuất kèm bằng chứng (Kcal, thời gian nấu, số tim, lý do khớp).
 /// </summary>
 public class AiMealSlotResultDto
 {
@@ -111,6 +113,18 @@ public class AiMealSlotResultDto
 
     [JsonPropertyName("recipeId")]
     public int RecipeId { get; set; }
+
+    [JsonPropertyName("caloriesKcal")]
+    public decimal? CaloriesKcal { get; set; }
+
+    [JsonPropertyName("cookTimeMinutes")]
+    public int? CookTimeMinutes { get; set; }
+
+    [JsonPropertyName("favoriteCount")]
+    public int? FavoriteCount { get; set; }
+
+    [JsonPropertyName("matchReason")]
+    public string? MatchReason { get; set; }
 }
 
 /// <summary>
@@ -140,6 +154,15 @@ public class AiSwapMealByNoteResponse
 
     [JsonPropertyName("reason")]
     public string? Reason { get; set; }
+
+    [JsonPropertyName("caloriesKcal")]
+    public decimal? CaloriesKcal { get; set; }
+
+    [JsonPropertyName("cookTimeMinutes")]
+    public int? CookTimeMinutes { get; set; }
+
+    [JsonPropertyName("favoriteCount")]
+    public int? FavoriteCount { get; set; }
 
     [JsonPropertyName("usage")]
     public AiUsageDto? Usage { get; set; }
