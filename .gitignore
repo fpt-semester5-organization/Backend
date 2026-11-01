@@ -18,10 +18,18 @@ docs/*
 !docs/10.*
 !docs/11.*
 !docs/README.md
+!docs/SWP391-AppDevProject_SRS_FA25_VeggieLife.docx
+!docs/SWP391-AppDevProject_SRS_FA25_VeggieLife_FINAL.docx
+!docs/VeggieLife_ Diagram.drawio
+!docs/diagrams_svg/
+!docs/diagrams_svg/*
+!docs/diagrams_highres/
+!docs/diagrams_highres/*
 
 *.drawio
 *.drawio.bkp
 *.drawio.bak
+!docs/VeggieLife_ Diagram.drawio
 
 ## Build results
 [Bb]in/
