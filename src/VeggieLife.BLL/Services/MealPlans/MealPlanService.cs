@@ -1343,6 +1343,20 @@ public class MealPlanService : IMealPlanService
             }
             newRecipe = chosenRecipe;
         }
+        else if (!string.IsNullOrWhiteSpace(request?.CustomNote))
+        {
+            return await SwapMealSlotByNoteAsync(
+                slotId,
+                userId,
+                userRole,
+                new SwapMealSlotByNoteRequest
+                {
+                    Note = request.CustomNote,
+                    ExcludedRecipeIds = request.ExcludedRecipeIds
+                },
+                id,
+                ct);
+        }
         else
         {
             var calorieTolerancePercent = await _settingService.GetIntSettingAsync("MEAL_SWAP_CALORIE_TOLERANCE_PERCENT", 15, ct);

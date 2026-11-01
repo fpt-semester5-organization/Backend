@@ -1465,6 +1465,7 @@ public class MealPlanServiceTests : IDisposable
         CreateRecipeWithIngredients(125, "Salad ngũ sắc sốt dấm táo", 350m, 1, [ingRice, ingMushroom]);
         CreateRecipeWithIngredients(126, "Canh rong biển nấu nấm", 380m, 1, [ingRice, ingMushroom]);
         CreateRecipeWithIngredients(127, "Cơm nắm hạt dinh dưỡng cao năng", 850m, 1, [ingRice, ingMushroom]);
+        CreateRecipeWithIngredients(128, "Đậu bắp luộc chấm chao ớt", 520m, 1, [ingRice, ingMushroom]);
 
         // B. Nhóm món có Đậu hũ (Chứa chất dị ứng Đậu nành)
         CreateRecipeWithIngredients(110, "Đậu hũ sốt cà chua", 500m, 1, [ingTofu, ingRice]);
@@ -1912,6 +1913,39 @@ public class MealPlanServiceTests : IDisposable
         result.Should().NotBeNull();
         result.Slot.Recipe.Should().NotBeNull();
         result.Slot.Recipe!.Title.ToLowerInvariant().Should().Contain("bí đỏ");
+        result.Slot.SwapCount.Should().Be(1);
+        result.Slot.SwapHistories.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task UpdateMealPlanSlot_WithCustomNote_Chili_SelectsChiliRecipe()
+    {
+        // Arrange
+        var userId = 811;
+        SetupTestUserAndProfile(userId);
+        var monday = GetNextMonday();
+
+        var createReq = new CreateMealPlanRequest
+        {
+            StartDate = monday.ToString("yyyy-MM-dd"),
+            BudgetTier = "STANDARD",
+            DurationDays = 7
+        };
+        var plan = await _service.CreateMealPlanAsync(userId, UserRoles.Member, createReq);
+        var targetSlot = plan.Slots.First();
+
+        var updateReq = new UpdateMealPlanSlotRequest
+        {
+            CustomNote = "tôi muốn ăn món có ớt"
+        };
+
+        // Act
+        var result = await _service.UpdateMealPlanSlotAsync(plan.PlanId, targetSlot.SlotId, userId, UserRoles.Member, updateReq);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Slot.Recipe.Should().NotBeNull();
+        result.Slot.Recipe!.Title.ToLowerInvariant().Should().Contain("ớt");
         result.Slot.SwapCount.Should().Be(1);
         result.Slot.SwapHistories.Should().HaveCount(1);
     }
