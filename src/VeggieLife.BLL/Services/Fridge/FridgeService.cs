@@ -231,40 +231,54 @@ public class FridgeService : IFridgeService
         foreach (var rawItem in rawAiItems)
         {
             var rawName = rawItem.Name.Trim();
-            var isMeatOrAnimal = rawItem.IsAnimalProduct || rawItem.IsRedMeat || IsMeatOrSeafood(rawName, rawItem.FoodGroup);
+            var isMeat = (rawItem.IsRedMeat || IsMeatOrSeafood(rawName, rawItem.FoodGroup)) && !IsVegetarianOverride(rawName);
 
-            if (isGuest)
+            if (isMeat)
             {
-                if (isMeatOrAnimal)
-                {
-                    warnings.Add($"Cảnh báo: Phát hiện '{rawName}' là thực phẩm có nguồn gốc động vật/hải sản, không thuộc nhóm thuần chay (BR-ADM-CNT-003).");
-                }
+                warnings.Add($"Phát hiện '{rawName}' là đồ ăn mặn / thịt cá (không được lưu vào tủ lạnh chay VeggieLife).");
             }
-            else
+            else if (rawItem.FoodGroup != null && forbiddenFoodGroups.Contains(rawItem.FoodGroup))
             {
-                if (isMeatOrAnimal)
-                {
-                    warnings.Add($"Cảnh báo: Phát hiện '{rawName}' là thực phẩm có nguồn gốc động vật/thịt, vi phạm tiêu chuẩn thuần chay (BR-ADM-CNT-003).");
-                }
-                else if (rawItem.FoodGroup != null && forbiddenFoodGroups.Contains(rawItem.FoodGroup))
-                {
-                    warnings.Add($"Cảnh báo: Phát hiện '{rawName}' thuộc nhóm '{rawItem.FoodGroup}', không phù hợp với trường phái {userSchoolName ?? "ăn chay"} của bạn (BR-ADM-CNT-003).");
-                }
+                warnings.Add($"Lưu ý: '{rawName}' thuộc nhóm '{rawItem.FoodGroup}', có thể không phù hợp với trường phái {userSchoolName ?? "ăn chay"} của bạn (BR-ADM-CNT-003).");
             }
         }
 
         // =========================================================================
-        // BƯỚC 5: ĐỐI CHIẾU KHỚP TÊN VỚI DANH MỤC INGREDIENTS (ĐỘ GIỐNG >= 80%)
+        // BƯỚC 5: ĐỐI CHIẾU KHỚP TÊN VỚI DANH MỤC INGREDIENTS HOẶC TỰ ĐỘNG TẠO MỚI
         // =========================================================================
-        var allIngredients = await _db.Ingredients.AsNoTracking().ToListAsync(ct);
+        var allIngredients = await _db.Ingredients.ToListAsync(ct);
         var detectedList = new List<DetectedFridgeIngredientDto>();
         var matchedItemsForSave = new List<(DetectedFridgeIngredientDto Dto, Ingredient MatchedIngredient)>();
+        var newIngredientsToPersist = new List<Ingredient>();
 
         foreach (var rawItem in rawAiItems)
         {
             var rawName = rawItem.Name.Trim();
             var freshness = NormalizeFreshness(rawItem.FreshnessStatus);
+            var isMeat = (rawItem.IsRedMeat || IsMeatOrSeafood(rawName, rawItem.FoodGroup)) && !IsVegetarianOverride(rawName);
 
+            // 1. Nếu là đồ ăn mặn / thịt cá -> BỎ QUA KHÔNG LƯU VÀO TỦ LẠNH CHAY
+            if (isMeat)
+            {
+                detectedList.Add(new DetectedFridgeIngredientDto
+                {
+                    InventoryId = null,
+                    IngredientId = null,
+                    Name = rawName,
+                    FreshnessStatus = freshness,
+                    Box2D = rawItem.Box2D,
+                    Quantity = rawItem.Quantity,
+                    Amount = rawItem.Amount,
+                    Unit = rawItem.Unit,
+                    FoodGroup = rawItem.FoodGroup ?? "MEAT",
+                    IsAnimalProduct = true,
+                    IsRedMeat = true,
+                    Confidence = 0.95
+                });
+                continue;
+            }
+
+            // 2. Tìm trong danh mục nguyên liệu hiện có (>= 80% tương đồng)
             Ingredient? bestMatch = null;
             var highestSim = 0.0;
 
@@ -278,36 +292,75 @@ public class FridgeService : IFridgeService
                 }
             }
 
+            Ingredient targetIngredient;
+            string targetName;
+
             if (highestSim >= 0.80 && bestMatch != null)
             {
-                var dto = new DetectedFridgeIngredientDto
-                {
-                    InventoryId = null, // Sẽ được điền sau khi lưu vào DB (nếu là Thành viên)
-                    IngredientId = bestMatch.IngredientId,
-                    Name = bestMatch.IngredientName,
-                    FreshnessStatus = freshness,
-                    Box2D = rawItem.Box2D,
-                    Quantity = rawItem.Quantity,
-                    Amount = rawItem.Amount,
-                    Unit = rawItem.Unit
-                };
-                detectedList.Add(dto);
-                matchedItemsForSave.Add((dto, bestMatch));
+                targetIngredient = bestMatch;
+                targetName = bestMatch.IngredientName;
             }
             else
             {
-                // Không khớp >= 80%: không lưu vào DB, trả về để người dùng chọn thủ công
-                detectedList.Add(new DetectedFridgeIngredientDto
+                // 3. Thực phẩm của người dùng (chưa có trong danh mục mẫu): TỰ ĐỘNG TẠO ĐỂ LƯU VÀO TỦ LẠNH
+                var parenIdx = rawName.IndexOf('(');
+                var cleanName = parenIdx > 0 ? rawName.Substring(0, parenIdx).Trim() : rawName;
+                if (string.IsNullOrWhiteSpace(cleanName)) cleanName = rawName;
+                if (cleanName.Length > 100) cleanName = cleanName[..100];
+
+                var existingDbIng = allIngredients.FirstOrDefault(i => i.IngredientName.Equals(cleanName, StringComparison.OrdinalIgnoreCase));
+                if (existingDbIng == null)
                 {
-                    InventoryId = null,
-                    IngredientId = null,
-                    Name = rawName,
-                    FreshnessStatus = freshness,
-                    Box2D = rawItem.Box2D,
-                    Quantity = rawItem.Quantity,
-                    Amount = rawItem.Amount,
-                    Unit = rawItem.Unit
-                });
+                    var unitStr = !string.IsNullOrWhiteSpace(rawItem.Unit) ? rawItem.Unit.Trim() : "phần";
+                    if (unitStr.Length > 20) unitStr = unitStr[..20];
+
+                    var fg = NormalizeFoodGroup(rawItem.FoodGroup, cleanName);
+
+                    existingDbIng = new Ingredient
+                    {
+                        IngredientName = cleanName,
+                        StandardUnit = unitStr,
+                        DefaultStallType = "PRODUCE",
+                        FoodGroup = fg,
+                        IsAllium = false,
+                        CaloriesPer100g = 50m,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _db.Ingredients.Add(existingDbIng);
+                    allIngredients.Add(existingDbIng);
+                    newIngredientsToPersist.Add(existingDbIng);
+                }
+
+                targetIngredient = existingDbIng;
+                targetName = cleanName;
+            }
+
+            var dto = new DetectedFridgeIngredientDto
+            {
+                InventoryId = null,
+                IngredientId = targetIngredient.IngredientId > 0 ? targetIngredient.IngredientId : null,
+                Name = targetName,
+                FreshnessStatus = freshness,
+                Box2D = rawItem.Box2D,
+                Quantity = rawItem.Quantity,
+                Amount = rawItem.Amount,
+                Unit = rawItem.Unit,
+                FoodGroup = rawItem.FoodGroup,
+                IsAnimalProduct = rawItem.IsAnimalProduct,
+                IsRedMeat = false,
+                Confidence = 0.95
+            };
+            detectedList.Add(dto);
+            matchedItemsForSave.Add((dto, targetIngredient));
+        }
+
+        // Lưu các nguyên liệu mới tạo vào CSDL trước khi gán vào FridgeInventory
+        if (newIngredientsToPersist.Count > 0 && !isGuest && userId.HasValue)
+        {
+            await _db.SaveChangesAsync(ct);
+            foreach (var (dto, ing) in matchedItemsForSave)
+            {
+                dto.IngredientId = ing.IngredientId;
             }
         }
 
@@ -338,6 +391,11 @@ public class FridgeService : IFridgeService
                 imageCdnUrl = $"https://cdn.veggielife.vn/fridge/{DateTime.UtcNow:yyyyMMdd}/{Guid.NewGuid():N}.jpg";
             }
 
+            if (!string.IsNullOrWhiteSpace(imageCdnUrl) && imageCdnUrl.Length > 255)
+            {
+                imageCdnUrl = imageCdnUrl[..255];
+            }
+
             // 6.2 Tạo phiên nhận diện FridgeSessions
             var fridgeSession = new FridgeSession
             {
@@ -357,23 +415,37 @@ public class FridgeService : IFridgeService
             foreach (var (dto, matchedIng) in matchedItemsForSave)
             {
                 var existingItem = existingInventoryList.FirstOrDefault(f => f.IngredientId == matchedIng.IngredientId);
+                var parsed = ParseAmountAndUnit(dto.Quantity, dto.Amount, dto.Unit, matchedIng.StandardUnit);
                 if (existingItem != null)
                 {
                     existingItem.FreshnessStatus = dto.FreshnessStatus;
                     existingItem.SessionId = fridgeSession.SessionId;
+                    if (!string.IsNullOrWhiteSpace(dto.Quantity))
+                    {
+                        var displayName = $"{matchedIng.IngredientName} ({dto.Quantity})";
+                        existingItem.CustomItemName = displayName.Length > 100 ? displayName[..100] : displayName;
+                    }
+                    existingItem.Quantity = parsed.Amount;
+                    existingItem.Unit = parsed.Unit.Length > 30 ? parsed.Unit[..30] : parsed.Unit;
                     dto.InventoryId = existingItem.InventoryId;
                 }
                 else
                 {
+                    var customName = !string.IsNullOrWhiteSpace(dto.Quantity)
+                        ? $"{matchedIng.IngredientName} ({dto.Quantity})"
+                        : matchedIng.IngredientName;
+
+                    if (customName.Length > 100) customName = customName[..100];
+
                     var newItem = new FridgeInventory
                     {
                         UserId = memberId,
                         IngredientId = matchedIng.IngredientId,
                         SessionId = fridgeSession.SessionId,
-                        CustomItemName = matchedIng.IngredientName,
+                        CustomItemName = customName,
                         FreshnessStatus = dto.FreshnessStatus,
-                        Quantity = 1.0m,
-                        Unit = matchedIng.StandardUnit
+                        Quantity = parsed.Amount,
+                        Unit = parsed.Unit.Length > 30 ? parsed.Unit[..30] : parsed.Unit
                     };
                     _db.FridgeInventories.Add(newItem);
                     existingInventoryList.Add(newItem);
@@ -386,10 +458,10 @@ public class FridgeService : IFridgeService
             // Gán lại InventoryId cho các mục vừa thêm mới
             foreach (var (dto, matchedIng) in matchedItemsForSave)
             {
-                if (dto.InventoryId == null)
+                if (dto.InventoryId == null || dto.InventoryId == 0)
                 {
                     var savedItem = existingInventoryList.FirstOrDefault(f => f.IngredientId == matchedIng.IngredientId);
-                    if (savedItem != null)
+                    if (savedItem != null && savedItem.InventoryId > 0)
                     {
                         dto.InventoryId = savedItem.InventoryId;
                     }
@@ -519,17 +591,16 @@ public class FridgeService : IFridgeService
             var existingDbIng = await _db.Ingredients.FirstOrDefaultAsync(i => i.IngredientName.ToLower() == cleanName.ToLower(), ct);
             if (existingDbIng == null)
             {
-                var ingIds = await _db.Ingredients.Select(i => i.IngredientId).ToListAsync(ct);
-                var maxId = ingIds.Count > 0 ? ingIds.Max() : 100;
+                var standardUnit = !string.IsNullOrWhiteSpace(request.Unit) ? (request.Unit.Length > 20 ? request.Unit[..20] : request.Unit) : "g";
                 existingDbIng = new Ingredient
                 {
-                    IngredientId = maxId + 1,
-                    IngredientName = cleanName,
-                    StandardUnit = "g",
+                    IngredientName = cleanName.Length > 100 ? cleanName[..100] : cleanName,
+                    StandardUnit = standardUnit,
                     DefaultStallType = "PRODUCE",
-                    FoodGroup = "PLANT",
+                    FoodGroup = NormalizeFoodGroup(null, cleanName),
                     IsAllium = false,
-                    CaloriesPer100g = 50m
+                    CaloriesPer100g = 50m,
+                    CreatedAt = DateTime.UtcNow
                 };
                 _db.Ingredients.Add(existingDbIng);
                 await _db.SaveChangesAsync(ct);
@@ -550,19 +621,20 @@ public class FridgeService : IFridgeService
             throw AppException.Conflict(ErrorCodes.ErrFridgeItemExists, "Nguyên liệu đã có trong tủ.");
         }
 
+        var parsed = ParseAmountAndUnit(request.CustomItemName, request.Quantity, request.Unit, ingredient.StandardUnit);
         var customName = string.IsNullOrWhiteSpace(request.CustomItemName) ? ingredient.IngredientName : request.CustomItemName.Trim();
         var freshness = string.Equals(request.FreshnessStatus, "NON-FRESH", StringComparison.OrdinalIgnoreCase) ? "NON-FRESH" : "FRESH";
-        var quantity = request.Quantity > 0 ? request.Quantity : 1.0m;
-        var unit = !string.IsNullOrWhiteSpace(request.Unit) ? request.Unit.Trim() : ingredient.StandardUnit;
+        var quantity = parsed.Amount > 0 ? parsed.Amount : (request.Quantity > 0 ? request.Quantity : 1.0m);
+        var unit = !string.IsNullOrWhiteSpace(parsed.Unit) ? parsed.Unit : (!string.IsNullOrWhiteSpace(request.Unit) ? request.Unit.Trim() : ingredient.StandardUnit);
 
         var newItem = new FridgeInventory
         {
             UserId = userId,
             IngredientId = ingredient.IngredientId,
-            CustomItemName = customName,
+            CustomItemName = customName.Length > 100 ? customName[..100] : customName,
             FreshnessStatus = freshness,
             Quantity = quantity,
-            Unit = unit
+            Unit = unit.Length > 30 ? unit[..30] : unit
         };
 
         _db.FridgeInventories.Add(newItem);
@@ -688,19 +760,283 @@ public class FridgeService : IFridgeService
         return upper == "NON-FRESH" ? "NON-FRESH" : "FRESH";
     }
 
+    private static string NormalizeFoodGroup(string? rawGroup, string name)
+    {
+        var lower = (name ?? string.Empty).ToLowerInvariant();
+        if (lower.Contains("trứng") || lower.Contains("hột gà") || lower.Contains("hột vịt"))
+        {
+            return "EGG";
+        }
+        if (lower.Contains("sữa") || lower.Contains("kem") || lower.Contains("phô mai") || lower.Contains("bơ") ||
+            lower.Contains("cheese") || lower.Contains("milk") || lower.Contains("yogurt"))
+        {
+            return "DAIRY";
+        }
+
+        if (!string.IsNullOrWhiteSpace(rawGroup))
+        {
+            var upper = rawGroup.Trim().ToUpperInvariant();
+            if (upper.Contains("DAIRY") || upper.Contains("SỮA")) return "DAIRY";
+            if (upper.Contains("EGG") || upper.Contains("TRỨNG")) return "EGG";
+            if (upper.Contains("POULTRY") || upper.Contains("GIA CẦM")) return "POULTRY";
+            if (upper.Contains("SEAFOOD") || upper.Contains("HẢI SẢN") || upper.Contains("CÁ")) return "SEAFOOD";
+        }
+
+        return "PLANT";
+    }
+
+    private static (decimal Amount, string Unit) ParseAmountAndUnit(string? quantityText, decimal? rawAmount, string? rawUnit, string defaultUnit)
+    {
+        // 1. Ưu tiên phân tích khối lượng (g, kg) hoặc thể tích (ml, l) rõ ràng trong văn bản (ví dụ: "1/2 bắp (~300g)", "1 quả (~150g)", "2 chai 500ml", "3 chai 1L", "300 g", "(500 g)")
+        if (!string.IsNullOrWhiteSpace(quantityText))
+        {
+            // Trường hợp 1a: Đa món kèm thể tích/khối lượng từng món: ví dụ: "2 chai 500ml", "3 chai 1L"
+            var multiMatch = System.Text.RegularExpressions.Regex.Match(
+                quantityText,
+                @"(\d+(?:[\.,]\d+)?)\s*(?:chai|hũ|hộp|lon|gói|túi)\s*(\d+(?:[\.,]\d+)?)\s*(ml|l|lít|lit|g|gam|gram|kg|kilo)\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            if (multiMatch.Success)
+            {
+                var countStr = multiMatch.Groups[1].Value.Replace(',', '.');
+                var volStr = multiMatch.Groups[2].Value.Replace(',', '.');
+                if (decimal.TryParse(countStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var cnt) &&
+                    decimal.TryParse(volStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vol) &&
+                    cnt > 0 && vol > 0)
+                {
+                    var u = multiMatch.Groups[3].Value.ToLowerInvariant();
+                    var total = cnt * vol;
+                    if (u is "kg" or "kilo" or "kilogram" or "l" or "lít" or "lit")
+                    {
+                        total *= 1000m;
+                    }
+                    var stdUnit = (u is "l" or "lít" or "lit" or "ml") ? "ml" : "g";
+                    return (total, stdUnit);
+                }
+            }
+
+            // Trường hợp 1b: Khối lượng hoặc thể tích có đơn vị rõ ràng: ví dụ "(~300g)", "300 g", "500g", "1.5 kg", "500ml"
+            var match = System.Text.RegularExpressions.Regex.Match(
+                quantityText,
+                @"[~]?\s*(\d+(?:[\.,]\d+)?)\s*(kg|kilo|kilogram|g|gam|gram|ml|l|lít|lit)\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            if (match.Success)
+            {
+                var numStr = match.Groups[1].Value.Replace(',', '.');
+                if (decimal.TryParse(numStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedNum) && parsedNum > 0)
+                {
+                    var u = match.Groups[2].Value.ToLowerInvariant();
+                    if (u is "kg" or "kilo" or "kilogram")
+                    {
+                        return (parsedNum * 1000m, "g");
+                    }
+                    if (u is "l" or "lít" or "lit")
+                    {
+                        return (parsedNum * 1000m, "ml");
+                    }
+                    if (u is "gam" or "gram")
+                    {
+                        return (parsedNum, "g");
+                    }
+                    return (parsedNum, u);
+                }
+            }
+
+            // Trường hợp 1c: Hậu tố số trong ngoặc: ví dụ "Đậu hũ trắng (Tofu) (300)"
+            var parenNumMatch = System.Text.RegularExpressions.Regex.Match(
+                quantityText,
+                @"\(\s*(\d+(?:[\.,]\d+)?)\s*\)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            if (parenNumMatch.Success)
+            {
+                var numStr = parenNumMatch.Groups[1].Value.Replace(',', '.');
+                if (decimal.TryParse(numStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedNum) && parsedNum > 0)
+                {
+                    return (parsedNum, defaultUnit == "ml" ? "ml" : "g");
+                }
+            }
+        }
+
+        // 2. Sử dụng rawAmount nếu có (ví dụ: đã lưu trong database hoặc truyền thủ công)
+        if (rawAmount.HasValue && rawAmount.Value > 0)
+        {
+            var u = !string.IsNullOrWhiteSpace(rawUnit) ? rawUnit.Trim() : defaultUnit;
+            if (u.Equals("kg", StringComparison.OrdinalIgnoreCase) || u.Equals("kilo", StringComparison.OrdinalIgnoreCase))
+            {
+                return (rawAmount.Value * 1000m, "g");
+            }
+            if (u.Equals("l", StringComparison.OrdinalIgnoreCase) || u.Equals("lít", StringComparison.OrdinalIgnoreCase) || u.Equals("lit", StringComparison.OrdinalIgnoreCase))
+            {
+                return (rawAmount.Value * 1000m, "ml");
+            }
+            return (rawAmount.Value, u);
+        }
+
+        // 3. Đếm số lượng đếm được: ví dụ "3 quả", "2 củ", "1 bắp"
+        if (!string.IsNullOrWhiteSpace(quantityText))
+        {
+            var countMatch = System.Text.RegularExpressions.Regex.Match(
+                quantityText,
+                @"(\d+(?:[\.,]\d+)?)\s*([a-zA-Zà-ỹÀ-Ỹ]+)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            if (countMatch.Success)
+            {
+                var numStr = countMatch.Groups[1].Value.Replace(',', '.');
+                if (decimal.TryParse(numStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedNum) && parsedNum > 0)
+                {
+                    var u = countMatch.Groups[2].Value.Trim();
+                    return (parsedNum, u);
+                }
+            }
+        }
+
+        return (1.0m, defaultUnit);
+    }
+
+    private static bool IsQuantitySufficient(
+        decimal neededQty,
+        string? neededUnit,
+        decimal availableQty,
+        string? availableUnit)
+    {
+        if (neededQty <= 0) return true;
+        if (availableQty <= 0) return false;
+
+        var uNeed = (neededUnit ?? string.Empty).Trim().ToLowerInvariant();
+        var uAvail = (availableUnit ?? string.Empty).Trim().ToLowerInvariant();
+
+        if (uNeed == uAvail)
+        {
+            return availableQty >= neededQty;
+        }
+
+        var needGrams = ToGrams(neededQty, uNeed);
+        var availGrams = ToGrams(availableQty, uAvail);
+
+        if (needGrams.HasValue && availGrams.HasValue)
+        {
+            return availGrams.Value >= needGrams.Value;
+        }
+
+        var needMl = ToMilliliters(neededQty, uNeed);
+        var availMl = ToMilliliters(availableQty, uAvail);
+
+        if (needMl.HasValue && availMl.HasValue)
+        {
+            return availMl.Value >= needMl.Value;
+        }
+
+        // Nếu công thức cần định lượng gram (ví dụ: 100g) nhưng tủ lạnh đếm theo quả/cây/bắp/củ (ví dụ: 1 bắp, 2 quả)
+        if (needGrams.HasValue && IsCountUnit(uAvail))
+        {
+            // Trung bình 1 quả, 1 bắp, 1 cây rau củ nặng khoảng 150g - 250g
+            var estimatedGrams = availableQty * 150m;
+            return estimatedGrams >= needGrams.Value;
+        }
+
+        // Nếu tủ lạnh có gram (ví dụ: 300g) nhưng công thức cần miếng/lát
+        if (availGrams.HasValue && (uNeed is "m,ieng" or "miếng" or "lát"))
+        {
+            return availGrams.Value >= (neededQty * 20m);
+        }
+
+        if (string.IsNullOrWhiteSpace(uNeed) || string.IsNullOrWhiteSpace(uAvail) || uAvail == "phần" || uNeed == "phần")
+        {
+            return availableQty >= neededQty;
+        }
+
+        if (IsCountUnit(uNeed) && IsCountUnit(uAvail))
+        {
+            return availableQty >= neededQty;
+        }
+
+        return availableQty >= neededQty;
+    }
+
+    private static decimal? ToGrams(decimal qty, string unit)
+    {
+        return unit switch
+        {
+            "g" or "gam" or "gram" or "grams" => qty,
+            "kg" or "kilo" or "kilogram" => qty * 1000m,
+            "lạng" or "lang" => qty * 100m,
+            "mg" or "miligram" => qty / 1000m,
+            _ => null
+        };
+    }
+
+    private static decimal? ToMilliliters(decimal qty, string unit)
+    {
+        return unit switch
+        {
+            "ml" or "mililit" or "mililiters" => qty,
+            "l" or "lit" or "lít" or "liter" or "liters" => qty * 1000m,
+            "thìa cà phê" or "tsp" or "muỗng cà phê" => qty * 5m,
+            "thìa canh" or "tbsp" or "muỗng canh" => qty * 15m,
+            "chén" or "bát" or "cup" => qty * 240m,
+            _ => null
+        };
+    }
+
+    private static bool IsCountUnit(string unit)
+    {
+        var countUnits = new[] { "quả", "trái", "củ", "cây", "bắp", "miếng", "lát", "tép", "nhánh", "bìa", "hộp", "gói", "túi", "lon", "chai" };
+        return countUnits.Any(u => unit.Contains(u));
+    }
+
+    private static bool IsVegetarianOverride(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        var lower = name.Trim().ToLowerInvariant();
+        return lower.Contains("chay") ||
+               lower.Contains("thực vật") ||
+               lower.Contains("thuần chay") ||
+               lower.Contains("vegan") ||
+               lower.Contains("plant-based") ||
+               lower.Contains("non-dairy");
+    }
+
     private static bool IsMeatOrSeafood(string name, string? foodGroup)
     {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        if (IsVegetarianOverride(name)) return false;
+
+        var lower = name.Trim().ToLowerInvariant();
+
+        // Trứng và các món từ trứng, sữa, nước uống, bánh ngọt KHÔNG PHẢI là đồ ăn mặn / thịt cá
+        if (lower.Contains("trứng") || lower.Contains("hột gà") || lower.Contains("hột vịt") ||
+            lower.Contains("sữa") || lower.Contains("kem") || lower.Contains("phô mai") || lower.Contains("bơ") ||
+            lower.Contains("nước") || lower.Contains("trà") || lower.Contains("bánh"))
+        {
+            return false;
+        }
+
         if (!string.IsNullOrWhiteSpace(foodGroup))
         {
             var fg = foodGroup.Trim().ToUpperInvariant();
-            if (fg == "MEAT" || fg == "SEAFOOD" || fg == "POULTRY" || fg == "ANIMAL")
+            if (fg.Contains("RED_MEAT") || fg.Contains("THỊT ĐỎ") ||
+                fg.Contains("MEAT") || fg.Contains("THỊT") ||
+                fg.Contains("POULTRY") || fg.Contains("GIA CẦM") ||
+                fg.Contains("SEAFOOD") || fg.Contains("HẢI SẢN") ||
+                fg.Contains("THỦY HẢI SẢN") || fg.Contains("FISH") || fg.Contains("CÁ"))
             {
                 return true;
             }
         }
 
-        var lower = name.ToLowerInvariant();
-        var meatKeywords = new[] { "thịt", "bò", "heo", "lợn", "gà", "vịt", "cá", "tôm", "cua", "mực", "ốc", "hải sản", "chả cá", "xúc xích heo", "giò lụa" };
+        var meatKeywords = new[]
+        {
+            "thịt", "bò", "heo", "lợn", "gà", "vịt", "ngan", "ngỗng", "cừu", "dê", "bê",
+            "ba rọi", "ba chỉ", "sườn non", "sườn heo", "sườn bò", "xương heo", "xương bò",
+            "bò bít tết", "beefsteak", "beef", "pork", "chicken",
+            "cá ", "cá hồi", "cá thu", "cá chép", "cá lóc", "cá tra", "cá basa", "cá ngừ", "cá đuối", "cá trích",
+            "tôm", "cua", "ghẹ", "mực", "bạch tuộc", "hàu", "sò", "nghêu", "ốc", "sứa", "hải sản",
+            "chả cá", "giò lụa", "chả lụa", "xúc xích heo", "xúc xích bò", "lạp xưởng", "pate gan", "mỡ heo"
+        };
+
         return meatKeywords.Any(k => lower.Contains(k));
     }
 
@@ -756,11 +1092,64 @@ public class FridgeService : IFridgeService
                 "Tủ lạnh ảo chưa có nguyên liệu.");
         }
 
-        var fridgeIngredientIds = fridgeItems.Select(f => f.IngredientId).ToHashSet();
-        var nonFreshIngredientIds = fridgeItems
-            .Where(f => string.Equals(f.FreshnessStatus, "NON-FRESH", StringComparison.OrdinalIgnoreCase))
-            .Select(f => f.IngredientId)
-            .ToHashSet();
+        // Gom nhóm nguyên liệu trong tủ theo IngredientId và theo tên chuẩn hóa để đối chiếu linh hoạt
+        var fridgeInventoryMap = new Dictionary<int, (decimal TotalQty, string Unit, bool IsNonFresh)>();
+        var fridgeByName = new Dictionary<string, (decimal TotalQty, string Unit, bool IsNonFresh)>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in fridgeItems)
+        {
+            var (amount, unit) = ParseAmountAndUnit(item.CustomItemName, item.Quantity, item.Unit, item.Ingredient?.StandardUnit ?? "g");
+            var isNonFresh = string.Equals(item.FreshnessStatus, "NON-FRESH", StringComparison.OrdinalIgnoreCase);
+
+            // 1. Gom nhóm theo IngredientId
+            if (fridgeInventoryMap.TryGetValue(item.IngredientId, out var existing))
+            {
+                var added = amount;
+                if (unit.Equals("kg", StringComparison.OrdinalIgnoreCase) && existing.Unit.Equals("g", StringComparison.OrdinalIgnoreCase))
+                {
+                    added = amount * 1000m;
+                }
+                else if (unit.Equals("g", StringComparison.OrdinalIgnoreCase) && existing.Unit.Equals("kg", StringComparison.OrdinalIgnoreCase))
+                {
+                    added = amount / 1000m;
+                }
+                fridgeInventoryMap[item.IngredientId] = (existing.TotalQty + added, existing.Unit, existing.IsNonFresh || isNonFresh);
+            }
+            else
+            {
+                fridgeInventoryMap[item.IngredientId] = (amount, unit, isNonFresh);
+            }
+
+            // 2. Gom nhóm theo tên chuẩn hóa (để hỗ trợ các nguyên liệu đồng nghĩa như súp lơ / bông cải, đậu phụ / đậu hũ)
+            var rawNames = new List<string>();
+            if (!string.IsNullOrWhiteSpace(item.CustomItemName)) rawNames.Add(item.CustomItemName);
+            if (!string.IsNullOrWhiteSpace(item.Ingredient?.IngredientName)) rawNames.Add(item.Ingredient.IngredientName);
+
+            foreach (var rName in rawNames)
+            {
+                var clean = NormalizeIngName(rName);
+                if (!string.IsNullOrWhiteSpace(clean))
+                {
+                    if (fridgeByName.TryGetValue(clean, out var existingByName))
+                    {
+                        var added = amount;
+                        if (unit.Equals("kg", StringComparison.OrdinalIgnoreCase) && existingByName.Unit.Equals("g", StringComparison.OrdinalIgnoreCase))
+                        {
+                            added = amount * 1000m;
+                        }
+                        else if (unit.Equals("g", StringComparison.OrdinalIgnoreCase) && existingByName.Unit.Equals("kg", StringComparison.OrdinalIgnoreCase))
+                        {
+                            added = amount / 1000m;
+                        }
+                        fridgeByName[clean] = (existingByName.TotalQty + added, existingByName.Unit, existingByName.IsNonFresh || isNonFresh);
+                    }
+                    else
+                    {
+                        fridgeByName[clean] = (amount, unit, isNonFresh);
+                    }
+                }
+            }
+        }
 
         // 2. Đọc hồ sơ sức khỏe & danh mục dị ứng của người dùng (FN-PROF-04, BR-SCI-04)
         var profile = await _db.HealthProfiles
@@ -843,14 +1232,56 @@ public class FridgeService : IFridgeService
 
             if (isViolated) continue;
 
-            // Tính điểm tương đồng: số nguyên liệu có trong tủ / tổng nguyên liệu bắt buộc (BR-USR-08)
+            // Tính toán mức độ đáp ứng nguyên liệu & định lượng
             var requiredIngredients = recipeIngredients.Where(ri => !ri.IsOptional).ToList();
             if (requiredIngredients.Count == 0)
             {
                 requiredIngredients = recipeIngredients;
             }
 
-            var matchedCount = requiredIngredients.Count(ri => fridgeIngredientIds.Contains(ri.IngredientId));
+            var hasInsufficientQuantity = false;
+            var matchedCount = 0;
+            var missing = new List<MissingIngredientDto>();
+
+            foreach (var ri in requiredIngredients)
+            {
+                if (TryMatchFridgeIngredient(ri, fridgeInventoryMap, fridgeByName, out var avail))
+                {
+                    // Tủ lạnh CÓ nguyên liệu này -> Kiểm tra định lượng:
+                    // Công thức cần (ri.QuantityNeeded) phải <= Tủ lạnh đang có (avail.TotalQty)
+                    if (IsQuantitySufficient(ri.QuantityNeeded, ri.Unit, avail.TotalQty, avail.Unit))
+                    {
+                        matchedCount++;
+                    }
+                    else
+                    {
+                        // Định lượng công thức cần LỚN HƠN định lượng trong tủ đang có (ví dụ: cần 500g > có 300g)
+                        hasInsufficientQuantity = true;
+                        missing.Add(new MissingIngredientDto
+                        {
+                            IngredientId = ri.IngredientId,
+                            Name = $"{ri.Ingredient?.IngredientName ?? "Nguyên liệu"} (cần {ri.QuantityNeeded}{ri.Unit}, tủ có {avail.TotalQty}{avail.Unit})"
+                        });
+                    }
+                }
+                else
+                {
+                    // Tủ lạnh KHÔNG có nguyên liệu này
+                    missing.Add(new MissingIngredientDto
+                    {
+                        IngredientId = ri.IngredientId,
+                        Name = ri.Ingredient?.IngredientName ?? $"Nguyên liệu #{ri.IngredientId}"
+                    });
+                }
+            }
+
+            // Yêu cầu người dùng: Món ăn được gợi ý phải khớp với số lượng:
+            // Nếu nguyên liệu trong tủ KHÔNG ĐỦ định lượng yêu cầu (ri.QuantityNeeded > availableQty) -> LOẠI BỎ MÓN NÀY!
+            if (hasInsufficientQuantity)
+            {
+                continue;
+            }
+
             var similarity = (double)matchedCount / requiredIngredients.Count;
             similarity = Math.Round(similarity, 2);
 
@@ -859,18 +1290,8 @@ public class FridgeService : IFridgeService
                 continue;
             }
 
-            // Tìm các nguyên liệu còn thiếu
-            var missing = requiredIngredients
-                .Where(ri => !fridgeIngredientIds.Contains(ri.IngredientId))
-                .Select(ri => new MissingIngredientDto
-                {
-                    IngredientId = ri.IngredientId,
-                    Name = ri.Ingredient?.IngredientName ?? $"Nguyên liệu #{ri.IngredientId}"
-                })
-                .ToList();
-
             // Kiểm tra món có tận dụng nguyên liệu NON-FRESH không
-            var usesNonFresh = recipeIngredients.Any(ri => nonFreshIngredientIds.Contains(ri.IngredientId));
+            var usesNonFresh = requiredIngredients.Any(ri => fridgeInventoryMap.TryGetValue(ri.IngredientId, out var item) && item.IsNonFresh);
 
             suggestions.Add(new FridgeRecipeSuggestionDto
             {
@@ -892,6 +1313,86 @@ public class FridgeService : IFridgeService
             .ToList();
 
         return result;
+    }
+
+    private static bool TryMatchFridgeIngredient(
+        RecipeIngredient ri,
+        Dictionary<int, (decimal TotalQty, string Unit, bool IsNonFresh)> fridgeInventoryMap,
+        Dictionary<string, (decimal TotalQty, string Unit, bool IsNonFresh)> fridgeByName,
+        out (decimal TotalQty, string Unit, bool IsNonFresh) avail)
+    {
+        // 1. Khớp chính xác qua IngredientId
+        if (fridgeInventoryMap.TryGetValue(ri.IngredientId, out avail))
+        {
+            return true;
+        }
+
+        // 2. Khớp qua tên chuẩn hóa hoặc tên đồng nghĩa
+        var riName = ri.Ingredient?.IngredientName;
+        if (!string.IsNullOrWhiteSpace(riName))
+        {
+            var cleanRi = NormalizeIngName(riName);
+            if (fridgeByName.TryGetValue(cleanRi, out avail))
+            {
+                return true;
+            }
+
+            // Súp lơ / Bông cải xanh
+            if ((cleanRi.Contains("súp lơ xanh") || cleanRi.Contains("bông cải xanh") || cleanRi.Contains("broccoli")) &&
+                (fridgeByName.TryGetValue("súp lơ xanh", out avail) || fridgeByName.TryGetValue("bông cải xanh", out avail)))
+            {
+                return true;
+            }
+            // Súp lơ / Bông cải trắng
+            if ((cleanRi.Contains("súp lơ trắng") || cleanRi.Contains("bông cải trắng") || cleanRi.Contains("cauliflower")) &&
+                (fridgeByName.TryGetValue("súp lơ trắng", out avail) || fridgeByName.TryGetValue("bông cải trắng", out avail)))
+            {
+                return true;
+            }
+            // Đậu hũ / Tofu / Đậu phụ
+            if ((cleanRi.Contains("đậu hũ") || cleanRi.Contains("đậu phụ") || cleanRi.Contains("tofu")) &&
+                (fridgeByName.TryGetValue("đậu hũ trắng", out avail) || fridgeByName.TryGetValue("đậu hũ non", out avail) || fridgeByName.TryGetValue("đậu hũ", out avail) || fridgeByName.TryGetValue("tofu", out avail)))
+            {
+                return true;
+            }
+            // Bắp ngọt / Ngô ngọt
+            if ((cleanRi.Contains("bắp ngọt") || cleanRi.Contains("ngô ngọt") || cleanRi.Contains("bắp tươi")) &&
+                (fridgeByName.TryGetValue("bắp ngọt", out avail) || fridgeByName.TryGetValue("ngô ngọt", out avail) || fridgeByName.TryGetValue("bắp ngọt tươi", out avail)))
+            {
+                return true;
+            }
+            // Nấm đùi gà
+            if (cleanRi.Contains("nấm đùi gà") && fridgeByName.TryGetValue("nấm đùi gà", out avail))
+            {
+                return true;
+            }
+            // Khoai môn
+            if (cleanRi.Contains("khoai môn") && fridgeByName.TryGetValue("khoai môn", out avail))
+            {
+                return true;
+            }
+            // Cải xanh / Cải cay
+            if ((cleanRi.Contains("cải xanh") || cleanRi.Contains("cải cay")) &&
+                (fridgeByName.TryGetValue("cải xanh", out avail) || fridgeByName.TryGetValue("cải xanh cay", out avail)))
+            {
+                return true;
+            }
+        }
+
+        avail = default;
+        return false;
+    }
+
+    private static string NormalizeIngName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+        var lower = name.Trim().ToLowerInvariant();
+        var parenIdx = lower.IndexOf('(');
+        if (parenIdx > 0)
+        {
+            lower = lower[..parenIdx].Trim();
+        }
+        return lower;
     }
 
     private static List<AiDetectedItemDto> GetDefaultSimulatedItems()

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -409,11 +410,36 @@ public class VideoService : IVideoService
                     }
                 }
 
+                int? servings = null;
+                if ((recipeElem.TryGetProperty("servings", out var sElem) || recipeElem.TryGetProperty("Servings", out sElem)) && sElem.TryGetInt32(out var sVal))
+                {
+                    servings = sVal;
+                }
+
+                int? cookTime = null;
+                if ((recipeElem.TryGetProperty("cookTimeMinutes", out var ctElem) || recipeElem.TryGetProperty("CookTimeMinutes", out ctElem)) && ctElem.TryGetInt32(out var ctVal))
+                {
+                    cookTime = ctVal;
+                }
+
+                var tips = new List<string>();
+                if ((recipeElem.TryGetProperty("tips", out var tElem) || recipeElem.TryGetProperty("Tips", out tElem)) && tElem.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var tip in tElem.EnumerateArray())
+                    {
+                        var str = tip.GetString();
+                        if (!string.IsNullOrEmpty(str)) tips.Add(str);
+                    }
+                }
+
                 extractedRecipe = new ExtractedRecipeDto
                 {
                     Title = title,
+                    Servings = servings,
+                    CookTimeMinutes = cookTime,
                     Ingredients = ingredients,
-                    Steps = steps
+                    Steps = steps,
+                    Tips = tips.Count > 0 ? tips : null
                 };
             }
             catch (Exception ex)
@@ -587,6 +613,119 @@ public class VideoService : IVideoService
             } : null,
             CreatedAt = video.CreatedAt,
             UpdatedAt = video.UpdatedAt
+        };
+    }
+
+    /// <summary>
+    /// Lưu bản phiên âm và công thức bóc tách từ video xuống CSDL (FN-POST-09, FN-POST-10).
+    /// Hỗ trợ lưu trữ trực tiếp sau khi AI phân tích để không phải gọi AI lần thứ hai.
+    /// </summary>
+    public async Task<VideoTranscriptResponseData> SaveVideoTranscriptAsync(
+        int videoId,
+        SaveVideoTranscriptDto dto,
+        CancellationToken ct = default)
+    {
+        if (videoId <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã video phải lớn hơn 0.");
+        }
+
+        var video = await _context.Videos
+            .Include(v => v.Post)
+            .Include(v => v.VideoTranscript)
+                .ThenInclude(vt => vt!.Recipe)
+            .FirstOrDefaultAsync(v => v.VideoId == videoId, ct);
+
+        if (video == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Video không tồn tại.");
+        }
+
+        if (video.VideoTranscript == null)
+        {
+            video.VideoTranscript = new VideoTranscript
+            {
+                VideoId = video.VideoId,
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.VideoTranscripts.Add(video.VideoTranscript);
+        }
+
+        var recipeJson = dto.Recipe != null
+            ? JsonSerializer.Serialize(dto.Recipe, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All)
+            })
+            : null;
+
+        video.VideoTranscript.RawTranscript = dto.RawTranscript ?? string.Empty;
+        video.VideoTranscript.ExtractedRecipeJson = recipeJson;
+        video.VideoTranscript.SttModelVersion = dto.SttModelVersion ?? "faster-whisper-small-int8";
+        video.VideoTranscript.Status = "READY";
+        video.VideoTranscript.CompletedAt = DateTime.UtcNow;
+
+        // Tự động tạo công thức nháp (Draft Recipe) nếu video chưa có liên kết recipe
+        if (dto.Recipe != null && video.VideoTranscript.RecipeId == null && video.Post != null)
+        {
+            try
+            {
+                var defaultCategory = await _context.FoodCategories.FirstOrDefaultAsync(ct);
+                var defaultDietarySchool = await _context.DietarySchools.FirstOrDefaultAsync(ct);
+
+                var rawTitle = !string.IsNullOrWhiteSpace(video.Title)
+                    ? $"Công thức từ video {video.Title.Trim()}"
+                    : (dto.Recipe.Title ?? "Công thức từ video");
+                var recipeTitle = rawTitle.Length > 150 ? rawTitle[..150] : rawTitle;
+
+                var steps = dto.Recipe.Steps ?? new List<string>();
+                var instructions = steps.Count > 0
+                    ? JsonSerializer.Serialize(steps, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase })
+                    : "[]";
+
+                var draftRecipe = new Recipe
+                {
+                    UserId = video.Post.UserId,
+                    CategoryId = defaultCategory?.CategoryId ?? 1,
+                    DietarySchoolId = defaultDietarySchool?.DietarySchoolId ?? 1,
+                    Title = recipeTitle,
+                    Description = dto.Recipe.Title ?? video.Title,
+                    Instructions = instructions,
+                    PrepTimeMinutes = 15,
+                    CookTimeMinutes = dto.Recipe.CookTimeMinutes ?? 20,
+                    Servings = dto.Recipe.Servings ?? 2,
+                    CaloriesKcal = 150.0m,
+                    DifficultyLevel = "MEDIUM",
+                    IsVerified = false,
+                    ImageUrl = video.ThumbnailUrl ?? video.Post.ImageUrl,
+                    Status = "DRAFT",
+                    ViewCount = 0,
+                    Source = "AI",
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.Recipes.Add(draftRecipe);
+                await _context.SaveChangesAsync(ct);
+
+                video.VideoTranscript.RecipeId = draftRecipe.RecipeId;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Không thể tạo bản ghi Recipe nháp khi lưu transcript cho video id={VideoId}", videoId);
+            }
+        }
+
+        await _context.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Đã lưu bản phiên âm và công thức bóc tách thành công cho video id={VideoId}.", videoId);
+
+        return new VideoTranscriptResponseData
+        {
+            VideoId = video.VideoId,
+            RawTranscript = video.VideoTranscript.RawTranscript ?? string.Empty,
+            TranscriptStatus = "COMPLETED",
+            ExtractedRecipe = dto.Recipe,
+            Segments = dto.Segments
         };
     }
 }

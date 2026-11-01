@@ -112,6 +112,30 @@ public class VideosController : BaseApiController
     }
 
     /// <summary>
+    /// Lưu bản phiên âm và công thức bóc tách từ video xuống CSDL (FN-POST-09, FN-POST-10).
+    /// Đảm bảo kết quả từ AI được lưu bền vững và không phải gọi lại AI nhiều lần.
+    /// </summary>
+    [HttpPost("{id:int}/transcript")]
+    [HttpPost("{id:int}/save-transcript")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<VideoTranscriptResponseData>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> SaveVideoTranscript(
+        [FromRoute] int id,
+        [FromBody] SaveVideoTranscriptDto dto,
+        CancellationToken ct)
+    {
+        if (id <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã video không hợp lệ (id > 0).");
+        }
+
+        var result = await _videoService.SaveVideoTranscriptAsync(id, dto, ct);
+        return OkResponse(result, "Đã lưu bản tóm tắt và công thức video.");
+    }
+
+    /// <summary>
     /// FN-POST-12: Lấy thông tin chi tiết siêu dữ liệu của video độc lập.
     /// Cho phép trang VideoPlayer (SCR-21) phát video trực tiếp qua /videos/:id mà không cần query param ?postId=.
     /// </summary>

@@ -63,6 +63,18 @@ public class ExtractedRecipeDto
     public string Title { get; set; } = string.Empty;
 
     /// <summary>
+    /// Khẩu phần (số người).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Servings { get; set; }
+
+    /// <summary>
+    /// Thời gian nấu (phút).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? CookTimeMinutes { get; set; }
+
+    /// <summary>
     /// Danh sách nguyên liệu và định lượng.
     /// </summary>
     public List<ExtractedIngredientDto> Ingredients { get; set; } = new();
@@ -71,6 +83,12 @@ public class ExtractedRecipeDto
     /// Các bước chế biến nấu ăn.
     /// </summary>
     public List<string> Steps { get; set; } = new();
+
+    /// <summary>
+    /// Mẹo nhỏ hoặc lưu ý chế biến (nếu có).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Tips { get; set; }
 }
 
 /// <summary>
