@@ -57,36 +57,6 @@ public class AdminAiController : BaseApiController
     }
 
     /// <summary>
-    /// FN-ADM-16: Dashboard Token & chi phí AI (LLMOps).
-    /// </summary>
-    [HttpGet("llmops/dashboard")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
-    public IActionResult GetLlmopsDashboard(
-        [FromQuery] string? from,
-        [FromQuery] string? to,
-        [FromQuery] string? groupBy = "DAY")
-    {
-        EnsureAdmin();
-        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
-        var result = new
-        {
-            todayCostUsd = 1.25m,
-            dailyBudgetUsd = 12.5m,
-            usagePercent = 10.0m,
-            alertLevel = "NORMAL",
-            series = new[]
-            {
-                new { date = today, feature = "CHATBOT", tokens = 12500, costUsd = 0.45m },
-                new { date = today, feature = "MEAL_PLANNER", tokens = 25000, costUsd = 0.50m },
-                new { date = today, feature = "FRIDGE_VISION", tokens = 8000, costUsd = 0.30m }
-            }
-        };
-        return OkResponse(result, "Lấy dashboard LLMOps thành công.");
-    }
-
-    /// <summary>
     /// FN-CHAT-07: Trạng thái kho vector Qdrant.
     /// </summary>
     [HttpGet("knowledge/status")]

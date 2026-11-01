@@ -580,6 +580,25 @@ public static class DevDataSeeder
         }
 
         SeedSystemSettings(db);
+        SeedAiquotaLogs(db);
+    }
+
+    private static void SeedAiquotaLogs(AppDbContext db)
+    {
+        // 7. Nạp dữ liệu mẫu AIQuotaLogs (FN-ADM-16)
+        if (!db.AiquotaLogs.Any())
+        {
+            var now = DateTime.UtcNow;
+            db.AiquotaLogs.AddRange(
+                new AiquotaLog { UserId = 1, FeatureCode = "AI_CHAT", TokensConsumed = 120000, CostEstimateUsd = 4.2m, RequestStatus = "SUCCESS", ExecutionTimeMs = 600, CreatedAt = now.AddDays(-2) },
+                new AiquotaLog { UserId = 1, FeatureCode = "MEAL_PLAN_GEN", TokensConsumed = 30000, CostEstimateUsd = 1.2m, RequestStatus = "SUCCESS", ExecutionTimeMs = 1200, CreatedAt = now.AddDays(-2) },
+                new AiquotaLog { UserId = 1, FeatureCode = "AI_FRIDGE", TokensConsumed = 45000, CostEstimateUsd = 1.8m, RequestStatus = "SUCCESS", ExecutionTimeMs = 800, CreatedAt = now.AddDays(-1) },
+                new AiquotaLog { UserId = 1, FeatureCode = "AI_BARCODE", TokensConsumed = 15000, CostEstimateUsd = 0.6m, RequestStatus = "SUCCESS", ExecutionTimeMs = 350, CreatedAt = now.AddDays(-1) },
+                new AiquotaLog { UserId = 1, FeatureCode = "AI_CHAT", TokensConsumed = 80000, CostEstimateUsd = 2.75m, RequestStatus = "SUCCESS", ExecutionTimeMs = 700, CreatedAt = now.AddHours(-3) },
+                new AiquotaLog { UserId = 1, FeatureCode = "CONTENT_MODERATION", TokensConsumed = 20000, CostEstimateUsd = 0.85m, RequestStatus = "SUCCESS", ExecutionTimeMs = 400, CreatedAt = now.AddHours(-1) }
+            );
+            db.SaveChanges();
+        }
     }
 
     private static void SeedSystemSettings(AppDbContext db)
