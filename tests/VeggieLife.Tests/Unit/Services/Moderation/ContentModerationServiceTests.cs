@@ -276,4 +276,34 @@ public class ContentModerationServiceTests
         response.ViolationScore.Should().BeGreaterThanOrEqualTo(0.85);
         response.ViolationType.Should().Be("VIO_MEAT");
     }
+
+    [Fact]
+    public async Task HttpContentModerationService_OnTimeout_FallsBackToSimulatedService()
+    {
+        // Arrange: Handler throws TaskCanceledException simulating 10s timeout
+        var mockHandler = new Mock<HttpMessageHandler>();
+        mockHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ThrowsAsync(new TaskCanceledException("Operation timed out"));
+
+        var client = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("http://localhost:8080") };
+        var service = new ContentModerationService(client, NullLogger<ContentModerationService>.Instance, _simulatedService);
+
+        var req = new ModerationCheckRequest
+        {
+            Title = "Đậu phụ rán giòn chay",
+            Description = "Món ăn thanh đạm chay"
+        };
+
+        // Act
+        var response = await service.CheckContentAsync(req);
+
+        // Assert: Fallback handles cleanly, approving safe vegan food
+        response.Should().NotBeNull();
+        response.ViolationScore.Should().BeLessThan(0.85);
+        response.ViolationType.Should().Be("NONE");
+    }
 }

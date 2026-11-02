@@ -359,6 +359,54 @@ public class PostServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ListPosts_WhenPostIsQuarantined_IsHiddenFromPublicFeedEvenForAuthor_OnlyVisibleInAuthorManageTab()
+    {
+        // Arrange: Thêm bài viết Post 6 bị AI cách ly (QUARANTINED_HIDDEN) của tác giả 1024
+        var user1 = _db.Users.Find(1024)!;
+        var quarantinedPost = new Post
+        {
+            PostId = 6,
+            UserId = 1024,
+            User = user1,
+            Title = "Bún bò Huế có thịt bò tái",
+            Content = "Nội dung vi phạm chứa thịt bò...",
+            ImageUrl = null,
+            Visibility = "PUBLIC",
+            ModerationStatus = "QUARANTINED_HIDDEN",
+            ViewCount = 0,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Posts.Add(quarantinedPost);
+        await _db.SaveChangesAsync();
+
+        // 1. Tác giả 1024 lướt bảng tin công khai (AuthorId = null): KHÔNG THẤY Post 6!
+        var publicFeedFilter = new PostFilterRequest { Page = 1, Size = 10 };
+        var (feedItems, _) = await _service.ListPostsAsync(publicFeedFilter, isGuest: false, guestId: null, currentUserId: 1024);
+        feedItems.Select(p => p.PostId).Should().NotContain(6);
+
+        // 2. Khách vãng lai lướt bảng tin: KHÔNG THẤY Post 6!
+        var (guestItems, _) = await _service.ListPostsAsync(publicFeedFilter, isGuest: true, guestId: "guest-test");
+        guestItems.Select(p => p.PostId).Should().NotContain(6);
+
+        // 3. Người dùng khác (2048) xem trang tác giả 1024 (AuthorId = 1024): KHÔNG THẤY Post 6!
+        var authorFilterForOther = new PostFilterRequest { AuthorId = 1024, Page = 1, Size = 10 };
+        var (otherUserItems, _) = await _service.ListPostsAsync(authorFilterForOther, isGuest: false, guestId: null, currentUserId: 2048);
+        otherUserItems.Select(p => p.PostId).Should().NotContain(6);
+
+        // 4. Chỉ khi chính tác giả 1024 tra cứu danh sách của mình (/me/content, AuthorId = 1024): Mới thấy Post 6 để quản lý ở tab Bị ẩn / Khóa
+        var authorOwnFilter = new PostFilterRequest { AuthorId = 1024, Page = 1, Size = 10 };
+        var (ownItems, _) = await _service.ListPostsAsync(authorOwnFilter, isGuest: false, guestId: null, currentUserId: 1024);
+        ownItems.Select(p => p.PostId).Should().Contain(6);
+        var item6 = ownItems.Single(p => p.PostId == 6);
+        item6.ModerationStatus.Should().Be("QUARANTINED_HIDDEN");
+
+        // 5. Người khác gọi GetPostByIdAsync(6) phải nhận lỗi 404 (ERR_CONTENT_NOT_FOUND)
+        var getAct = () => _service.GetPostByIdAsync(6, isGuest: false, currentUserId: 2048);
+        await getAct.Should().ThrowAsync<AppException>()
+            .Where(ex => ex.StatusCode == 404 && ex.ErrorCode == ErrorCodes.ErrContentNotFound);
+    }
+
+    [Fact]
     public async Task ListPosts_FilterByKeyword_MatchesTitleOrContent()
     {
         // Arrange: Tìm theo từ khóa "nấm"
@@ -652,6 +700,66 @@ public class PostServiceTests : IDisposable
         report!.ViolationType.Should().Be("VIO_MEAT");
         report.ReportSource.Should().Be("AI_SCAN");
         report.Status.Should().Be("PENDING");
+    }
+
+    [Fact]
+    public async Task CreatePost_WhenContentIsSpam_ShouldQuarantine_AndSaveViolationReportWithVioSpam()
+    {
+        // Arrange: Kịch bản 3 - Nội dung spam quảng cáo
+        var request = new CreatePostRequest
+        {
+            Title = "Khuyến mãi sốc kiếm tiền online",
+            Content = "Tham gia ngay group đầu tư sinh lời kiếm tiền online mỗi ngày không cần làm gì.",
+            Visibility = "PUBLIC",
+            Submit = true
+        };
+
+        // Act
+        var result = await _service.CreatePostAsync(request, 1024, "MEMBER");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.ModerationStatus.Should().Be("QUARANTINED_HIDDEN");
+
+        var report = await _db.ViolationReports.FirstOrDefaultAsync(r => r.PostId == result.PostId);
+        report.Should().NotBeNull();
+        report!.ViolationType.Should().Be("VIO_SPAM");
+        report.ReportSource.Should().Be("AI_SCAN");
+        report.Status.Should().Be("PENDING");
+    }
+
+    [Fact]
+    public async Task CreatePost_WhenAiReturnsLowScoreButViolationTypeMeat_ShouldQuarantine_AndSaveViolationReport()
+    {
+        // Arrange: Giả lập AI trả về score thấp 0.70 nhưng gắn nhãn vi phạm thịt mặn VIO_MEAT
+        var mockModService = new Mock<VeggieLife.BLL.Services.Moderation.IContentModerationService>();
+        mockModService.Setup(m => m.ModeratePostAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VeggieLife.BLL.Services.Moderation.ContentModerationResult
+            {
+                IsApproved = false,
+                ViolationScore = 70.0,
+                ViolationType = "VIO_MEAT",
+                ModerationStatus = "QUARANTINED_HIDDEN",
+                Note = "Phát hiện món mặn"
+            });
+
+        var customService = new PostService(_db, _mockRedis.Object, _mockLogger.Object, mockModService.Object);
+
+        var request = new CreatePostRequest
+        {
+            Title = "Bài viết có nguyên liệu mặn",
+            Content = "Nội dung bài viết",
+            Submit = true
+        };
+
+        // Act
+        var result = await customService.CreatePostAsync(request, 1024, "MEMBER");
+
+        // Assert
+        result.ModerationStatus.Should().Be("QUARANTINED_HIDDEN");
+        var report = await _db.ViolationReports.FirstOrDefaultAsync(r => r.PostId == result.PostId);
+        report.Should().NotBeNull();
+        report!.ViolationType.Should().Be("VIO_MEAT");
     }
 
     [Fact]

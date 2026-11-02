@@ -107,7 +107,13 @@ public class PostsController : BaseApiController
         var role = CurrentUserRole ?? "MEMBER";
 
         var result = await _postService.CreatePostAsync(request, userId, role, ct);
-        return CreatedResponse(result, "Đã đăng bài.");
+        var message = result.ModerationStatus switch
+        {
+            "QUARANTINED_HIDDEN" => "Bài viết đang chờ kiểm duyệt nên chưa hiển thị công khai.",
+            "DRAFT" => "Đã lưu nháp bài viết.",
+            _ => "Đã đăng bài."
+        };
+        return CreatedResponse(result, message);
     }
 
     /// <summary>
@@ -132,7 +138,12 @@ public class PostsController : BaseApiController
         var role = CurrentUserRole ?? "MEMBER";
 
         var result = await _postService.UpdatePostAsync(id, request, userId, role, ct);
-        return OkResponse(result, "Đã cập nhật.");
+        var message = result.ModerationStatus switch
+        {
+            "QUARANTINED_HIDDEN" => "Bài viết đang chờ kiểm duyệt nên chưa hiển thị công khai.",
+            _ => "Đã cập nhật."
+        };
+        return OkResponse(result, message);
     }
 
     /// <summary>

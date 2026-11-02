@@ -284,6 +284,50 @@ public class PostsControllerTests
     }
 
     [Fact]
+    public async Task CreatePost_WhenQuarantinedByAi_ShouldReturnCreated201WithQuarantinedMessage()
+    {
+        // Arrange: Member đăng bài nhưng AI phát hiện vi phạm
+        var user = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, "1024"),
+            new Claim(ClaimTypes.Role, "MEMBER")
+        }, "TestAuth"));
+        _controller.ControllerContext.HttpContext.User = user;
+
+        var req = new CreatePostRequest
+        {
+            Title = "Bún bò Huế chay",
+            Content = "Nội dung chứa thịt heo và thịt bò...",
+            Visibility = "PUBLIC",
+            Submit = true
+        };
+
+        var responseDto = new CreatePostResponseDto
+        {
+            PostId = 88,
+            ModerationStatus = "QUARANTINED_HIDDEN"
+        };
+
+        _mockService.Setup(s => s.CreatePostAsync(req, 1024, "MEMBER", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseDto);
+
+        // Act
+        var result = await _controller.CreatePost(req, CancellationToken.None);
+
+        // Assert
+        var objectResult = result as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(201);
+
+        var envelope = objectResult.Value as ApiResponse<CreatePostResponseDto>;
+        envelope.Should().NotBeNull();
+        envelope!.StatusCode.Should().Be(201);
+        envelope.Message.Should().Be("Bài viết đang chờ kiểm duyệt nên chưa hiển thị công khai.");
+        envelope.Data!.PostId.Should().Be(88);
+        envelope.Data.ModerationStatus.Should().Be("QUARANTINED_HIDDEN");
+    }
+
+    [Fact]
     public async Task UpdatePost_AuthenticatedMember_ShouldReturnOk200()
     {
         // Arrange: Member hợp lệ
