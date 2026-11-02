@@ -1949,4 +1949,133 @@ public class MealPlanServiceTests : IDisposable
         result.Slot.SwapCount.Should().Be(1);
         result.Slot.SwapHistories.Should().HaveCount(1);
     }
+
+    // ==================================================================    // TASK-K1: Cancel Meal Plan & Weekly Quota Restoration
+    // ==================================================================
+    [Fact]
+    public async Task CancelMealPlanAsync_WhenDraftOrActive_ShouldSetStatusToCancelledAndReturnDetail()
+    {
+        // ARRANGE
+        var userId = 901;
+        _db.Users.Add(new User { UserId = userId, Email = "user901@test.com", FullName = "User 901", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(901, userId, "DRAFT");
+        await _db.SaveChangesAsync();
+
+        // ACT
+        var result = await _service.CancelMealPlanAsync(901, userId);
+
+        // ASSERT
+        result.Should().NotBeNull();
+        result.PlanId.Should().Be(901);
+        result.PlanStatus.Should().Be("CANCELLED");
+
+        var updated = await _db.MealPlans.FindAsync(901);
+        updated.Should().NotBeNull();
+        updated!.PlanStatus.Should().Be("CANCELLED");
+
+        var auditLog = await _db.AuditLogs.FirstOrDefaultAsync(l => l.TargetId == "901" && l.Action == "MEAL_PLAN_CANCELLED");
+        auditLog.Should().NotBeNull();
+        auditLog!.ActorUserId.Should().Be(userId);
+    }
+
+    [Fact]
+    public async Task CancelMealPlanAsync_WhenAlreadyCancelled_ShouldThrowConflict()
+    {
+        // ARRANGE
+        var userId = 902;
+        _db.Users.Add(new User { UserId = userId, Email = "user902@test.com", FullName = "User 902", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(902, userId, "CANCELLED");
+        await _db.SaveChangesAsync();
+
+        // ACT & ASSERT
+        var act = () => _service.CancelMealPlanAsync(902, userId);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(409);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+    }
+
+    [Fact]
+    public async Task CancelMealPlanAsync_WhenNotOwnerOrNotFound_ShouldThrowNotFound()
+    {
+        // ARRANGE
+        var userId = 903;
+        _db.Users.Add(new User { UserId = userId, Email = "user903@test.com", FullName = "User 903", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(903, userId, "DRAFT");
+        await _db.SaveChangesAsync();
+
+        // ACT & ASSERT: ID không tồn tại
+        var act1 = () => _service.CancelMealPlanAsync(99999, userId);
+        var ex1 = await act1.Should().ThrowAsync<AppException>();
+        ex1.Which.StatusCode.Should().Be(404);
+        ex1.Which.ErrorCode.Should().Be(ErrorCodes.ErrMealPlanNotFound);
+
+        // ACT & ASSERT: Không phải chủ sở hữu
+        var act2 = () => _service.CancelMealPlanAsync(903, userId: 9999);
+        var ex2 = await act2.Should().ThrowAsync<AppException>();
+        ex2.Which.StatusCode.Should().Be(404);
+        ex2.Which.ErrorCode.Should().Be(ErrorCodes.ErrMealPlanNotFound);
+    }
+
+    [Fact]
+    public async Task CheckWeeklyQuota_WhenPlanIsCancelled_RestoresQuotaAndAllowsCreatingNewPlan()
+    {
+        // ARRANGE: User Member có quota 1 thực đơn/tuần
+        var userId = 904;
+        SetupTestUserAndProfile(userId);
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var currentMonday = today.AddDays(-(int)(today.DayOfWeek == DayOfWeek.Sunday ? 6 : (int)today.DayOfWeek - 1));
+        var nextMonday = currentMonday.AddDays(7);
+
+        // Tạo 1 thực đơn cho tuần tới
+        var plan1 = CreateTestMealPlan(9041, userId, "DRAFT", nextMonday.ToString("yyyy-MM-dd"));
+        await _db.SaveChangesAsync();
+
+        // Kiểm tra tạo thực đơn thứ 2 cùng tuần sẽ bị lỗi 403 ErrQuotaMealPlanExceeded
+        var req2 = new CreateMealPlanRequest
+        {
+            StartDate = nextMonday.ToString("yyyy-MM-dd"),
+            BudgetTier = "STANDARD",
+            DurationDays = 7
+        };
+        var actQuotaExceeded = () => _service.CreateMealPlanAsync(userId, UserRoles.Member, req2);
+        var ex = await actQuotaExceeded.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(403);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrQuotaMealPlanExceeded);
+
+        // ACT: Hủy thực đơn đầu tiên (Phương án A -> CANCELLED)
+        await _service.CancelMealPlanAsync(9041, userId);
+
+        // ASSERT: Lúc này hạn mức tuần được hồi, user có thể tạo thực đơn mới thành công!
+        var newPlan = await _service.CreateMealPlanAsync(userId, UserRoles.Member, req2);
+        newPlan.Should().NotBeNull();
+        newPlan.PlanStatus.Should().Be("DRAFT");
+        newPlan.StartDate.Should().Be(nextMonday.ToString("yyyy-MM-dd"));
+    }
+
+    [Fact]
+    public async Task ListMealPlansAsync_WithStatusFilter_ShouldReturnOnlyFilteredStatus()
+    {
+        // ARRANGE
+        var userId = 905;
+        _db.Users.Add(new User { UserId = userId, Email = "user905@test.com", FullName = "User 905", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        CreateTestMealPlan(9051, userId, "ACTIVE", "2026-10-12");
+        CreateTestMealPlan(9052, userId, "CANCELLED", "2026-10-19");
+        CreateTestMealPlan(9053, userId, "DRAFT", "2026-10-26");
+        await _db.SaveChangesAsync();
+
+        // ACT: Lọc riêng thực đơn đã CANCELLED
+        var (cancelledItems, metaCancelled) = await _service.ListMealPlansAsync(userId, page: 1, size: 10, status: "CANCELLED");
+
+        // ASSERT
+        cancelledItems.Should().HaveCount(1);
+        cancelledItems[0].PlanId.Should().Be(9052);
+        cancelledItems[0].PlanStatus.Should().Be("CANCELLED");
+        metaCancelled.Total.Should().Be(1);
+
+        // ACT 2: Lọc tất cả khi không truyền status
+        var (allItems, metaAll) = await _service.ListMealPlansAsync(userId, page: 1, size: 10, status: null);
+        allItems.Should().HaveCount(3);
+        metaAll.Total.Should().Be(3);
+}
 }

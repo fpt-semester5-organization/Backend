@@ -285,7 +285,8 @@ public class MealPlanService : IMealPlanService
             p.UserId == userId &&
             p.StartDate >= weekStart &&
             p.StartDate <= weekEnd &&
-            p.PlanStatus != "TEMPLATE", ct);
+            p.PlanStatus != "TEMPLATE" &&
+            p.PlanStatus != "CANCELLED", ct);
 
         if (existingCount >= weeklyLimit)
         {
@@ -1015,10 +1016,20 @@ public class MealPlanService : IMealPlanService
         };
     }
 
+    public Task<(IReadOnlyList<MealPlanSummaryDto> Items, PagedMeta Meta)> ListMealPlansAsync(
+        int userId,
+        int page,
+        int size,
+        CancellationToken ct = default)
+    {
+        return ListMealPlansAsync(userId, page, size, null, ct);
+    }
+
     public async Task<(IReadOnlyList<MealPlanSummaryDto> Items, PagedMeta Meta)> ListMealPlansAsync(
         int userId,
         int page,
         int size,
+        string? status,
         CancellationToken ct = default)
     {
         if (page < 1) page = 1;
@@ -1026,6 +1037,12 @@ public class MealPlanService : IMealPlanService
         if (size > 100) size = 100;
 
         var query = _db.MealPlans.Where(p => p.UserId == userId && p.PlanStatus != "TEMPLATE");
+        if (!string.IsNullOrWhiteSpace(status) && !string.Equals(status, "ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            var normalizedStatus = status.Trim().ToUpperInvariant();
+            query = query.Where(p => p.PlanStatus == normalizedStatus);
+        }
+
         var total = await query.CountAsync(ct);
 
         var items = await query
@@ -1255,6 +1272,65 @@ public class MealPlanService : IMealPlanService
         {
             PlanId = plan.PlanId,
             PlanStatus = plan.PlanStatus
+        };
+    }
+
+    public async Task<MealPlanDetailDto> CancelMealPlanAsync(
+        int planId,
+        int userId,
+        CancellationToken ct = default)
+    {
+        var plan = await _db.MealPlans.FirstOrDefaultAsync(p => p.PlanId == planId && p.UserId == userId, ct);
+
+        if (plan == null)
+        {
+            throw AppException.NotFound(
+                ErrorCodes.ErrMealPlanNotFound,
+                "Thực đơn không tồn tại hoặc không thuộc về bạn.");
+        }
+
+        if (string.Equals(plan.PlanStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase))
+        {
+            throw AppException.Conflict(
+                ErrorCodes.ErrValidation,
+                "Thực đơn này đã ở trạng thái đã hủy (CANCELLED).");
+        }
+
+        var oldStatus = plan.PlanStatus;
+        plan.PlanStatus = "CANCELLED";
+
+        var auditLog = new AuditLog
+        {
+            ActorUserId = userId,
+            ActorRole = "MEMBER",
+            Action = "MEAL_PLAN_CANCELLED",
+            TargetTable = "MealPlans",
+            TargetId = planId.ToString(),
+            OldValue = JsonSerializer.Serialize(new { status = oldStatus }),
+            NewValue = JsonSerializer.Serialize(new { status = "CANCELLED" }),
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.AuditLogs.Add(auditLog);
+
+        await _db.SaveChangesAsync(ct);
+
+        var detail = await GetMealPlanByIdAsync(planId, userId, ct);
+        return new MealPlanDetailDto
+        {
+            PlanId = detail.PlanId,
+            PlanName = detail.PlanName,
+            StartDate = detail.StartDate,
+            EndDate = detail.EndDate,
+            BudgetTier = detail.BudgetTier,
+            CustomInstructions = detail.CustomInstructions,
+            TargetDailyKcal = detail.TargetDailyKcal,
+            PlanStatus = detail.PlanStatus,
+            GeneratedByAi = detail.GeneratedByAi,
+            Slots = detail.Slots,
+            Edits = detail.Edits,
+            MaxSwapsAllowed = detail.MaxSwapsAllowed,
+            SwapsRemaining = detail.SwapsRemaining,
+            DurationDays = detail.DurationDays
         };
     }
 
