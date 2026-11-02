@@ -2077,5 +2077,5 @@ public class MealPlanServiceTests : IDisposable
         var (allItems, metaAll) = await _service.ListMealPlansAsync(userId, page: 1, size: 10, status: null);
         allItems.Should().HaveCount(3);
         metaAll.Total.Should().Be(3);
-}
+    }
 }

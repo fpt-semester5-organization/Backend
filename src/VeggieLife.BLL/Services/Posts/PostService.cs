@@ -108,21 +108,35 @@ public class PostService : IPostService
             .AsNoTracking()
             .Where(p => p.ModerationStatus != "DELETED");
 
-        // Điều kiện hiển thị (BR-ADM-CNT-001):
-        // Mọi người xem bài APPROVED_ACTIVE và PUBLIC. Tác giả đã đăng nhập xem thêm bài của chính mình.
-        if (currentUserId.HasValue)
+        var isAuthorQuery = currentUserId.HasValue && filter.AuthorId.HasValue && currentUserId.Value == filter.AuthorId.Value;
+
+        // Điều kiện hiển thị (BR-ADM-CNT-001, FN-POST-05):
+        // 1. Khi tác giả xem trang quản lý bài viết của chính mình (/me/content, isAuthorQuery = true):
+        //    Cho phép xem bài của mình ở các trạng thái (APPROVED_ACTIVE, PENDING_REVIEW, DRAFT, QUARANTINED_HIDDEN).
+        // 2. Khi lọc theo tác giả khác (filter.AuthorId != currentUserId):
+        //    Chỉ xem bài APPROVED_ACTIVE và PUBLIC của tác giả đó.
+        // 3. Khi xem bảng tin cộng đồng công khai (Feed, filter.AuthorId == null):
+        //    Mọi người xem bài APPROVED_ACTIVE và PUBLIC. Tác giả xem thêm bài của mình (ngoại trừ QUARANTINED_HIDDEN).
+        //    TUYỆT ĐỐI KHÔNG BAO GIỜ hiển thị bài viết bị cách ly/ẩn (QUARANTINED_HIDDEN) trên bảng tin công khai!
+        if (isAuthorQuery)
         {
-            query = query.Where(p => (p.ModerationStatus == "APPROVED_ACTIVE" && p.Visibility == "PUBLIC") || p.UserId == currentUserId.Value);
+            query = query.Where(p => p.UserId == currentUserId!.Value);
+        }
+        else if (filter.AuthorId.HasValue)
+        {
+            query = query.Where(p => p.UserId == filter.AuthorId.Value && p.ModerationStatus == "APPROVED_ACTIVE" && p.Visibility == "PUBLIC");
         }
         else
         {
-            query = query.Where(p => p.ModerationStatus == "APPROVED_ACTIVE" && p.Visibility == "PUBLIC");
-        }
-
-        // Lọc theo Tác giả (authorId)
-        if (filter.AuthorId.HasValue)
-        {
-            query = query.Where(p => p.UserId == filter.AuthorId.Value);
+            if (currentUserId.HasValue)
+            {
+                query = query.Where(p => (p.ModerationStatus == "APPROVED_ACTIVE" && p.Visibility == "PUBLIC")
+                    || (p.UserId == currentUserId.Value && p.ModerationStatus != "QUARANTINED_HIDDEN"));
+            }
+            else
+            {
+                query = query.Where(p => p.ModerationStatus == "APPROVED_ACTIVE" && p.Visibility == "PUBLIC");
+            }
         }
 
         // Lọc theo Từ khóa tìm kiếm (tiêu đề hoặc nội dung)
@@ -148,8 +162,7 @@ public class PostService : IPostService
                 .OrderByDescending(p => p.CreatedAt);
         }
 
-        // BUG-FL05-08: Khi truy vấn bài viết với tham số authorId trùng với ID người gọi, trả về đầy đủ ModerationStatus và Visibility
-        var isAuthorQuery = currentUserId.HasValue && filter.AuthorId.HasValue && currentUserId.Value == filter.AuthorId.Value;
+        // BUG-FL05-08: Khi truy vấn bài viết với tham số authorId trùng với ID người gọi, trả về đầy đủ ModerationStatus và Visibility (isAuthorQuery)
 
         // Phân trang và chiếu DTO
         var items = await orderedQuery
@@ -424,7 +437,12 @@ public class PostService : IPostService
             // Ghi nhật ký định mức AIQuotaLogs (Feature_Code: CONTENT_MODERATION)
             await LogAiQuotaAsync(userId, modResult, ct);
 
-            if (modResult.ViolationScore >= 85.0)
+            var isQuarantined = modResult.ViolationScore >= 85.0
+                || (!string.IsNullOrEmpty(modResult.ViolationType) && modResult.ViolationType != "NONE")
+                || !modResult.IsApproved
+                || modResult.ModerationStatus == "QUARANTINED_HIDDEN";
+
+            if (isQuarantined)
             {
                 status = "QUARANTINED_HIDDEN";
             }
@@ -460,7 +478,7 @@ public class PostService : IPostService
             var violationReport = new ViolationReport
             {
                 PostId = post.PostId,
-                ViolationType = modResult.ViolationType ?? "VIO_HATE",
+                ViolationType = MapToValidViolationType(modResult.ViolationType),
                 EvidenceSummary = (modResult.Note ?? "AI phát hiện vi phạm nội dung (điểm vi phạm >= 85%).").Length > 500
                     ? (modResult.Note ?? "AI phát hiện vi phạm nội dung.").Substring(0, 500)
                     : (modResult.Note ?? "AI phát hiện vi phạm nội dung."),
@@ -607,13 +625,18 @@ public class PostService : IPostService
             var modResult = await _moderationService.ModeratePostAsync(post.Title, post.Content, post.ImageUrl, ct);
             await LogAiQuotaAsync(userId, modResult, ct);
 
-            if (modResult.ViolationScore >= 85.0)
+            var isQuarantined = modResult.ViolationScore >= 85.0
+                || (!string.IsNullOrEmpty(modResult.ViolationType) && modResult.ViolationType != "NONE")
+                || !modResult.IsApproved
+                || modResult.ModerationStatus == "QUARANTINED_HIDDEN";
+
+            if (isQuarantined)
             {
                 post.ModerationStatus = "QUARANTINED_HIDDEN";
                 _db.ViolationReports.Add(new ViolationReport
                 {
                     PostId = post.PostId,
-                    ViolationType = modResult.ViolationType ?? "VIO_HATE",
+                    ViolationType = MapToValidViolationType(modResult.ViolationType),
                     EvidenceSummary = (modResult.Note ?? "AI phát hiện vi phạm nội dung.").Length > 500
                         ? (modResult.Note ?? "AI phát hiện vi phạm nội dung.").Substring(0, 500)
                         : (modResult.Note ?? "AI phát hiện vi phạm nội dung."),
@@ -637,13 +660,18 @@ public class PostService : IPostService
             var modResult = await _moderationService.ModeratePostAsync(post.Title, post.Content, post.ImageUrl, ct);
             await LogAiQuotaAsync(userId, modResult, ct);
 
-            if (modResult.ViolationScore >= 85.0)
+            var isQuarantined = modResult.ViolationScore >= 85.0
+                || (!string.IsNullOrEmpty(modResult.ViolationType) && modResult.ViolationType != "NONE")
+                || !modResult.IsApproved
+                || modResult.ModerationStatus == "QUARANTINED_HIDDEN";
+
+            if (isQuarantined)
             {
                 post.ModerationStatus = "QUARANTINED_HIDDEN";
                 _db.ViolationReports.Add(new ViolationReport
                 {
                     PostId = post.PostId,
-                    ViolationType = modResult.ViolationType ?? "VIO_HATE",
+                    ViolationType = MapToValidViolationType(modResult.ViolationType),
                     EvidenceSummary = (modResult.Note ?? "AI phát hiện vi phạm nội dung.").Length > 500
                         ? (modResult.Note ?? "AI phát hiện vi phạm nội dung.").Substring(0, 500)
                         : (modResult.Note ?? "AI phát hiện vi phạm nội dung."),
@@ -871,6 +899,20 @@ public class PostService : IPostService
         {
             _logger.LogWarning(ex, "Lỗi khi ghi nhật ký AIQuotaLogs cho người dùng {UserId}.", userId);
         }
+    }
+
+    /// <summary>
+    /// Ánh xạ phân loại vi phạm từ AI sang một trong 4 nhóm vi phạm hợp lệ theo ràng buộc CSDL (BR-ADM-CNT-001).
+    /// </summary>
+    private static string MapToValidViolationType(string? violationType)
+    {
+        return violationType switch
+        {
+            "VIO_MEAT" => "VIO_MEAT",
+            "VIO_LABEL" => "VIO_LABEL",
+            "VIO_SPAM" => "VIO_SPAM",
+            _ => "VIO_HATE"
+        };
     }
 
     /// <summary>

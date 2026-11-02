@@ -100,7 +100,7 @@ public class ContentModerationService : IContentModerationService
         };
 
         var response = await CheckContentAsync(req, ct);
-        var isQuarantined = response.ViolationScore >= 0.85 || response.ViolationType != "NONE";
+        var isQuarantined = response.ViolationScore >= 0.85 || (!string.IsNullOrWhiteSpace(response.ViolationType) && response.ViolationType != "NONE");
 
         return new ContentModerationResult
         {
