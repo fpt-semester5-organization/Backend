@@ -285,8 +285,7 @@ public class MealPlanService : IMealPlanService
             p.UserId == userId &&
             p.StartDate >= weekStart &&
             p.StartDate <= weekEnd &&
-            p.PlanStatus != "TEMPLATE" &&
-            p.PlanStatus != "CANCELLED", ct);
+            p.PlanStatus != "TEMPLATE", ct);
 
         if (existingCount >= weeklyLimit)
         {
