@@ -10,6 +10,9 @@
 --   6. 65 Mã phụ gia thực phẩm E-Number quốc tế (ENumberDictionary)
 --   7. Tài khoản Administrator đầu tiên (Users) hỗ trợ biến môi trường SQLCMD
 --   8. 03 Gói hội viên VIP (SubscriptionPlans: 49.000đ, 129.000đ, 449.000đ)
+--   9. 06 Cấu hình động hệ thống (SystemSettings)
+--   10. Comprehensive Mock Data 39 bảng (99_MockData.sql)
+--   11. Dữ liệu mẫu Thành viên 4: Quán Chay, Máy Quét E-Number & Tủ Lạnh Ảo (ID 401 - 499)
 --
 -- Tính chất: IDEMPOTENT (Chạy 2 lần hoặc nhiều lần không trùng dữ liệu, không lỗi PK/Unique)
 -- ============================================================================
@@ -63,8 +66,11 @@ GO
 :r "99_MockData.sql"
 GO
 
-PRINT N'============================================================================';
-PRINT N'  HOÀN TẤT THỰC THI TOÀN BỘ MASTER DATA & SEED DATA 39 BẢNG CHO VEGGIELIFE DB!';
-PRINT N'============================================================================';
+-- 11. SEED MEMBER 4 DATA (QUÁN CHAY, SCANNER E-NUMBER & TỦ LẠNH ẢO - ID RANGE: 401 - 499)
+:r "17_Seed_Member4_Venues_Products_Fridge.sql"
 GO
 
+PRINT N'============================================================================';
+PRINT N'  HOÀN TẤT THỰC THI TOÀN BỘ MASTER DATA & SEED DATA CHO VEGGIELIFE DB!';
+PRINT N'============================================================================';
+GO
