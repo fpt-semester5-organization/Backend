@@ -141,7 +141,7 @@ public class MealPlansController : BaseApiController
 
     /// <summary>
     /// TASK-K1 / FN-MEAL: Hủy thực đơn của người dùng (Phương án A - PlanStatus = CANCELLED).
-    /// Hồi lại hạn mức tuần (quota) cho phép người dùng tạo ngay thực đơn mới mà không dính lỗi 403 ErrQuotaMealPlanExceeded.
+    /// Khóa hiệu lực thực đơn. Lưu ý: Lượt tạo thực đơn trong tuần không được hoàn lại do đã tiêu tốn tài nguyên sinh thực đơn AI (BR-PAY-SUB-01).
     /// </summary>
     [HttpPut("{id:int}/cancel")]
     [HttpPost("{id:int}/cancel")]

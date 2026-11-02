@@ -31,7 +31,7 @@ BEGIN
 
         CONSTRAINT [PK_MealPlans] PRIMARY KEY CLUSTERED ([Plan_ID] ASC),
         CONSTRAINT [CK_MealPlans_Budget_Tier] CHECK ([Budget_Tier] IN ('ECONOMICAL', 'STANDARD', 'PREMIUM')),
-        CONSTRAINT [CK_MealPlans_Status] CHECK ([Plan_Status] IN ('DRAFT', 'ACTIVE', 'ARCHIVED', 'TEMPLATE'))
+        CONSTRAINT [CK_MealPlans_Status] CHECK ([Plan_Status] IN ('DRAFT', 'ACTIVE', 'ARCHIVED', 'TEMPLATE', 'CANCELLED'))
     );
 
     CREATE NONCLUSTERED INDEX [IX_MealPlans_User_ID] ON [dbo].[MealPlans]([User_ID] ASC);

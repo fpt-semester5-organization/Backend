@@ -2017,7 +2017,7 @@ public class MealPlanServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CheckWeeklyQuota_WhenPlanIsCancelled_RestoresQuotaAndAllowsCreatingNewPlan()
+    public async Task CheckWeeklyQuota_WhenPlanIsCancelled_DoesNotRestoreQuota_AndThrowsForbiddenWhenExceeded()
     {
         // ARRANGE: User Member có quota 1 thực đơn/tuần
         var userId = 904;
@@ -2046,11 +2046,12 @@ public class MealPlanServiceTests : IDisposable
         // ACT: Hủy thực đơn đầu tiên (Phương án A -> CANCELLED)
         await _service.CancelMealPlanAsync(9041, userId);
 
-        // ASSERT: Lúc này hạn mức tuần được hồi, user có thể tạo thực đơn mới thành công!
-        var newPlan = await _service.CreateMealPlanAsync(userId, UserRoles.Member, req2);
-        newPlan.Should().NotBeNull();
-        newPlan.PlanStatus.Should().Be("DRAFT");
-        newPlan.StartDate.Should().Be(nextMonday.ToString("yyyy-MM-dd"));
+        // ASSERT: Quota tuần KHÔNG được hoàn lại vì đã tiêu tốn tài nguyên sinh thực đơn AI.
+        // Tạo thực đơn mới cùng tuần tiếp tục bị ném lỗi 403 ErrQuotaMealPlanExceeded
+        var actRetry = () => _service.CreateMealPlanAsync(userId, UserRoles.Member, req2);
+        var exRetry = await actRetry.Should().ThrowAsync<AppException>();
+        exRetry.Which.StatusCode.Should().Be(403);
+        exRetry.Which.ErrorCode.Should().Be(ErrorCodes.ErrQuotaMealPlanExceeded);
     }
 
     [Fact]
