@@ -41,12 +41,30 @@ public interface IMealPlanService
         CancellationToken ct = default);
 
     /// <summary>
+    /// FN-MEAL-02: Xem danh sách các thực đơn của người dùng (hỗ trợ lọc theo trạng thái DRAFT, ACTIVE, ARCHIVED, CANCELLED).
+    /// </summary>
+    Task<(IReadOnlyList<MealPlanSummaryDto> Items, PagedMeta Meta)> ListMealPlansAsync(
+        int userId,
+        int page,
+        int size,
+        string? status,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// FN-MEAL-02: Kích hoạt (triển khai) thực đơn từ DRAFT sang ACTIVE. Thực đơn ACTIVE cũ cùng tuần sẽ chuyển sang ARCHIVED.
     /// </summary>
     Task<ActivateMealPlanResponseData> ActivateMealPlanAsync(
         int id,
         int userId,
         string userRole,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Hủy thực đơn đã tạo (chuyển sang CANCELLED) và giải phóng hạn mức tuần (TASK-K1).
+    /// </summary>
+    Task<MealPlanDetailDto> CancelMealPlanAsync(
+        int planId,
+        int userId,
         CancellationToken ct = default);
 
     /// <summary>

@@ -91,10 +91,13 @@ public class MealPlansController : BaseApiController
     public async Task<IActionResult> ListMealPlans(
         [FromQuery] int page = 1,
         [FromQuery] int size = 10,
+        [FromQuery] string? status = null,
         CancellationToken ct = default)
     {
         var (userId, _) = EnsureAuthorizedUser();
-        var (items, meta) = await _mealPlanService.ListMealPlansAsync(userId, page, size, ct);
+        var (items, meta) = string.IsNullOrWhiteSpace(status)
+            ? await _mealPlanService.ListMealPlansAsync(userId, page, size, ct)
+            : await _mealPlanService.ListMealPlansAsync(userId, page, size, status, ct);
         return PagedResponse(items, meta, "OK");
     }
 
@@ -134,6 +137,28 @@ public class MealPlansController : BaseApiController
         var (userId, userRole) = EnsureAuthorizedUser();
         var result = await _mealPlanService.ActivateMealPlanAsync(id, userId, userRole, ct);
         return OkResponse(result, "Đã kích hoạt thực đơn.");
+    }
+
+    /// <summary>
+    /// TASK-K1 / FN-MEAL: Hủy thực đơn của người dùng (Phương án A - PlanStatus = CANCELLED).
+    /// Hồi lại hạn mức tuần (quota) cho phép người dùng tạo ngay thực đơn mới mà không dính lỗi 403 ErrQuotaMealPlanExceeded.
+    /// </summary>
+    [HttpPut("{id:int}/cancel")]
+    [HttpPost("{id:int}/cancel")]
+    [HttpDelete("{id:int}")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<MealPlanDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CancelMealPlan(
+        [FromRoute] int id,
+        CancellationToken ct = default)
+    {
+        var (userId, _) = EnsureAuthorizedUser();
+        var result = await _mealPlanService.CancelMealPlanAsync(id, userId, ct);
+        return OkResponse(result, "Đã hủy thực đơn thành công.");
     }
 
     /// <summary>

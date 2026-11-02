@@ -162,7 +162,7 @@ public class MealPlansControllerTests
             .ReturnsAsync((items, meta));
 
         // Act
-        var actionResult = await _controller.ListMealPlans(page: 1, size: 10, CancellationToken.None);
+        var actionResult = await _controller.ListMealPlans(page: 1, size: 10, status: null, ct: CancellationToken.None);
 
         // Assert
         var objectResult = actionResult as ObjectResult;
@@ -728,5 +728,41 @@ public class MealPlansControllerTests
         apiResponse.Should().NotBeNull();
         apiResponse!.Data!.Slot.Recipe!.RecipeId.Should().Be(99);
         apiResponse.Data.SwapsRemaining.Should().Be(20);
+    }
+
+    [Fact]
+    public async Task CancelMealPlan_AuthenticatedMember_ShouldReturn200Ok()
+    {
+        // Arrange
+        var userId = 46;
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(ClaimTypes.Role, UserRoles.Member)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        var responseData = new MealPlanDetailDto
+        {
+            PlanId = 101,
+            PlanName = "Thực đơn mẫu đã hủy",
+            PlanStatus = "CANCELLED"
+        };
+
+        _mockService.Setup(s => s.CancelMealPlanAsync(101, userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var actionResult = await _controller.CancelMealPlan(101, CancellationToken.None);
+
+        // Assert
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var apiResponse = objectResult.Value as ApiResponse<MealPlanDetailDto>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data!.PlanId.Should().Be(101);
+        apiResponse.Data.PlanStatus.Should().Be("CANCELLED");
     }
 }

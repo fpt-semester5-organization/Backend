@@ -3,6 +3,7 @@
 
 ## Local Project Documentation (Specs, BRs, Data Models, Decision Log)
 project-docs/
+Check_SRS/
 local-docs/
 docs/*
 !docs/00.*
@@ -76,4 +77,4 @@ check-srs/
 *Check-SRS*
 *check-srs*
 
-
+
