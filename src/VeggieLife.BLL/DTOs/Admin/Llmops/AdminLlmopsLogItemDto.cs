@@ -19,4 +19,5 @@ public class AdminLlmopsLogItemDto
     public string? ErrorMessage { get; set; }
     public int ExecutionTimeMs { get; set; }
     public DateTime CreatedAt { get; set; }
+    public string? UserAvatarUrl { get; set; }
 }

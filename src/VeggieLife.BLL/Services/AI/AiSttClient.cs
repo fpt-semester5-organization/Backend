@@ -30,7 +30,7 @@ public class AiSttClient : IAiSttClient
 
         if (_client.BaseAddress == null)
         {
-            var baseUrl = config["AiService:SttBaseUrl"] ?? config["AiService:BaseUrl"] ?? "http://localhost:8080";
+            var baseUrl = config["AiService:SttBaseUrl"] ?? config["AiService:BaseUrl"] ?? "http://localhost:8081";
             _client.BaseAddress = new Uri(baseUrl);
         }
 
@@ -61,10 +61,10 @@ public class AiSttClient : IAiSttClient
             {
                 response = await _client.PostAsJsonAsync("/stt/video-to-recipe", payload, JsonOptions, ct);
             }
-            catch (HttpRequestException ex) when (_client.BaseAddress?.Port != 8080)
+            catch (HttpRequestException ex) when (_client.BaseAddress?.Port != 8081)
             {
-                _logger.LogWarning(ex, "Không kết nối được tới {BaseAddress}, thử kết nối dự phòng tới http://localhost:8080/stt/video-to-recipe", _client.BaseAddress);
-                using var fallbackClient = new HttpClient { BaseAddress = new Uri("http://localhost:8080"), Timeout = _client.Timeout };
+                _logger.LogWarning(ex, "Không kết nối được tới {BaseAddress}, thử kết nối dự phòng tới http://localhost:8081/stt/video-to-recipe", _client.BaseAddress);
+                using var fallbackClient = new HttpClient { BaseAddress = new Uri("http://localhost:8081"), Timeout = _client.Timeout };
                 foreach (var h in _client.DefaultRequestHeaders)
                 {
                     fallbackClient.DefaultRequestHeaders.TryAddWithoutValidation(h.Key, h.Value);
