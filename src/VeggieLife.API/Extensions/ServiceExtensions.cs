@@ -425,7 +425,7 @@ public static class ServiceExtensions
             {
                 var config = sp.GetRequiredService<IConfiguration>();
                 var baseUrl = config["AiService:BaseUrl"] ?? "http://localhost:8080";
-                var apiKey = config["AiService:InternalApiKey"] ?? "dev-internal-key";
+                var apiKey = config["AiService:InternalApiKey"] ?? "veggielife-secret-internal-key-2026";
 
                 client.BaseAddress = new System.Uri(baseUrl);
                 client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
@@ -449,7 +449,7 @@ public static class ServiceExtensions
         {
             var config = sp.GetRequiredService<IConfiguration>();
             var baseUrl = config["AiService:BaseUrl"] ?? "http://localhost:8080";
-            var apiKey = config["AiService:InternalApiKey"] ?? "dev-internal-key";
+            var apiKey = config["AiService:InternalApiKey"] ?? "veggielife-secret-internal-key-2026";
 
             client.BaseAddress = new System.Uri(baseUrl);
             client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
@@ -464,7 +464,7 @@ public static class ServiceExtensions
             {
                 var config = sp.GetRequiredService<IConfiguration>();
                 var baseUrl = config["AiService:BaseUrl"] ?? "http://localhost:8080";
-                var apiKey = config["AiService:InternalApiKey"] ?? "dev-internal-key";
+                var apiKey = config["AiService:InternalApiKey"] ?? "veggielife-secret-internal-key-2026";
 
                 client.BaseAddress = new System.Uri(baseUrl);
                 client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
@@ -482,8 +482,8 @@ public static class ServiceExtensions
             .ConfigureHttpClient((sp, client) =>
             {
                 var config = sp.GetRequiredService<IConfiguration>();
-                var baseUrl = config["AiService:SttBaseUrl"] ?? config["AiService:BaseUrl"] ?? "http://localhost:8082";
-                var apiKey = config["AiService:InternalApiKey"] ?? "dev-internal-key";
+                var baseUrl = config["AiService:SttBaseUrl"] ?? config["AiService:BaseUrl"] ?? "http://localhost:8081";
+                var apiKey = config["AiService:InternalApiKey"] ?? "veggielife-secret-internal-key-2026";
 
                 client.BaseAddress = new System.Uri(baseUrl);
                 client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);

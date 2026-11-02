@@ -664,6 +664,7 @@ public class VideoService : IVideoService
         video.VideoTranscript.SttModelVersion = dto.SttModelVersion ?? "faster-whisper-small-int8";
         video.VideoTranscript.Status = "READY";
         video.VideoTranscript.CompletedAt = DateTime.UtcNow;
+        video.Status = "READY";
 
         // Tự động tạo công thức nháp (Draft Recipe) nếu video chưa có liên kết recipe
         if (dto.Recipe != null && video.VideoTranscript.RecipeId == null && video.Post != null)
