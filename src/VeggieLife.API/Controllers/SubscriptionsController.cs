@@ -81,6 +81,26 @@ public class SubscriptionsController : BaseApiController
     }
 
     /// <summary>
+    /// FN-SUB-04: Xem chi tiết biên lai thanh toán giao dịch nâng cấp VIP thành công.
+    /// Auth: Bearer (MEMBER | VIP | ADMIN).
+    /// </summary>
+    [HttpGet("/api/v1/subscriptions/transactions/{transactionId:long}/receipt")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    public async Task<IActionResult> GetPaymentReceipt(
+        [FromRoute] long transactionId,
+        CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+        var result = await _subscriptionService.GetPaymentReceiptAsync(
+            transactionId,
+            (int)CurrentUserId!.Value,
+            CurrentUserRole ?? UserRoles.Member,
+            ct);
+
+        return OkResponse(result, "Lấy thông tin biên lai thanh toán thành công.");
+    }
+
+    /// <summary>
     /// Kiểm tra tính hợp lệ của tài khoản đăng nhập và từ chối khách vãng lai gọi tính năng cá nhân hóa (FN-AUTH-03).
     /// </summary>
     private void EnsureAuthorizedMember()

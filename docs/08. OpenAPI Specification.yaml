@@ -3681,8 +3681,87 @@ components:
                   createdAt:
                     type: string
                     format: date-time
+                  planName:
+                    type: string
+                  orderCode:
+                    type: string
+                  completedAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  receiptUrl:
+                    type: string
+                    nullable: true
+                  canViewReceipt:
+                    type: boolean
       required:
       - statusCode
+
+    PaymentReceiptResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: Lấy thông tin biên lai thanh toán thành công.
+        data:
+          type: object
+          properties:
+            receiptNumber:
+              type: string
+              example: REC-20261103-000101
+            transactionId:
+              type: integer
+              format: int64
+              example: 101
+            orderCode:
+              type: string
+              example: ORD-123456
+            gateway:
+              type: string
+              example: VIETQR
+            status:
+              type: string
+              example: SUCCESS
+            paymentDate:
+              type: string
+              format: date-time
+            userId:
+              type: integer
+              example: 101
+            fullName:
+              type: string
+              example: Nguyễn Văn Chay
+            email:
+              type: string
+              example: member@veggielife.vn
+            planId:
+              type: integer
+              example: 1
+            planName:
+              type: string
+              example: VIP 1 Tháng
+            durationDays:
+              type: integer
+              example: 30
+            amountVnd:
+              type: number
+              example: 49000
+            vipStartsAt:
+              type: string
+              format: date-time
+            vipEndsAt:
+              type: string
+              format: date-time
+            note:
+              type: string
+              example: Thanh toán kích hoạt gói VIP VIP 1 Tháng (30 ngày)
+      required:
+      - statusCode
+      - message
+      - data
       - message
       - data
     ListAdminUsersResponse:
@@ -10539,6 +10618,59 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /subscriptions/transactions/{transactionId}/receipt:
+    get:
+      tags:
+      - SUB
+      operationId: getPaymentReceipt
+      summary: FN-SUB-04 Xem chi tiết biên lai thanh toán giao dịch nâng cấp VIP thành công
+      description: 'Lấy thông tin chi tiết biên lai thanh toán điện tử cho giao dịch đã hoàn tất (SUCCESS). Người dùng chỉ được xem biên lai của chính mình; Quản trị viên (ADMIN) có thể xem biên lai của bất kỳ giao dịch nào.
+
+        Auth: Bearer (MEMBER | VIP | ADMIN).'
+      x-fn-id: FN-SUB-04
+      x-status: Approved
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: transactionId
+        in: path
+        required: true
+        description: Định danh giao dịch thanh toán
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: Lấy thông tin biên lai thanh toán thành công.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentReceiptResponse'
+        '400':
+          description: 'ERR_VALIDATION: Giao dịch chưa hoàn tất thanh toán thành công, không thể lập biên lai.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu hoặc token không hợp lệ.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_FORBIDDEN: Không có quyền truy cập biên lai của giao dịch này.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'ERR_PAY_ORDER_NOT_FOUND: Không tìm thấy thông tin giao dịch thanh toán.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /payments/{gateway}/ipn:
     post:
       tags:

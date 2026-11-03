@@ -12,4 +12,9 @@ public class SubscriptionTransactionDto
     public long AmountVnd { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+    public string? PlanName { get; set; }
+    public string? OrderCode { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string? ReceiptUrl { get; set; }
+    public bool CanViewReceipt => string.Equals(Status, "SUCCESS", StringComparison.OrdinalIgnoreCase);
 }
