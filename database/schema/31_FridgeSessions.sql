@@ -17,6 +17,7 @@ BEGIN
         [User_ID]               INT NOT NULL,
         [Image_CDN_URL]         VARCHAR(255) NOT NULL,
         [Detected_Items_Count]  INT NOT NULL CONSTRAINT [DF_FridgeSessions_Items_Count] DEFAULT (0),
+        [Detected_Data_JSON]    NVARCHAR(MAX) NULL,
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_FridgeSessions_Created_At] DEFAULT (SYSDATETIME()),
 
         CONSTRAINT [PK_FridgeSessions] PRIMARY KEY CLUSTERED ([Session_ID] ASC)

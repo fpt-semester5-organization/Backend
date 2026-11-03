@@ -78,6 +78,7 @@ public class FridgeControllerTests
                 userId,
                 UserRoles.Member,
                 It.IsAny<string?>(),
+                It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(serviceResponse);
 
@@ -135,6 +136,7 @@ public class FridgeControllerTests
                 null,
                 UserRoles.Guest,
                 guestUuid,
+                It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(serviceResponse);
 
@@ -393,6 +395,7 @@ public class FridgeControllerTests
                 userId,
                 UserRoles.Member,
                 It.IsAny<string?>(),
+                It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(serviceResponse);
 

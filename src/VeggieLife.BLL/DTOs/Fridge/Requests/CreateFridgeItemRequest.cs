@@ -29,4 +29,9 @@ public class CreateFridgeItemRequest
     /// Đơn vị đong đo (VD: "quả", "g", "củ", "miếng"). Mặc định theo StandardUnit của nguyên liệu nếu để trống.
     /// </summary>
     public string? Unit { get; set; }
+
+    /// <summary>
+    /// Ảnh đại diện hoặc ảnh cắt thumbnail của nguyên liệu.
+    /// </summary>
+    public string? ThumbnailUrl { get; set; }
 }

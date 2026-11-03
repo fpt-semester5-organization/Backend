@@ -402,6 +402,7 @@ public partial class AppDbContext : DbContext
                 .HasMaxLength(30)
                 .HasDefaultValue("phần")
                 .HasColumnName("Unit");
+            entity.Property(e => e.ThumbnailUrl).HasColumnName("Thumbnail_URL");
 
             entity.HasOne(d => d.Ingredient).WithMany(p => p.FridgeInventories)
                 .HasForeignKey(d => d.IngredientId)
@@ -429,6 +430,7 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValueSql("(sysdatetime())")
                 .HasColumnName("Created_At");
             entity.Property(e => e.DetectedItemsCount).HasColumnName("Detected_Items_Count");
+            entity.Property(e => e.DetectedDataJson).HasColumnName("Detected_Data_JSON");
             entity.Property(e => e.ImageCdnUrl)
                 .HasMaxLength(255)
                 .IsUnicode(false)

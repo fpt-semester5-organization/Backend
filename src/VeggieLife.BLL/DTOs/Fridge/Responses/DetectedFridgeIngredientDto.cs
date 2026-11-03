@@ -68,4 +68,9 @@ public class DetectedFridgeIngredientDto
     /// Độ tin cậy từ mô hình AI (0..1).
     /// </summary>
     public double? Confidence { get; set; }
+
+    /// <summary>
+    /// URL ảnh thu nhỏ hoặc ảnh cắt cận cảnh thumbnail của nguyên liệu.
+    /// </summary>
+    public string? ThumbnailUrl { get; set; }
 }
