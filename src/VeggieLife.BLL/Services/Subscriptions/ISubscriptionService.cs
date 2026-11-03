@@ -52,4 +52,13 @@ public interface ISubscriptionService
     Task<CancelPendingSubscriptionResponseDto> CancelPendingSubscriptionAsync(
         int userId,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Lấy chi tiết thông tin biên lai thanh toán giao dịch nâng cấp VIP thành công (FN-SUB-04).
+    /// </summary>
+    Task<PaymentReceiptDto> GetPaymentReceiptAsync(
+        long transactionId,
+        int currentUserId,
+        string currentUserRole,
+        CancellationToken ct = default);
 }
