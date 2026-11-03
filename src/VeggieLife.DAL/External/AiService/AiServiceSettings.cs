@@ -8,7 +8,7 @@ public class AiServiceSettings
     public const string SectionName = "AiService";
 
     public string BaseUrl { get; set; } = "http://localhost:8080";
-    public string InternalApiKey { get; set; } = "dev-internal-key";
-    public int TimeoutSeconds { get; set; } = 60; // Ràng buộc BR-ADM-AI-002: quá 4s ngắt sang fallback
-    public int BarcodeTimeoutSeconds { get; set; } = 6; // Timeout riêng cho phân loại barcode
+    public string InternalApiKey { get; set; } = string.Empty;
+    public int TimeoutSeconds { get; set; } = 0; // 0 = Không giới hạn timeout
+    public int BarcodeTimeoutSeconds { get; set; } = 0; // 0 = Không giới hạn timeout
 }
