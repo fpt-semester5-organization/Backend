@@ -1,4 +1,4 @@
-﻿-- ============================================================
+-- ============================================================
 -- File: 05_Seed_IngredientAllergens.sql
 -- Thư mục: database/seed/
 -- Mục đích: Ánh xạ nguyên liệu thực phẩm với các nhóm chất gây dị ứng (BR-USR-07, BR-SCI-04).

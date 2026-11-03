@@ -29,6 +29,11 @@ public class AdminLlmopsDashboardResponseData
     public string AlertLevel { get; set; } = "NONE";
 
     /// <summary>
+    /// Diễn biến chi phí AI theo từng mốc giờ trong ngày hôm nay (0h - 23h).
+    /// </summary>
+    public List<HourlyCostDto> HourlyCosts { get; set; } = new();
+
+    /// <summary>
     /// Chuỗi dữ liệu chi phí và token theo từng điểm (ngày / tính năng).
     /// </summary>
     public List<CostPointDto> Series { get; set; } = new();

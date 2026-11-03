@@ -139,7 +139,7 @@ public class AuthController : BaseApiController
     [AllowAnonymous]
     public async Task<IActionResult> LoginWithGoogle([FromBody] LoginWithGoogleRequest request, CancellationToken ct)
     {
-        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var clientIp = ResolveClientIp();
         var userAgent = Request.Headers.UserAgent.ToString();
 
         // Nhận diện GuestUuid từ request, cookie hoặc header nếu có để hợp nhất ngữ cảnh (BR-GUEST-AUTH-01)
@@ -174,7 +174,7 @@ public class AuthController : BaseApiController
     [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken ct)
     {
-        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var clientIp = ResolveClientIp();
         var userAgent = Request.Headers.UserAgent.ToString();
 
         // Nhận diện GuestUuid từ request hoặc cookie nếu có để hợp nhất ngữ cảnh (BR-GUEST-AUTH-01)
@@ -214,7 +214,7 @@ public class AuthController : BaseApiController
             refreshToken = headerToken.ToString().Trim();
         }
 
-        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var clientIp = ResolveClientIp();
         var userAgent = Request.Headers.UserAgent.ToString();
 
         var result = await _authService.RefreshTokenAsync(refreshToken, clientIp, userAgent, ct);

@@ -41,6 +41,13 @@ public interface IPostService
         int? currentUserId = null,
         CancellationToken ct = default);
 
+    Task<PostDetailDto> GetPostByIdAsync(
+        int id,
+        bool isGuest,
+        int? currentUserId,
+        bool isAdmin,
+        CancellationToken ct = default);
+
     /// <summary>
     /// Đăng bài viết chia sẻ mới (lưu nháp hoặc gửi kiểm duyệt AI) (FN-POST-07).
     /// </summary>

@@ -14,4 +14,14 @@ public class CostCellDto
     /// Tổng số lượng token tiêu thụ.
     /// </summary>
     public int Tokens { get; set; }
+
+    /// <summary>
+    /// Số lượng Input / Prompt Tokens (ngữ cảnh RAG, ảnh tải lên, prompt).
+    /// </summary>
+    public long PromptTokens { get; set; }
+
+    /// <summary>
+    /// Số lượng Output / Completion Tokens (câu trả lời do mô hình sinh).
+    /// </summary>
+    public long CompletionTokens { get; set; }
 }

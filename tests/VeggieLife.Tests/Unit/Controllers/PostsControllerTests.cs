@@ -137,7 +137,7 @@ public class PostsControllerTests
             }
         };
 
-        _mockService.Setup(s => s.GetPostByIdAsync(postId, true, null, It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.GetPostByIdAsync(postId, true, null, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(detailDto);
 
         // Act
@@ -185,7 +185,7 @@ public class PostsControllerTests
             }
         };
 
-        _mockService.Setup(s => s.GetPostByIdAsync(postId, false, 1024, It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.GetPostByIdAsync(postId, false, 1024, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(detailDto);
 
         // Act
@@ -198,7 +198,7 @@ public class PostsControllerTests
         envelope.Should().NotBeNull();
         envelope!.Data!.MemberActions.CanVote.Should().BeTrue();
         envelope.Data.MemberActions.CanComment.Should().BeTrue();
-        _mockService.Verify(s => s.GetPostByIdAsync(postId, false, 1024, It.IsAny<CancellationToken>()), Times.Once);
+        _mockService.Verify(s => s.GetPostByIdAsync(postId, false, 1024, false, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // =========================================================================

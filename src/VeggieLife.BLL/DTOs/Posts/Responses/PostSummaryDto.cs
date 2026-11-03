@@ -13,6 +13,11 @@ public class PostSummaryDto
     public int PostId { get; set; }
 
     /// <summary>
+    /// Mã định danh công thức nếu bài viết đại diện hoặc liên kết với công thức nấu ăn.
+    /// </summary>
+    public int? RecipeId { get; set; }
+
+    /// <summary>
     /// Tiêu đề bài viết.
     /// </summary>
     public string Title { get; set; } = string.Empty;

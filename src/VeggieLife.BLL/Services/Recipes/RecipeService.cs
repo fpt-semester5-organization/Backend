@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
@@ -160,11 +160,11 @@ public class RecipeService : IRecipeService
         // Lọc theo Loại nội dung (RECIPE | VIDEO | ALL)
         if (normalizedContentType == "RECIPE")
         {
-            query = query.Where(r => !r.Posts.Any(p => p.Videos.Any(v => v.Status == "READY")));
+            query = query.Where(r => !r.Posts.Any(p => p.Videos.Any(v => v.Status == "READY" || v.Status == "PROCESSING")) && !r.VideoTranscripts.Any());
         }
         else if (normalizedContentType == "VIDEO")
         {
-            query = query.Where(r => r.Posts.Any(p => p.Videos.Any(v => v.Status == "READY")));
+            query = query.Where(r => r.Posts.Any(p => p.Videos.Any(v => v.Status == "READY" || v.Status == "PROCESSING")) || r.VideoTranscripts.Any());
         }
 
         // Đếm tổng số bản ghi thỏa mãn điều kiện
@@ -193,12 +193,16 @@ public class RecipeService : IRecipeService
                 RecipeId = r.RecipeId,
                 FoodId = r.FoodId,
                 FoodName = r.Food != null ? r.Food.FoodName : null,
-                Type = r.Posts.Any(p => p.Videos.Any(v => v.Status == "READY")) ? "VIDEO" : "RECIPE",
+                Type = r.Posts.Any(p => p.Videos.Any(v => v.Status == "READY" || v.Status == "PROCESSING")) || r.VideoTranscripts.Any() ? "VIDEO" : "RECIPE",
                 VideoId = r.Posts.SelectMany(p => p.Videos)
-                    .Where(v => v.Status == "READY")
+                    .Where(v => v.Status == "READY" || v.Status == "PROCESSING")
                     .Select(v => (int?)v.VideoId)
                     .FirstOrDefault()
                     ?? r.VideoTranscripts.Select(vt => (int?)vt.VideoId).FirstOrDefault(),
+                VideoUrl = r.Posts.SelectMany(p => p.Videos)
+                    .Where(v => v.Status == "READY" || v.Status == "PROCESSING")
+                    .Select(v => v.VideoUrl)
+                    .FirstOrDefault(),
                 Title = r.Title,
                 ImageUrl = r.ImageUrl,
                 DietarySchool = r.DietarySchool.SchoolCode,
@@ -229,6 +233,7 @@ public class RecipeService : IRecipeService
         int id,
         bool isGuest,
         int? currentUserId = null,
+        bool isAdmin = false,
         CancellationToken ct = default)
     {
         // 1. Kiểm tra mã id > 0
@@ -239,24 +244,27 @@ public class RecipeService : IRecipeService
 
         var detailCacheKey = $"recipe_detail:{id}";
 
-        // 2. Tra cứu cache Redis: recipe_detail:{id} (BR-SYS-CACHE-01)
-        var cachedRecipe = await _redis.GetAsync<RecipeDetailDto>(detailCacheKey, ct);
-        if (cachedRecipe != null)
+        // 2. Tra cứu cache Redis: recipe_detail:{id} (BR-SYS-CACHE-01) - Không dùng cache cho Admin hoặc người dùng đã đăng nhập để luôn xem dữ liệu mới nhất
+        if (!isAdmin && !currentUserId.HasValue)
         {
-            _logger.LogInformation("Lấy chi tiết công thức từ cache: {CacheKey}", detailCacheKey);
-
-            // Cập nhật lại quyền thao tác tương tác theo người gọi hiện tại (BR-AUTH-03)
-            cachedRecipe.MemberActions = new MemberActionsDto
+            var cachedRecipe = await _redis.GetAsync<RecipeDetailDto>(detailCacheKey, ct);
+            if (cachedRecipe != null)
             {
-                CanVote = !isGuest,
-                CanComment = !isGuest,
-                CanReport = !isGuest
-            };
+                _logger.LogInformation("Lấy chi tiết công thức từ cache: {CacheKey}", detailCacheKey);
 
-            // Tăng View_Count qua Redis counter (FN-POST-02)
-            await IncrementViewCountAsync(id, ct);
+                // Cập nhật lại quyền thao tác tương tác theo người gọi hiện tại (BR-AUTH-03)
+                cachedRecipe.MemberActions = new MemberActionsDto
+                {
+                    CanVote = !isGuest,
+                    CanComment = !isGuest,
+                    CanReport = !isGuest
+                };
 
-            return cachedRecipe;
+                // Tăng View_Count qua Redis counter (FN-POST-02)
+                await IncrementViewCountAsync(id, ct);
+
+                return cachedRecipe;
+            }
         }
 
         // 3. Truy vấn CSDL: SELECT Recipes + RecipeIngredients + Ingredients + FoodCategories + DietarySchools
@@ -275,17 +283,26 @@ public class RecipeService : IRecipeService
                 .ThenInclude(p => p.Comments)
             .FirstOrDefaultAsync(r => r.RecipeId == id, ct);
 
-        // 4. Kiểm tra điều kiện: Không tồn tại hoặc chưa APPROVED_ACTIVE thì báo 404 (BR-ADM-CNT-001)
-        // Ngoại lệ: tác giả có thể xem trước nội dung nháp của chính mình
+        // 4. Kiểm tra điều kiện:
+        // Không tồn tại -> báo 404 (BR-ADM-CNT-001)
         if (recipe == null)
         {
             throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
         }
 
+        // Tác giả có thể xem trước nội dung nháp của chính mình, Quản trị viên (Admin) có quyền thẩm tra mọi trạng thái
         var isAuthor = currentUserId.HasValue && recipe.UserId == currentUserId.Value;
-        if (recipe.Status != "APPROVED_ACTIVE" && !isAuthor)
+        if (!isAdmin)
         {
-            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
+            if (recipe.Status == "DELETED")
+            {
+                throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc đã bị xóa.");
+            }
+
+            if (recipe.Status != "APPROVED_ACTIVE" && !isAuthor)
+            {
+                throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
+            }
         }
 
         // 5. Xác định hasTranscript: VideoTranscripts COMPLETED/READY hoặc Video gắn Post có Transcript COMPLETED/READY
@@ -296,11 +313,30 @@ public class RecipeService : IRecipeService
         var voteCount = recipe.Posts.SelectMany(p => p.Votes).Count();
         var commentCount = recipe.Posts.SelectMany(p => p.Comments).Count(c => !c.IsSoftDeleted);
 
-        // 7. Xác định Type (VIDEO nếu có video READY, ngược lại là RECIPE) và lấy VideoId liên kết (FN-POST-02)
-        var readyVideo = recipe.Posts.SelectMany(p => p.Videos).FirstOrDefault(v => v.Status == "READY");
-        var hasReadyVideo = readyVideo != null;
-        var contentType = hasReadyVideo ? "VIDEO" : "RECIPE";
-        var videoId = readyVideo?.VideoId;
+        // 7. Xác định Video liên kết: tác giả hoặc Admin xem được mọi video chưa xóa (kể cả BANNED/PROCESSING), người khác chỉ xem READY
+        var activeVideo = recipe.Posts
+            .SelectMany(p => p.Videos)
+            .FirstOrDefault(v => (isAuthor || isAdmin) ? v.Status != "DELETED" : v.Status == "READY");
+
+        var hasVideo = activeVideo != null;
+        var contentType = hasVideo ? "VIDEO" : "RECIPE";
+        var videoId = activeVideo?.VideoId;
+        var videoUrl = activeVideo?.VideoUrl;
+
+        var videos = recipe.Posts
+            .SelectMany(p => p.Videos)
+            .Where(v => (isAuthor || isAdmin) ? v.Status != "DELETED" : v.Status == "READY")
+            .OrderBy(v => v.VideoId)
+            .Select(v => new RecipeVideoDto
+            {
+                VideoId = v.VideoId,
+                Title = v.Title,
+                VideoUrl = v.VideoUrl,
+                ThumbnailUrl = v.ThumbnailUrl,
+                DurationSeconds = v.DurationSeconds,
+                Status = v.Status
+            })
+            .ToList();
 
         // 8. Chuyển đổi toàn văn các bước nấu ăn (Instructions) thành danh sách chuỗi
         var parsedInstructions = ParseInstructions(recipe.Instructions);
@@ -311,7 +347,7 @@ public class RecipeService : IRecipeService
             .Select(ri => new RecipeIngredientDetailDto
             {
                 IngredientId = ri.IngredientId,
-                Name = ri.Ingredient.IngredientName,
+                Name = ri.Ingredient?.IngredientName ?? string.Empty,
                 Quantity = ri.QuantityNeeded,
                 Unit = ri.Unit
             })
@@ -320,18 +356,23 @@ public class RecipeService : IRecipeService
         // 10. Quyền tương tác: Khách canVote/canComment/canReport = false (BR-AUTH-03)
         var memberActions = new MemberActionsDto
         {
-            CanVote = !isGuest,
+            CanVote = !isGuest && !isAdmin,
             CanComment = !isGuest,
-            CanReport = !isGuest
+            CanReport = !isGuest && !isAdmin
         };
 
         var detailDto = new RecipeDetailDto
         {
             RecipeId = recipe.RecipeId,
+            AuthorId = recipe.UserId,
+            Status = (isAuthor || isAdmin) ? recipe.Status : null,
+            CategoryId = recipe.CategoryId,
+            DietarySchoolId = recipe.DietarySchoolId,
+            DifficultyLevel = recipe.DifficultyLevel,
             Type = contentType,
             Title = recipe.Title,
             ImageUrl = recipe.ImageUrl,
-            DietarySchool = recipe.DietarySchool.SchoolCode,
+            DietarySchool = recipe.DietarySchool?.SchoolCode ?? string.Empty,
             CookTimeMinutes = recipe.CookTimeMinutes,
             CaloriesKcal = recipe.CaloriesKcal,
             VoteCount = voteCount,
@@ -343,15 +384,22 @@ public class RecipeService : IRecipeService
             Ingredients = ingredients,
             HasTranscript = hasTranscript,
             VideoId = videoId,
+            VideoUrl = videoUrl,
+            Videos = videos,
             CommentCount = commentCount,
             MemberActions = memberActions
         };
 
         // 11. Lưu vào cache Redis: recipe_detail:{id} (TTL 24h)
-        await _redis.SetAsync(detailCacheKey, detailDto, RecipeDetailCacheTtl, ct);
-
-        // 12. Tăng View_Count trong CSDL & Redis counter
-        await IncrementViewCountAsync(id, ct);
+        // Chỉ lưu cache và tăng View_Count khi công thức đã được duyệt APPROVED_ACTIVE và không phải admin
+        if (recipe.Status == "APPROVED_ACTIVE")
+        {
+            await _redis.SetAsync(detailCacheKey, detailDto, RecipeDetailCacheTtl, ct);
+            if (!isAdmin)
+            {
+                await IncrementViewCountAsync(id, ct);
+            }
+        }
 
         return detailDto;
     }
@@ -896,6 +944,18 @@ public class RecipeService : IRecipeService
                 CreatedAt = DateTime.UtcNow
             });
 
+            _db.Posts.Add(new Post
+            {
+                UserId = userId,
+                RecipeId = quarantinedRecipe.RecipeId,
+                Title = quarantinedRecipe.Title,
+                Content = quarantinedRecipe.Description ?? quarantinedRecipe.Title,
+                ImageUrl = quarantinedRecipe.ImageUrl,
+                Visibility = "PRIVATE",
+                ModerationStatus = "QUARANTINED_HIDDEN",
+                CreatedAt = DateTime.UtcNow
+            });
+
             await _db.SaveChangesAsync(ct);
             throw new AppException(422, ErrorCodes.ErrRecipeRedAlert, forbiddenCheck.Reason);
         }
@@ -916,7 +976,8 @@ public class RecipeService : IRecipeService
             ImageUrls = !string.IsNullOrWhiteSpace(request.ImageUrl) ? new List<string> { request.ImageUrl.Trim() } : new List<string>()
         };
 
-        var aiResult = await _moderationService.CheckContentAsync(moderationReq, ct);
+        var aiResult = await _moderationService.CheckContentAsync(moderationReq, ct)
+            ?? new ModerationCheckResponse { ViolationType = "NONE", ViolationScore = 0.0, Reasons = new List<string>() };
         await LogAiQuotaAsync(userId, aiResult, ct);
 
         var isMeatViolation = aiResult.ViolationType == "VIO_MEAT";
@@ -979,6 +1040,18 @@ public class RecipeService : IRecipeService
                 EvidenceSummary = evidence,
                 ReportSource = "AI_SCAN",
                 Status = "PENDING",
+                CreatedAt = DateTime.UtcNow
+            });
+
+            _db.Posts.Add(new Post
+            {
+                UserId = userId,
+                RecipeId = recipe.RecipeId,
+                Title = recipe.Title,
+                Content = recipe.Description ?? recipe.Title,
+                ImageUrl = recipe.ImageUrl,
+                Visibility = "PRIVATE",
+                ModerationStatus = "QUARANTINED_HIDDEN",
                 CreatedAt = DateTime.UtcNow
             });
             await _db.SaveChangesAsync(ct);
@@ -1057,11 +1130,6 @@ public class RecipeService : IRecipeService
         if (recipe.UserId != userId)
         {
             throw AppException.Forbidden(ErrorCodes.ErrContentNotOwner, "Không phải tác giả của nội dung.");
-        }
-
-        if (recipe.Status == "QUARANTINED_HIDDEN")
-        {
-            throw new AppException(409, ErrorCodes.ErrRecipeLocked, "Công thức đang bị cách ly chờ Quản trị viên duyệt, không thể tự chỉnh sửa.");
         }
 
         var newTitle = !string.IsNullOrWhiteSpace(request.Title) ? request.Title.Trim() : recipe.Title;
@@ -1295,7 +1363,7 @@ public class RecipeService : IRecipeService
             }
         }
 
-        // 2. Nhánh Recipe hiện tại là APPROVED_ACTIVE:
+        // 2. Nhánh Recipe hiện tại là APPROVED_ACTIVE hoặc QUARANTINED_HIDDEN:
         if (!isContentChanged)
         {
             recipe.CategoryId = newCategoryId;
@@ -1311,7 +1379,7 @@ public class RecipeService : IRecipeService
             return new UpdateRecipeResponseDto
             {
                 RecipeId = recipe.RecipeId,
-                Status = "APPROVED_ACTIVE",
+                Status = recipe.Status,
                 Moderated = false
             };
         }
@@ -1374,6 +1442,19 @@ public class RecipeService : IRecipeService
             recipe.ImageUrl
         });
 
+        // Nếu người dùng xóa ảnh/video (newImageUrl rỗng hoặc null):
+        if (string.IsNullOrWhiteSpace(newImageUrl))
+        {
+            var attachedVideos = await _db.Videos
+                .Where(v => _db.Posts.Where(p => p.RecipeId == recipe.RecipeId).Select(p => p.PostId).Contains(v.PostId))
+                .ToListAsync(ct);
+            foreach (var v in attachedVideos)
+            {
+                v.Status = "DELETED";
+                v.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
         recipe.Title = newTitle;
         recipe.Description = newDesc;
         recipe.CategoryId = newCategoryId;
@@ -1383,8 +1464,9 @@ public class RecipeService : IRecipeService
         recipe.CookTimeMinutes = newCookTime;
         recipe.Servings = newServings;
         recipe.DifficultyLevel = newDifficulty;
-        recipe.ImageUrl = newImageUrl;
+        recipe.ImageUrl = string.IsNullOrWhiteSpace(newImageUrl) ? null : newImageUrl;
         recipe.Instructions = JsonSerializer.Serialize(newInstructions);
+        recipe.Status = "APPROVED_ACTIVE";
         recipe.UpdatedAt = DateTime.UtcNow;
         recipe.CaloriesKcal = await CalculateCaloriesAsync(newIngredients, ct);
 
@@ -1410,6 +1492,7 @@ public class RecipeService : IRecipeService
             repPostActive.Title = recipe.Title;
             repPostActive.Content = recipe.Description ?? recipe.Title;
             repPostActive.ImageUrl = recipe.ImageUrl;
+            repPostActive.ModerationStatus = "APPROVED_ACTIVE";
             repPostActive.UpdatedAt = DateTime.UtcNow;
         }
 
@@ -1526,27 +1609,8 @@ public class RecipeService : IRecipeService
 
     private async Task CheckDailyLimitAsync(int userId, CancellationToken ct)
     {
-        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId, ct);
-        if (user == null)
-        {
-            throw AppException.Unauthorized(ErrorCodes.ErrAuthInvalidToken, "Không tìm thấy người dùng.");
-        }
-
-        var todayUtc = DateTime.UtcNow.Date;
-        var accountAgeDays = (DateTime.UtcNow - user.CreatedAt).TotalDays;
-        var maxLimit = accountAgeDays < 3.0 ? 2 : 10;
-
-        var postsCount = await _db.Posts
-            .CountAsync(p => p.UserId == userId && p.CreatedAt >= todayUtc && p.ModerationStatus != "DRAFT", ct);
-
-        var recipesCount = await _db.Recipes
-            .CountAsync(r => r.UserId == userId && r.CreatedAt >= todayUtc && r.Status != "DRAFT", ct);
-
-        if (postsCount + recipesCount >= maxLimit)
-        {
-            throw new AppException(429, ErrorCodes.ErrPostDailyLimitExceeded,
-                $"Tài khoản đã đạt giới hạn tối đa {maxLimit} nội dung đăng tải trong ngày (BR-USR-04).");
-        }
+        // Đã hủy bỏ kiểm tra giới hạn bài đăng trong ngày theo yêu cầu để người dùng thao tác kiểm thử không bị chặn 429
+        await Task.CompletedTask;
     }
 
     private static void ValidateRecipeStructure(CreateRecipeRequest request)

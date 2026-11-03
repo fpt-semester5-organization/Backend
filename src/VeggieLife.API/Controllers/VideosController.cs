@@ -76,7 +76,9 @@ public class VideosController : BaseApiController
 
         var message = result.Status == "PROCESSING"
             ? "Đã nhận video, đang xử lý."
-            : "Đã tải ảnh lên thành công.";
+            : (result.ModerationStatus == "QUARANTINED_HIDDEN" || result.Status == "BANNED"
+                ? "Nội dung phương tiện vi phạm tiêu chuẩn cộng đồng và đã bị đánh Red-Flag."
+                : (result.VideoId.HasValue ? "Đã kiểm duyệt video thành công." : "Đã tải ảnh lên thành công."));
 
         return AcceptedResponse(result, message);
     }

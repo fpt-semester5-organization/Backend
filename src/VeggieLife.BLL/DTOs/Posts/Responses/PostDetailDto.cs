@@ -28,6 +28,16 @@ public class PostDetailDto
     public string? ImageUrl { get; set; }
 
     /// <summary>
+    /// Trạng thái kiểm duyệt bài viết (dành cho tác giả hoặc quản trị viên).
+    /// </summary>
+    public string? ModerationStatus { get; set; }
+
+    /// <summary>
+    /// Chế độ hiển thị bài viết (PUBLIC, PRIVATE).
+    /// </summary>
+    public string? Visibility { get; set; }
+
+    /// <summary>
     /// Thông tin tác giả bài viết.
     /// </summary>
     public PostAuthorDto Author { get; set; } = new();

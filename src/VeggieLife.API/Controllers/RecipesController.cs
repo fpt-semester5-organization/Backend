@@ -87,8 +87,9 @@ public class RecipesController : BaseApiController
     {
         var isGuest = IsGuestUser();
         var currentUserId = CurrentUserId.HasValue ? (int?)CurrentUserId.Value : null;
+        var isAdmin = string.Equals(CurrentUserRole, UserRoles.Admin, StringComparison.OrdinalIgnoreCase);
 
-        var recipe = await _recipeService.GetRecipeByIdAsync(id, isGuest, currentUserId, ct);
+        var recipe = await _recipeService.GetRecipeByIdAsync(id, isGuest, currentUserId, isAdmin, ct);
         return OkResponse(recipe, "OK");
     }
 
@@ -262,7 +263,8 @@ public class RecipesController : BaseApiController
             throw AppException.Internal(ErrorCodes.ErrInternal, "Dịch vụ bình luận chưa được cấu hình.");
         }
 
-        var (items, meta) = await _commentService.ListRecipeCommentsAsync(id, page, size, ct);
+        var isAdmin = string.Equals(CurrentUserRole, UserRoles.Admin, StringComparison.OrdinalIgnoreCase);
+        var (items, meta) = await _commentService.ListRecipeCommentsAsync(id, page, size, isAdmin, ct);
         return PagedResponse(items, meta, "OK");
     }
 
@@ -297,7 +299,11 @@ public class RecipesController : BaseApiController
         var userId = (int)CurrentUserId!.Value;
         var result = await _commentService.CreateRecipeCommentAsync(id, request, userId, ct);
 
-        return CreatedResponse(result, "Đã bình luận.");
+        var message = result.Status == "QUARANTINED_HIDDEN"
+            ? "Bình luận của bạn có dấu hiệu vi phạm tiêu chuẩn cộng đồng và đang chờ kiểm duyệt nên chưa hiển thị công khai."
+            : "Đã bình luận.";
+
+        return CreatedResponse(result, message);
     }
 
     /// <summary>

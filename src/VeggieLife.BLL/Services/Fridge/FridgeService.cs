@@ -32,6 +32,7 @@ public class FridgeService : IFridgeService
     private readonly IRedisService _redisService;
     private readonly IMediaService _mediaService;
     private readonly ILogger<FridgeService> _logger;
+    private readonly VeggieLife.BLL.Services.Settings.ISystemSettingService? _settingService;
 
     public const int GuestAiTrialLimit = 3;
     public const int MemberDailyLimit = 10;
@@ -43,13 +44,15 @@ public class FridgeService : IFridgeService
         IAiServiceClient aiClient,
         IRedisService redisService,
         IMediaService mediaService,
-        ILogger<FridgeService> logger)
+        ILogger<FridgeService> logger,
+        VeggieLife.BLL.Services.Settings.ISystemSettingService? settingService = null)
     {
         _db = db;
         _aiClient = aiClient;
         _redisService = redisService;
         _mediaService = mediaService;
         _logger = logger;
+        _settingService = settingService;
     }
 
     /// <summary>
@@ -87,20 +90,26 @@ public class FridgeService : IFridgeService
             guestRedisKey = $"guest_quota:ai:{guestUuid}";
             var usedLong = await _redisService.GetAsync<long?>(guestRedisKey, ct) ?? 0;
             currentUsed = (int)usedLong;
-            quotaLimit = GuestAiTrialLimit;
+            quotaLimit = _settingService != null
+                ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_GUEST", GuestAiTrialLimit, ct)
+                : GuestAiTrialLimit;
 
             if (currentUsed >= quotaLimit)
             {
                 _logger.LogInformation("Khách {GuestId} đã dùng hết hạn mức AI dùng thử ({Used}/{Limit})", guestUuid, currentUsed, quotaLimit);
                 throw AppException.Forbidden(
                     ErrorCodes.ErrQuotaAiExceeded,
-                    $"Khách đã dùng hết {GuestAiTrialLimit:D2} lượt AI dùng thử (FN-AUTH-02, BR-GUEST-02). Vui lòng đăng ký tài khoản để tiếp tục nhận diện nguyên liệu tủ lạnh.");
+                    $"Khách đã dùng hết {quotaLimit:D2} lượt AI dùng thử (FN-AUTH-02, BR-GUEST-02). Vui lòng đăng ký tài khoản để tiếp tục nhận diện nguyên liệu tủ lạnh.");
             }
         }
         else
         {
             var memberId = userId!.Value;
-            quotaLimit = isVip ? VipDailyLimit : MemberDailyLimit;
+            quotaLimit = _settingService != null
+                ? (isVip
+                    ? await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_VIP", VipDailyLimit, ct)
+                    : await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_FREE", MemberDailyLimit, ct))
+                : (isVip ? VipDailyLimit : MemberDailyLimit);
 
             var todayUtc = DateTime.UtcNow.Date;
             currentUsed = await _db.AiquotaLogs.CountAsync(l =>
@@ -1402,6 +1411,61 @@ public class FridgeService : IFridgeService
         {
             new() { Name = "Nấm rơm", FreshnessStatus = "FRESH", Box2D = new List<int> { 145, 230, 420, 510 } },
             new() { Name = "Rau lạ", FreshnessStatus = "NON-FRESH", Box2D = new List<int> { 510, 120, 780, 390 } }
+        };
+    }
+
+    /// <summary>
+    /// Lấy hạn mức quét ảnh tủ lạnh hôm nay của người dùng đồng bộ từ SystemSettings.
+    /// </summary>
+    public async Task<FridgeDetectionQuotaDto> GetFridgeQuotaAsync(
+        int? userId,
+        string? guestUuid,
+        string userRole,
+        CancellationToken ct = default)
+    {
+        var isGuest = string.Equals(userRole, UserRoles.Guest, StringComparison.OrdinalIgnoreCase) || userId == null;
+        var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase);
+
+        if (isGuest)
+        {
+            var guestLimit = _settingService != null
+                ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_GUEST", GuestAiTrialLimit, ct)
+                : GuestAiTrialLimit;
+
+            long guestUsed = 0;
+            if (!string.IsNullOrEmpty(guestUuid))
+            {
+                var redisVal = await _redisService.GetAsync<long?>($"guest_quota:ai:{guestUuid}", ct);
+                guestUsed = redisVal ?? 0;
+            }
+
+            return new FridgeDetectionQuotaDto
+            {
+                Used = (int)guestUsed,
+                Limit = guestLimit,
+                Remaining = Math.Max(0, guestLimit - (int)guestUsed)
+            };
+        }
+
+        var memberId = userId!.Value;
+        var quotaLimit = _settingService != null
+            ? (isVip
+                ? await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_VIP", VipDailyLimit, ct)
+                : await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_FREE", MemberDailyLimit, ct))
+            : (isVip ? VipDailyLimit : MemberDailyLimit);
+
+        var todayUtc = DateTime.UtcNow.Date;
+        var currentUsed = await _db.AiquotaLogs.CountAsync(l =>
+            l.UserId == memberId &&
+            l.FeatureCode == "AI_FRIDGE" &&
+            l.RequestStatus == "SUCCESS" &&
+            l.CreatedAt >= todayUtc, ct);
+
+        return new FridgeDetectionQuotaDto
+        {
+            Used = currentUsed,
+            Limit = quotaLimit,
+            Remaining = Math.Max(0, quotaLimit - currentUsed)
         };
     }
 }

@@ -25,12 +25,15 @@ public class SimulatedContentModerationService : IContentModerationService
 
     private static readonly string[] HateKeywords = new[]
     {
-        "chửi", "hate", "xúc phạm", "đồ ngu", "phản động", "thù địch", "đánh chết", "lăng mạ", "lũ ngu", "phá nát"
+        "chửi", "hate", "xúc phạm", "đồ ngu", "phản động", "thù địch", "đánh chết", "lăng mạ", "lũ ngu", "phá nát",
+        "thấy gớm", "gớm quá", "gớm ghiếc", "nhìn gớm", "gớm", "thấy ghê", "ghê quá", "ghê tởm", "nhìn ghê",
+        "kinh tởm", "tởm quá", "tởm lợm", "nhìn tởm", "tởm", "bẩn thỉu", "dơ bẩn", "dơ dáy",
+        "chó ăn", "heo ăn", "lợn ăn", "như rác", "rác rưởi", "đồ khốn", "mất dạy", "vô học", "khốn nạn"
     };
 
     private static readonly string[] SpamKeywords = new[]
     {
-        "spam", "mua ngay", "quảng cáo", "khuyến mãi sốc", "kiếm tiền online", "đầu tư sinh lời"
+        "spam", "mua ngay", "quảng cáo", "khuyến mãi sốc", "kiếm tiền online", "đầu tư sinh lời", "đa cấp", "bán hàng đa cấp", "làm giàu nhanh", "tiền ảo", "cho vay", "cờ bạc"
     };
 
     public SimulatedContentModerationService(ILogger<SimulatedContentModerationService> logger)

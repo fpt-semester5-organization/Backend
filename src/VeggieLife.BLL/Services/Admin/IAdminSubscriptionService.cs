@@ -57,4 +57,12 @@ public interface IAdminSubscriptionService
         long transactionId,
         int adminId,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Xóa gói VIP (nếu chưa có giao dịch thanh toán) hoặc chuyển sang ẩn gói (FN-ADM-13).
+    /// </summary>
+    Task DeleteSubscriptionPlanAsync(
+        int id,
+        int adminId,
+        CancellationToken ct = default);
 }

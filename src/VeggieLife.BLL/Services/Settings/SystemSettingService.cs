@@ -24,6 +24,7 @@ public class SystemSettingService : ISystemSettingService
 {
     private const string CacheKeyPrefix = "sys_setting:";
     private const string CacheKeyLegalDocuments = "sys_setting:legal_documents:all";
+    private const string CacheKeyPublicSettings = "sys_setting:public_cache";
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(30);
 
     private readonly AppDbContext _db;
@@ -175,6 +176,8 @@ public class SystemSettingService : ISystemSettingService
         try
         {
             await _redis.SetAsync(cacheKey, trimmedNewValue, CacheTtl, ct);
+            await _redis.RemoveAsync(CacheKeyPublicSettings, ct);
+            await _redis.RemoveAsync("plans_cache", ct);
             if (key.StartsWith("LEGAL_", StringComparison.OrdinalIgnoreCase))
             {
                 await _redis.RemoveAsync(CacheKeyLegalDocuments, ct);
@@ -224,6 +227,8 @@ public class SystemSettingService : ISystemSettingService
         try
         {
             await _redis.SetAsync(cacheKey, setting.DefaultValue, CacheTtl, ct);
+            await _redis.RemoveAsync(CacheKeyPublicSettings, ct);
+            await _redis.RemoveAsync("plans_cache", ct);
             if (key.StartsWith("LEGAL_", StringComparison.OrdinalIgnoreCase))
             {
                 await _redis.RemoveAsync(CacheKeyLegalDocuments, ct);
@@ -458,6 +463,56 @@ public class SystemSettingService : ISystemSettingService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Lỗi truy vấn Database cho danh mục tài liệu pháp lý. Sử dụng giá trị fallback.");
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Lấy toàn bộ các chỉ số cấu hình công khai phục vụ Frontend (MEAL_PLAN, AI_QUOTA, LEGAL) với Redis Cache-Aside.
+    /// </summary>
+    public async Task<VeggieLife.BLL.DTOs.Settings.PublicSystemSettingsDto> GetPublicSettingsAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var cached = await _redis.GetAsync<VeggieLife.BLL.DTOs.Settings.PublicSystemSettingsDto>(CacheKeyPublicSettings, ct);
+            if (cached != null)
+            {
+                return cached;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi đọc Redis cache cho cấu hình công khai. Chuyển sang đọc trực tiếp.");
+        }
+
+        var result = new VeggieLife.BLL.DTOs.Settings.PublicSystemSettingsDto();
+
+        result.MealPlanWeeklyLimitFree = await GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_FREE", 1, ct);
+        result.MealPlanWeeklyLimitVip = await GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_VIP", 3, ct);
+        result.MealSwapLimitDraft = await GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct);
+        result.MealSwapLimitActive = await GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
+        result.MealSwapCalorieTolerancePercent = await GetIntSettingAsync("MEAL_SWAP_CALORIE_TOLERANCE_PERCENT", 15, ct);
+
+        result.ChatLimitDailyGuest = await GetIntSettingAsync("CHAT_LIMIT_DAILY_GUEST", 3, ct);
+        result.ChatLimitDailyFree = await GetIntSettingAsync("CHAT_LIMIT_DAILY_FREE", 20, ct);
+        result.ChatLimitDailyVip = await GetIntSettingAsync("CHAT_LIMIT_DAILY_VIP", 200, ct);
+        result.FridgeScanLimitDailyFree = await GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_FREE", 10, ct);
+        result.FridgeScanLimitDailyVip = await GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_VIP", 30, ct);
+
+        var legalDocs = await GetLegalDocumentsAsync(ct);
+        result.LegalUserAgreementUrl = legalDocs.UserAgreementUrl;
+        result.LegalPrivacyPolicyUrl = legalDocs.PrivacyPolicyUrl;
+        result.LegalTermsOfServiceUrl = legalDocs.TermsOfServiceUrl;
+        result.LegalVeganDisclaimerUrl = legalDocs.VeganDisclaimerUrl;
+
+        try
+        {
+            await _redis.SetAsync(CacheKeyPublicSettings, result, TimeSpan.FromMinutes(10), ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Không thể lưu Redis cache cho cấu hình công khai.");
         }
 
         return result;

@@ -13,119 +13,109 @@ SET ANSI_NULLS ON;
 GO
 
 -- 1. Xóa dữ liệu cũ của các công thức 117 - 123 nếu đã tồn tại trước đó
+DELETE FROM dbo.ViolationReports WHERE Comment_ID IN (SELECT Comment_ID FROM dbo.Comments WHERE Post_ID IN (SELECT Post_ID FROM dbo.Posts WHERE Recipe_ID BETWEEN 117 AND 123));
+DELETE FROM dbo.ViolationReports WHERE Post_ID IN (SELECT Post_ID FROM dbo.Posts WHERE Recipe_ID BETWEEN 117 AND 123);
+DELETE FROM dbo.ViolationReports WHERE Recipe_ID BETWEEN 117 AND 123;
 DELETE FROM dbo.Votes WHERE Post_ID IN (SELECT Post_ID FROM dbo.Posts WHERE Recipe_ID BETWEEN 117 AND 123);
+UPDATE dbo.Comments SET Parent_Comment_ID = NULL WHERE Parent_Comment_ID IN (SELECT Comment_ID FROM dbo.Comments WHERE Post_ID IN (SELECT Post_ID FROM dbo.Posts WHERE Recipe_ID BETWEEN 117 AND 123)) OR Post_ID IN (SELECT Post_ID FROM dbo.Posts WHERE Recipe_ID BETWEEN 117 AND 123);
 DELETE FROM dbo.Comments WHERE Post_ID IN (SELECT Post_ID FROM dbo.Posts WHERE Recipe_ID BETWEEN 117 AND 123);
+DELETE FROM dbo.VideoTranscripts WHERE Recipe_ID BETWEEN 117 AND 123;
+DELETE FROM dbo.Videos WHERE Post_ID IN (SELECT Post_ID FROM dbo.Posts WHERE Recipe_ID BETWEEN 117 AND 123);
 DELETE FROM dbo.Posts WHERE Recipe_ID BETWEEN 117 AND 123;
 DELETE FROM dbo.RecipeIngredients WHERE Recipe_ID BETWEEN 117 AND 123;
 
 SET IDENTITY_INSERT dbo.Recipes ON;
-DELETE FROM dbo.Recipes WHERE Recipe_ID BETWEEN 117 AND 123;
 
--- 2. Nạp 7 công thức calo cao (ID 117 - 123)
--- Công thức 117: Cơm chiên ngũ sắc hạt sen dinh dưỡng (580.0 kcal) - Category 5 (Cơm & Xôi)
-INSERT INTO dbo.Recipes (
-    Recipe_ID, User_ID, Category_ID, Dietary_School_ID, Title, Description, Instructions,
-    Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level,
-    Is_Verified, Image_Url, Status, View_Count, Source, Created_At
-) VALUES (
-    117, 1, 5, 1,
-    N'Cơm chiên ngũ sắc hạt sen dinh dưỡng',
-    N'Cơm chiên hạt tơi giòn kết hợp hạt sen tươi bùi béo, bắp ngọt, đậu hà lan, cà rốt và đậu hũ chiên vàng ruộm, cung cấp năng lượng tràn đầy.',
-    N'["Bước 1: Luộc chín hạt sen tươi và đậu hà lan, để ráo.","Bước 2: Đậu hũ cắt hạt lựu chiên giòn, cà rốt xắt hạt lựu.","Bước 3: Phi thơm dầu mè với bo-rô hoặc gừng, cho cơm nguội vào đảo săn hạt.","Bước 4: Trút toàn bộ hạt sen, đậu hà lan, bắp ngọt và đậu hũ vào đảo đều cùng nước tương, tiêu xay trong 5 phút."]',
-    15, 20, 1, 580.0, 'MEDIUM',
-    1, 'https://images.unsplash.com/photo-1603133872878-684f208fb84b?auto=format&fit=crop&w=800&q=80',
-    'APPROVED_ACTIVE', 180, 'SYSTEM', SYSDATETIME()
-);
-
--- Công thức 118: Xôi nấm hạt dẻ cốt dừa béo ngậy (620.0 kcal) - Category 5 (Cơm & Xôi)
-INSERT INTO dbo.Recipes (
-    Recipe_ID, User_ID, Category_ID, Dietary_School_ID, Title, Description, Instructions,
-    Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level,
-    Is_Verified, Image_Url, Status, View_Count, Source, Created_At
-) VALUES (
-    118, 1, 5, 1,
-    N'Xôi nấm hạt dẻ cốt dừa béo ngậy',
-    N'Hạt xôi nếp dẻo thơm nấu nước cốt dừa đậm đà, kết hợp nấm hương xào thấm vị cùng hạt điều rang bùi ngậy giàu chất béo lành mạnh.',
-    N'["Bước 1: Gạo nếp ngâm qua đêm, trộn chút muối rồi đồ chín cùng nước cốt dừa.","Bước 2: Nấm hương ngâm nở, xắt sợi rồi xào săn với nước tương và tiêu.","Bước 3: Hạt điều rang thơm đập dập.","Bước 4: Bới xôi ra đĩa, rải nấm xào lên trên và rắc hạt điều rang thưởng thức nóng."]',
-    20, 30, 1, 620.0, 'MEDIUM',
-    1, 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80',
-    'APPROVED_ACTIVE', 210, 'SYSTEM', SYSDATETIME()
-);
-
--- Công thức 119: Bánh mì ngũ cốc chả nấm bơ hạt điều (520.0 kcal) - Category 1 (Bánh Mặn)
-INSERT INTO dbo.Recipes (
-    Recipe_ID, User_ID, Category_ID, Dietary_School_ID, Title, Description, Instructions,
-    Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level,
-    Is_Verified, Image_Url, Status, View_Count, Source, Created_At
-) VALUES (
-    119, 1, 1, 1,
-    N'Bánh mì ngũ cốc chả nấm bơ hạt điều',
-    N'Bánh mì ngũ cốc nguyên cám giòn tan kẹp chả lụa chay, nấm đùi gà áp chảo sốt tương mật và sốt bơ hạt điều béo ngậy giàu protein.',
-    N'["Bước 1: Nướng giòn bánh mì ngũ cốc nguyên cám.","Bước 2: Nấm đùi gà cắt lát áp chảo vàng đều hai mặt với sốt nước tương tiêu.","Bước 3: Phết đều bơ hạt điều vào lòng bánh mì.","Bước 4: Kẹp chả lụa chay, nấm áp chảo, dưa leo và ngò rí rồi thưởng thức."]',
-    10, 15, 1, 520.0, 'EASY',
-    1, 'https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=800&q=80',
-    'APPROVED_ACTIVE', 145, 'SYSTEM', SYSDATETIME()
-);
-
--- Công thức 120: Hủ tiếu Nam Vang chay đặc biệt (540.0 kcal) - Category 11 (Mì, Bún & Phở)
-INSERT INTO dbo.Recipes (
-    Recipe_ID, User_ID, Category_ID, Dietary_School_ID, Title, Description, Instructions,
-    Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level,
-    Is_Verified, Image_Url, Status, View_Count, Source, Created_At
-) VALUES (
-    120, 1, 11, 1,
-    N'Hủ tiếu Nam Vang chay đặc biệt',
-    N'Tô hủ tiếu chay thanh ngọt từ nước dùng củ cải táo đỏ, đầy đặn topping chả lụa chay, mì căn chiên giòn, nấm rơm và tàu hũ ky chiên xù.',
-    N'["Bước 1: Hầm nước dùng từ củ cải trắng, bắp ngọt và gừng tươi trong 30 phút.","Bước 2: Trụng hủ tiếu chín tới, xốc đều với một chút dầu mè.","Bước 3: Chiên giòn mì căn và tàu hũ ky, xắt lát chả lụa chay.","Bước 4: Xếp nguyên liệu lên tô hủ tiếu, chan nước dùng sôi sùng sục và rắc tiêu."]',
-    20, 25, 1, 540.0, 'MEDIUM',
-    1, 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=800&q=80',
-    'APPROVED_ACTIVE', 260, 'SYSTEM', SYSDATETIME()
-);
-
--- Công thức 121: Cà ri nấm khoai lang cốt dừa kèm bánh mì (650.0 kcal) - Category 9 (Món Kho)
-INSERT INTO dbo.Recipes (
-    Recipe_ID, User_ID, Category_ID, Dietary_School_ID, Title, Description, Instructions,
-    Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level,
-    Is_Verified, Image_Url, Status, View_Count, Source, Created_At
-) VALUES (
-    121, 1, 9, 1,
-    N'Cà ri nấm khoai lang cốt dừa kèm bánh mì',
-    N'Món cà ri chay béo ngậy thơm nức mùi sả tươi và nước cốt dừa, khoai lang mật dẻo bùi cùng nấm đùi gà sần sật và đậu gà giàu đạm.',
-    N'["Bước 1: Khoai lang gọt vỏ cắt khối chiên sơ qua dầu cho săn mặt.","Bước 2: Xào thơm sả đập dập với bột cà ri chay, cho nấm đùi gà và đậu gà vào xào săn.","Bước 3: Đổ nước cốt dừa loãng và khoai lang vào đun nhỏ lửa 15 phút cho chín mềm.","Bước 4: Thêm nước cốt dừa đặc, nêm nếm vừa ăn rồi tắt bếp, dùng kèm bánh mì nóng."]',
-    15, 25, 1, 650.0, 'MEDIUM',
-    1, 'https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?auto=format&fit=crop&w=800&q=80',
-    'APPROVED_ACTIVE', 320, 'SYSTEM', SYSDATETIME()
-);
-
--- Công thức 122: Cơm gạo lứt xào rong biển và hạt dinh dưỡng (680.0 kcal) - Category 5 (Cơm & Xôi)
-INSERT INTO dbo.Recipes (
-    Recipe_ID, User_ID, Category_ID, Dietary_School_ID, Title, Description, Instructions,
-    Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level,
-    Is_Verified, Image_Url, Status, View_Count, Source, Created_At
-) VALUES (
-    122, 1, 5, 1,
-    N'Cơm gạo lứt xào rong biển và hạt dinh dưỡng',
-    N'Gạo lứt đỏ huyết rồng dẻo bùi xào cùng hạt sen, hạt điều, đậu phộng béo ngậy và mè rang, cung cấp nguồn năng lượng bền bỉ cho ngày dài.',
-    N'["Bước 1: Nấu chín cơm gạo lứt huyết rồng, xới tơi và để nguội.","Bước 2: Luộc chín hạt sen tươi; đậu phộng và hạt điều rang thơm giòn.","Bước 3: Cho dầu mè vào chảo, rang cơm gạo lứt trên lửa lớn cho săn hạt.","Bước 4: Cho hạt sen, đậu phộng, hạt điều vào đảo đều, rắc mè trắng và tiêu đen thơm lừng."]',
-    15, 20, 1, 680.0, 'EASY',
-    1, 'https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80',
-    'APPROVED_ACTIVE', 190, 'SYSTEM', SYSDATETIME()
-);
-
--- Công thức 123: Bánh xèo chay giòn rụm nhân nấm đậu xanh (560.0 kcal) - Category 4 (Món Chiên Rán)
-INSERT INTO dbo.Recipes (
-    Recipe_ID, User_ID, Category_ID, Dietary_School_ID, Title, Description, Instructions,
-    Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level,
-    Is_Verified, Image_Url, Status, View_Count, Source, Created_At
-) VALUES (
-    123, 1, 4, 1,
-    N'Bánh xèo chay giòn rụm nhân nấm đậu xanh',
-    N'Vỏ bánh xèo giòn tan thơm béo nước cốt dừa và bột nghệ, nhân đầy ắp nấm rơm tươi, đậu xanh hấp bùi ngậy và củ sắn giòn ngọt nước.',
-    N'["Bước 1: Khuấy bột bánh xèo với nước cốt dừa, bột nghệ và chút muối cho mịn.","Bước 2: Đậu xanh hấp chín tới; nấm rơm xắt lát; củ sắn thái sợi.","Bước 3: Làm nóng chảo với dầu đậu nành, xào sơ nấm và củ sắn rồi tráng một vá bột mỏng.","Bước 4: Rải đậu xanh lên trên, đậy nắp 3 phút cho vành bánh giòn rụm thì gập đôi lại."]',
-    20, 20, 1, 560.0, 'MEDIUM',
-    1, 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80',
-    'APPROVED_ACTIVE', 230, 'SYSTEM', SYSDATETIME()
-);
+-- 2. Nạp hoặc cập nhật 7 công thức calo cao (ID 117 - 123)
+MERGE INTO dbo.Recipes AS target
+USING (
+    VALUES
+    (
+        117, 1, 5, 1,
+        N'Cơm chiên ngũ sắc hạt sen dinh dưỡng',
+        N'Cơm chiên hạt tơi giòn kết hợp hạt sen tươi bùi béo, bắp ngọt, đậu hà lan, cà rốt và đậu hũ chiên vàng ruộm, cung cấp năng lượng tràn đầy.',
+        N'["Bước 1: Luộc chín hạt sen tươi và đậu hà lan, để ráo.","Bước 2: Đậu hũ cắt hạt lựu chiên giòn, cà rốt xắt hạt lựu.","Bước 3: Phi thơm dầu mè với bo-rô hoặc gừng, cho cơm nguội vào đảo săn hạt.","Bước 4: Trút toàn bộ hạt sen, đậu hà lan, bắp ngọt và đậu hũ vào đảo đều cùng nước tương, tiêu xay trong 5 phút."]',
+        15, 20, 1, 580.0, 'MEDIUM',
+        1, 'https://images.unsplash.com/photo-1603133872878-684f208fb84b?auto=format&fit=crop&w=800&q=80',
+        'APPROVED_ACTIVE', 180, 'SYSTEM', SYSDATETIME()
+    ),
+    (
+        118, 1, 5, 1,
+        N'Xôi nấm hạt dẻ cốt dừa béo ngậy',
+        N'Hạt xôi nếp dẻo thơm nấu nước cốt dừa đậm đà, kết hợp nấm hương xào thấm vị cùng hạt điều rang bùi ngậy giàu chất béo lành mạnh.',
+        N'["Bước 1: Gạo nếp ngâm qua đêm, trộn chút muối rồi đồ chín cùng nước cốt dừa.","Bước 2: Nấm hương ngâm nở, xắt sợi rồi xào săn với nước tương và tiêu.","Bước 3: Hạt điều rang thơm đập dập.","Bước 4: Bới xôi ra đĩa, rải nấm xào lên trên và rắc hạt điều rang thưởng thức nóng."]',
+        20, 30, 1, 620.0, 'MEDIUM',
+        1, 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80',
+        'APPROVED_ACTIVE', 210, 'SYSTEM', SYSDATETIME()
+    ),
+    (
+        119, 1, 1, 1,
+        N'Bánh mì ngũ cốc chả nấm bơ hạt điều',
+        N'Bánh mì ngũ cốc nguyên cám giòn tan kẹp chả lụa chay, nấm đùi gà áp chảo sốt tương mật và sốt bơ hạt điều béo ngậy giàu protein.',
+        N'["Bước 1: Nướng giòn bánh mì ngũ cốc nguyên cám.","Bước 2: Nấm đùi gà cắt lát áp chảo vàng đều hai mặt với sốt nước tương tiêu.","Bước 3: Phết đều bơ hạt điều vào lòng bánh mì.","Bước 4: Kẹp chả lụa chay, nấm áp chảo, dưa leo và ngò rí rồi thưởng thức."]',
+        10, 15, 1, 520.0, 'EASY',
+        1, 'https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=800&q=80',
+        'APPROVED_ACTIVE', 145, 'SYSTEM', SYSDATETIME()
+    ),
+    (
+        120, 1, 11, 1,
+        N'Hủ tiếu Nam Vang chay đặc biệt',
+        N'Tô hủ tiếu chay thanh ngọt từ nước dùng củ cải táo đỏ, đầy đặn topping chả lụa chay, mì căn chiên giòn, nấm rơm và tàu hũ ky chiên xù.',
+        N'["Bước 1: Hầm nước dùng từ củ cải trắng, bắp ngọt và gừng tươi trong 30 phút.","Bước 2: Trụng hủ tiếu chín tới, xốc đều với một chút dầu mè.","Bước 3: Chiên giòn mì căn và tàu hũ ky, xắt lát chả lụa chay.","Bước 4: Xếp nguyên liệu lên tô hủ tiếu, chan nước dùng sôi sùng sục và rắc tiêu."]',
+        20, 25, 1, 540.0, 'MEDIUM',
+        1, 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=800&q=80',
+        'APPROVED_ACTIVE', 260, 'SYSTEM', SYSDATETIME()
+    ),
+    (
+        121, 1, 9, 1,
+        N'Cà ri nấm khoai lang cốt dừa kèm bánh mì',
+        N'Món cà ri chay béo ngậy thơm nức mùi sả tươi và nước cốt dừa, khoai lang mật dẻo bùi cùng nấm đùi gà sần sật và đậu gà giàu đạm.',
+        N'["Bước 1: Khoai lang gọt vỏ cắt khối chiên sơ qua dầu cho săn mặt.","Bước 2: Xào thơm sả đập dập với bột cà ri chay, cho nấm đùi gà và đậu gà vào xào săn.","Bước 3: Đổ nước cốt dừa loãng và khoai lang vào đun nhỏ lửa 15 phút cho chín mềm.","Bước 4: Thêm nước cốt dừa đặc, nêm nếm vừa ăn rồi tắt bếp, dùng kèm bánh mì nóng."]',
+        15, 25, 1, 650.0, 'MEDIUM',
+        1, 'https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?auto=format&fit=crop&w=800&q=80',
+        'APPROVED_ACTIVE', 320, 'SYSTEM', SYSDATETIME()
+    ),
+    (
+        122, 1, 5, 1,
+        N'Cơm gạo lứt xào rong biển và hạt dinh dưỡng',
+        N'Gạo lứt đỏ huyết rồng dẻo bùi xào cùng hạt sen, hạt điều, đậu phộng béo ngậy và mè rang, cung cấp nguồn năng lượng bền bỉ cho ngày dài.',
+        N'["Bước 1: Nấu chín cơm gạo lứt huyết rồng, xới tơi và để nguội.","Bước 2: Luộc chín hạt sen tươi; đậu phộng và hạt điều rang thơm giòn.","Bước 3: Cho dầu mè vào chảo, rang cơm gạo lứt trên lửa lớn cho săn hạt.","Bước 4: Cho hạt sen, đậu phộng, hạt điều vào đảo đều, rắc mè trắng và tiêu đen thơm lừng."]',
+        15, 20, 1, 680.0, 'EASY',
+        1, 'https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80',
+        'APPROVED_ACTIVE', 190, 'SYSTEM', SYSDATETIME()
+    ),
+    (
+        123, 1, 4, 1,
+        N'Bánh xèo chay giòn rụm nhân nấm đậu xanh',
+        N'Vỏ bánh xèo giòn tan thơm béo nước cốt dừa và bột nghệ, nhân đầy ắp nấm rơm tươi, đậu xanh hấp bùi ngậy và củ sắn giòn ngọt nước.',
+        N'["Bước 1: Khuấy bột bánh xèo với nước cốt dừa, bột nghệ và chút muối cho mịn.","Bước 2: Đậu xanh hấp chín tới; nấm rơm xắt lát; củ sắn thái sợi.","Bước 3: Làm nóng chảo với dầu đậu nành, xào sơ nấm và củ sắn rồi tráng một vá bột mỏng.","Bước 4: Rải đậu xanh lên trên, đậy nắp 3 phút cho vành bánh giòn rụm thì gập đôi lại."]',
+        20, 20, 1, 560.0, 'MEDIUM',
+        1, 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80',
+        'APPROVED_ACTIVE', 230, 'SYSTEM', SYSDATETIME()
+    )
+) AS source (Recipe_ID, User_ID, Category_ID, Dietary_School_ID, Title, Description, Instructions, Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level, Is_Verified, Image_Url, Status, View_Count, Source, Created_At)
+ON target.Recipe_ID = source.Recipe_ID
+WHEN MATCHED THEN
+    UPDATE SET 
+        User_ID = source.User_ID,
+        Category_ID = source.Category_ID,
+        Dietary_School_ID = source.Dietary_School_ID,
+        Title = source.Title,
+        Description = source.Description,
+        Instructions = source.Instructions,
+        Prep_Time_Minutes = source.Prep_Time_Minutes,
+        Cook_Time_Minutes = source.Cook_Time_Minutes,
+        Servings = source.Servings,
+        Calories_Kcal = source.Calories_Kcal,
+        Difficulty_Level = source.Difficulty_Level,
+        Is_Verified = source.Is_Verified,
+        Image_Url = source.Image_Url,
+        Status = source.Status,
+        View_Count = source.View_Count,
+        Source = source.Source
+WHEN NOT MATCHED THEN
+    INSERT (Recipe_ID, User_ID, Category_ID, Dietary_School_ID, Title, Description, Instructions, Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level, Is_Verified, Image_Url, Status, View_Count, Source, Created_At)
+    VALUES (source.Recipe_ID, source.User_ID, source.Category_ID, source.Dietary_School_ID, source.Title, source.Description, source.Instructions, source.Prep_Time_Minutes, source.Cook_Time_Minutes, source.Servings, source.Calories_Kcal, source.Difficulty_Level, source.Is_Verified, source.Image_Url, source.Status, source.View_Count, source.Source, source.Created_At);
 
 SET IDENTITY_INSERT dbo.Recipes OFF;
 

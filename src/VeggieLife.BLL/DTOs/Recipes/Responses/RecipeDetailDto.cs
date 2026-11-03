@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace VeggieLife.BLL.DTOs.Recipes.Responses;
 
@@ -92,6 +93,47 @@ public class RecipeDetailDto
     /// Cờ biểu thị có sẵn bản phiên âm lời thoại / công thức bóc tách từ video hay không.
     /// </summary>
     public bool HasTranscript { get; set; }
+
+    /// <summary>
+    /// Mã định danh người dùng tạo công thức (dành cho tác giả hoặc quản trị viên).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? AuthorId { get; set; }
+
+    /// <summary>
+    /// Trạng thái kiểm duyệt công thức (dành cho tác giả hoặc quản trị viên: APPROVED_ACTIVE, QUARANTINED_HIDDEN, PENDING_REVIEW, DRAFT).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Status { get; set; }
+
+    /// <summary>
+    /// Mã danh mục món ăn (dành cho form sửa công thức).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? CategoryId { get; set; }
+
+    /// <summary>
+    /// Mã trường phái chay (dành cho form sửa công thức).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? DietarySchoolId { get; set; }
+
+    /// <summary>
+    /// Độ khó thực hiện món ăn (EASY, MEDIUM, HARD).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DifficultyLevel { get; set; }
+
+    /// <summary>
+    /// Đường dẫn video hướng dẫn nấu ăn trực tiếp (nếu có).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? VideoUrl { get; set; }
+
+    /// <summary>
+    /// Danh sách video đính kèm công thức.
+    /// </summary>
+    public List<RecipeVideoDto> Videos { get; set; } = new();
 
     /// <summary>
     /// Mã định danh video liên kết nếu công thức có video hướng dẫn (FN-POST-02).

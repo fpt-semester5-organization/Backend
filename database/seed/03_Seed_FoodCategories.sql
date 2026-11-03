@@ -1,4 +1,4 @@
-﻿-- ============================================================
+-- ============================================================
 -- File: 03_Seed_FoodCategories.sql
 -- Thư mục: database/seed/
 -- Mục đích: Nạp sẵn danh mục phân loại ẩm thực và các nhóm món ăn thuần chay hệ thống.

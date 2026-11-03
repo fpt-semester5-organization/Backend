@@ -180,32 +180,36 @@ SET IDENTITY_INSERT dbo.VeganVenues OFF;
 -- Ánh xạ Phân loại ẩm thực cho 8 quán (VenueCategories)
 MERGE INTO dbo.VenueCategories AS target
 USING (
-    VALUES
-        -- Quán 401 (Ưu Đàm Chay): Canh & Súp (5), Lẩu Chay (9)
-        (5, 401, 1, @Now),
-        (9, 401, 0, @Now),
-        -- Quán 402 (Vị Lai): Gỏi & Salad (6), Món Xào (4)
-        (6, 402, 1, @Now),
-        (4, 402, 0, @Now),
-        -- Quán 403 (Sadhu): Cơm & Xôi (1), Món Chiên & Rán (7)
-        (1, 403, 1, @Now),
-        (7, 403, 0, @Now),
-        -- Quán 404 (Hum): Món Cuốn (11), Lẩu Chay (9)
-        (11, 404, 1, @Now),
-        (9, 404, 0, @Now),
-        -- Quán 405 (Pi Bistro): Món Xào (4), Mì Bún Phở (2)
-        (4, 405, 1, @Now),
-        (2, 405, 0, @Now),
-        -- Quán 406 (Rôu): Mì Bún Phở (2), Bánh Mặn & Ngọt (15)
-        (2, 406, 1, @Now),
-        (15, 406, 0, @Now),
-        -- Quán 407 (An Lạc Tâm): Mì Bún Phở (2), Món Kho (3)
-        (2, 407, 1, @Now),
-        (3, 407, 0, @Now),
-        -- Quán 408 (Thiền Tâm): Món Hấp & Luộc (8), Tráng Miệng & Chè (12)
-        (8, 408, 1, @Now),
-        (12, 408, 0, @Now)
-) AS source (Category_ID, Venue_ID, Is_Primary, Assigned_At)
+    SELECT c.Category_ID, src.Venue_ID, src.Is_Primary, @Now AS Assigned_At
+    FROM (
+        VALUES
+            -- Quán 401 (Ưu Đàm Chay): Canh & Súp (primary), Lẩu Chay
+            (N'Món Canh & Súp Bổ Dưỡng', 401, 1),
+            (N'Món Lẩu Chay Gia Đình', 401, 0),
+            -- Quán 402 (Vị Lai): Gỏi & Salad (primary), Món Xào
+            (N'Món Gỏi & Salad Tươi Mát', 402, 1),
+            (N'Món Xào Chay Thanh Vị', 402, 0),
+            -- Quán 403 (Sadhu): Cơm & Xôi (primary), Món Chiên & Rán
+            (N'Món Cơm & Xôi Chay', 403, 1),
+            (N'Món Chiên & Rán Giòn Rụm', 403, 0),
+            -- Quán 404 (Hum): Món Cuốn (primary), Lẩu Chay
+            (N'Món Cuốn Chay', 404, 1),
+            (N'Món Lẩu Chay Gia Đình', 404, 0),
+            -- Quán 405 (Pi Bistro): Món Xào (primary), Mì Bún Phở
+            (N'Món Xào Chay Thanh Vị', 405, 1),
+            (N'Món Mì, Bún & Phở Chay', 405, 0),
+            -- Quán 406 (Rôu): Mì Bún Phở (primary), Bánh Mặn & Bánh Ngọt
+            (N'Món Mì, Bún & Phở Chay', 406, 1),
+            (N'Bánh Mặn & Bánh Ngọt Chay', 406, 0),
+            -- Quán 407 (An Lạc Tâm): Mì Bún Phở (primary), Món Kho
+            (N'Món Mì, Bún & Phở Chay', 407, 1),
+            (N'Món Kho Chay Đậm Đà', 407, 0),
+            -- Quán 408 (Thiền Tâm): Món Hấp & Luộc (primary), Tráng Miệng & Chè
+            (N'Món Hấp & Luộc Dưỡng Sinh', 408, 1),
+            (N'Món Tráng Miệng & Chè', 408, 0)
+    ) src(Category_Name, Venue_ID, Is_Primary)
+    JOIN dbo.FoodCategories c ON c.Category_Name = src.Category_Name
+) AS source
 ON target.Category_ID = source.Category_ID AND target.Venue_ID = source.Venue_ID
 WHEN MATCHED THEN
     UPDATE SET target.Is_Primary = source.Is_Primary

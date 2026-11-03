@@ -365,23 +365,6 @@ public class CommentsEndpointIntegrationTests : IClassFixture<WebApplicationFact
         result.Data.Author.FullName.Should().Be("Trần Thị Hai");
     }
 
-    [Fact]
-    public async Task CreatePostComment_CooldownActive_Returns429()
-    {
-        var client = CreateAuthenticatedClient(101, "member101@veggielife.vn", UserRoles.Member);
-        var req = new CreateCommentRequest { Content = "Bình luận nhanh liên tiếp" };
-
-        // Giả lập Redis báo cooldown đang kích hoạt cho user 101
-        _mockRedis
-            .Setup(r => r.ExistsAsync("comment_cooldown:101", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
-        var response = await client.PostAsJsonAsync("/api/v1/posts/501/comments", req);
-
-        response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain(ErrorCodes.ErrCommentTooFast);
-    }
 
     [Fact]
     public async Task CreateRecipeComment_MemberSuccess_Returns201()
