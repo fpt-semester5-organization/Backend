@@ -14,6 +14,11 @@ public class SaveVideoTranscriptDto
     public string RawTranscript { get; set; } = string.Empty;
 
     /// <summary>
+    /// Nội dung tóm tắt của AI trả về (công thức tóm tắt / bản tóm tắt nội dung video).
+    /// </summary>
+    public string? AiSummary { get; set; }
+
+    /// <summary>
     /// Công thức trích xuất có cấu trúc (tiêu đề, khẩu phần, nguyên liệu, các bước, mẹo).
     /// </summary>
     public ExtractedRecipeDto? Recipe { get; set; }

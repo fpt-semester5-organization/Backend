@@ -1309,6 +1309,7 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValueSql("(sysdatetime())")
                 .HasColumnName("Created_At");
             entity.Property(e => e.ExtractedRecipeJson).HasColumnName("Extracted_Recipe_JSON");
+            entity.Property(e => e.AiSummary).HasColumnName("AI_Summary");
             entity.Property(e => e.RawTranscript).HasColumnName("Raw_Transcript");
             entity.Property(e => e.RecipeId).HasColumnName("Recipe_ID");
             entity.Property(e => e.Status)

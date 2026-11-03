@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace VeggieLife.BLL.DTOs.Videos.Responses;
@@ -22,6 +22,12 @@ public class VideoTranscriptResponseData
     /// Trạng thái phiên âm (COMPLETED, PENDING, FAILED).
     /// </summary>
     public string TranscriptStatus { get; set; } = "COMPLETED";
+
+    /// <summary>
+    /// N?i dung tm t?t c?a AI tr? v?.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AiSummary { get; set; }
 
     /// <summary>
     /// Các phân đoạn có mốc thời gian (nếu có từ AI service).
