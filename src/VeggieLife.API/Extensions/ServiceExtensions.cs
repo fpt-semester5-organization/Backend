@@ -425,11 +425,12 @@ public static class ServiceExtensions
             {
                 var config = sp.GetRequiredService<IConfiguration>();
                 var baseUrl = config["AiService:BaseUrl"] ?? "http://localhost:8080";
-                var apiKey = config["AiService:InternalApiKey"] ?? "veggielife-secret-internal-key-2026";
+                var apiKey = config["AiService:InternalApiKey"] ?? string.Empty;
 
                 client.BaseAddress = new System.Uri(baseUrl);
                 client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
-                client.Timeout = System.TimeSpan.FromSeconds(60); // AI Vision cho phép tối đa 60s; MealPlan tự giới hạn 4s nội bộ (BR-ADM-AI-002)
+                client.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
+
             });
         services.AddScoped<VeggieLife.BLL.Services.MealPlans.IMealPlanService, VeggieLife.BLL.Services.MealPlans.MealPlanService>();
         services.AddScoped<VeggieLife.BLL.Services.ShoppingLists.IShoppingListService, VeggieLife.BLL.Services.ShoppingLists.ShoppingListService>();
@@ -449,11 +450,11 @@ public static class ServiceExtensions
         {
             var config = sp.GetRequiredService<IConfiguration>();
             var baseUrl = config["AiService:BaseUrl"] ?? "http://localhost:8080";
-            var apiKey = config["AiService:InternalApiKey"] ?? "veggielife-secret-internal-key-2026";
+            var apiKey = config["AiService:InternalApiKey"] ?? string.Empty;
 
             client.BaseAddress = new System.Uri(baseUrl);
             client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
-            client.Timeout = System.TimeSpan.FromSeconds(10); // Ràng buộc thời gian phản hồi NFR SI-3
+            client.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
         });
         services.AddScoped<VeggieLife.BLL.Services.Knowledge.IKnowledgeSyncQueue, VeggieLife.BLL.Services.Knowledge.KnowledgeSyncQueueStub>();
 
@@ -464,11 +465,11 @@ public static class ServiceExtensions
             {
                 var config = sp.GetRequiredService<IConfiguration>();
                 var baseUrl = config["AiService:BaseUrl"] ?? "http://localhost:8080";
-                var apiKey = config["AiService:InternalApiKey"] ?? "veggielife-secret-internal-key-2026";
+                var apiKey = config["AiService:InternalApiKey"] ?? string.Empty;
 
                 client.BaseAddress = new System.Uri(baseUrl);
                 client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
-                client.Timeout = System.TimeSpan.FromSeconds(30);
+                client.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
             });
 
         // Dịch vụ Chatbot tư vấn dinh dưỡng (FN-CHAT-01..06)
@@ -482,12 +483,12 @@ public static class ServiceExtensions
             .ConfigureHttpClient((sp, client) =>
             {
                 var config = sp.GetRequiredService<IConfiguration>();
-                var baseUrl = config["AiService:SttBaseUrl"] ?? config["AiService:BaseUrl"] ?? "http://localhost:8081";
-                var apiKey = config["AiService:InternalApiKey"] ?? "veggielife-secret-internal-key-2026";
+                var baseUrl = config["AiService:SttBaseUrl"] ?? config["AiService:BaseUrl"] ?? "http://localhost:8082";
+                var apiKey = config["AiService:InternalApiKey"] ?? string.Empty;
 
                 client.BaseAddress = new System.Uri(baseUrl);
                 client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
-                client.Timeout = System.TimeSpan.FromSeconds(120);
+                client.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
             });
         services.AddHostedService<VeggieLife.API.BackgroundJobs.SttProcessingWorker>();
 

@@ -42,7 +42,7 @@ public class AiServiceClient : IAiServiceClient
 
         if (!_httpClient.DefaultRequestHeaders.Contains("X-Internal-Api-Key"))
         {
-            var apiKey = _configuration["AiService:InternalApiKey"] ?? "dev-internal-key";
+            var apiKey = _configuration["AiService:InternalApiKey"] ?? string.Empty;
             _httpClient.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
         }
     }
