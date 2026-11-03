@@ -1579,10 +1579,10 @@ public class AuthService : IAuthService
 
         return new LegalDocumentsResponseData
         {
-            UserAgreementUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793715509/veggielife/legal/116_2025_QH15_666020.pdf",
-            PrivacyPolicyUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793715512/veggielife/legal/13_2023_ND-CP_465185.pdf",
-            TermsOfServiceUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793715518/veggielife/legal/19_2023_QH15_500102.pdf",
-            VeganDisclaimerUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793715515/veggielife/legal/142_2026_ND-CP_696080.pdf",
+            UserAgreementUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg",
+            PrivacyPolicyUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg",
+            TermsOfServiceUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg",
+            VeganDisclaimerUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg",
             MedicalDisclaimer = "Khuyến nghị mang tính chất tham khảo dinh dưỡng, vui lòng tham vấn ý kiến bác sĩ chuyên khoa đối với các bệnh lý nền.",
             UpdatedAt = DateTime.UtcNow
         };
