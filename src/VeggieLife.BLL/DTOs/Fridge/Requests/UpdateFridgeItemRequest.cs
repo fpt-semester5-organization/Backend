@@ -24,4 +24,9 @@ public class UpdateFridgeItemRequest
     /// Đơn vị đong đo cập nhật (tùy chọn, tối đa 30 ký tự).
     /// </summary>
     public string? Unit { get; set; }
+
+    /// <summary>
+    /// Ảnh đại diện hoặc ảnh cắt thumbnail của nguyên liệu (tùy chọn).
+    /// </summary>
+    public string? ThumbnailUrl { get; set; }
 }

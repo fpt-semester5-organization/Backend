@@ -34,4 +34,9 @@ public class FridgeItemDto
     /// Đơn vị đong đo của nguyên liệu (VD: "quả", "g", "củ", "miếng").
     /// </summary>
     public string Unit { get; set; } = "phần";
+
+    /// <summary>
+    /// Đường dẫn ảnh thu nhỏ hoặc ảnh cắt cận cảnh của nguyên liệu từ phiên quét AI.
+    /// </summary>
+    public string? ThumbnailUrl { get; set; }
 }
