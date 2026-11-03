@@ -1,51 +1,124 @@
--- ============================================================================
--- File: 15_Seed_SystemSettings.sql
--- Thư mục: database/seed/
--- Mục đích: Khởi tạo giá trị mặc định cho toàn bộ các tham số cấu hình động hệ thống
---           (Hạn mức đổi món, hạn mức AI, ngưỡng chi phí LLMOps, kiểm duyệt cộng đồng, URL tài liệu pháp lý)
--- Tính chất: IDEMPOTENT (Chạy nhiều lần không gây lỗi trùng lặp khóa chính)
--- ============================================================================
-
-SET ANSI_NULLS ON;
-GO
+-- 15_Seed_SystemSettings.sql: Seed bảng SystemSettings theo quy chuẩn VeggieLife
 SET QUOTED_IDENTIFIER ON;
-GO
+SET NOCOUNT ON;
 
-PRINT N'--> Đang nạp cấu hình hệ thống động (SystemSettings)...';
+DECLARE @Now DATETIME2 = SYSUTCDATETIME();
 
-MERGE INTO dbo.SystemSettings AS Target
-USING (VALUES
-    ('MEAL_SWAP_LIMIT_DRAFT', N'21', N'21', 'INT', 'MEAL_PLAN', N'Hạn mức số lần đổi món thực đơn trong giai đoạn dự thảo (DRAFT)', NULL),
-    ('MEAL_SWAP_LIMIT_ACTIVE', N'21', N'21', 'INT', 'MEAL_PLAN', N'Hạn mức số lần đổi món thực đơn trong giai đoạn đã kích hoạt (ACTIVE)', NULL),
-    ('MEAL_PLAN_WEEKLY_LIMIT_FREE', N'1', N'1', 'INT', 'MEAL_PLAN', N'Số lượng thực đơn tối đa được tạo mỗi tuần cho tài khoản Miễn phí', NULL),
-    ('MEAL_PLAN_WEEKLY_LIMIT_VIP', N'3', N'3', 'INT', 'MEAL_PLAN', N'Số lượng thực đơn tối đa được tạo mỗi tuần cho tài khoản VIP', NULL),
-    ('MEAL_SWAP_CALORIE_TOLERANCE_PERCENT', N'15', N'15', 'INT', 'MEAL_PLAN', N'Độ lệch calo tối đa (%) khi thuật toán tự động tìm món thay thế', NULL),
-    ('CHAT_LIMIT_DAILY_GUEST', N'3', N'3', 'INT', 'AI_QUOTA', N'Số câu hỏi AI Chatbot tối đa cho khách vãng lai (Guest) trước khi bắt buộc đăng ký tài khoản', NULL),
-    ('CHAT_LIMIT_DAILY_FREE', N'20', N'20', 'INT', 'AI_QUOTA', N'Số câu hỏi AI Chatbot tối đa mỗi ngày cho tài khoản Miễn phí', NULL),
-    ('CHAT_LIMIT_DAILY_VIP', N'200', N'200', 'INT', 'AI_QUOTA', N'Số câu hỏi AI Chatbot tối đa mỗi ngày cho tài khoản VIP', NULL),
-    ('FRIDGE_SCAN_LIMIT_DAILY_FREE', N'10', N'10', 'INT', 'AI_QUOTA', N'Số lần quét tủ lạnh AI tối đa mỗi ngày cho tài khoản Miễn phí', NULL),
-    ('FRIDGE_SCAN_LIMIT_DAILY_VIP', N'30', N'30', 'INT', 'AI_QUOTA', N'Số lần quét tủ lạnh AI tối đa mỗi ngày cho tài khoản VIP', NULL),
-    ('LLMOPS_DAILY_BUDGET_USD', N'12.5', N'12.5', 'DECIMAL', 'LLMOPS', N'Ngân sách tiêu dùng AI (Gemini) tối đa mỗi ngày của toàn hệ thống (USD)', NULL),
-    ('LLMOPS_ALERT_THRESHOLD_PERCENT', N'80', N'80', 'INT', 'LLMOPS', N'Ngưỡng cảnh báo chi phí khẩn cấp (%) trước khi kích hoạt quy trình cắt giảm', NULL),
-    ('COMMUNITY_REPORT_LIMIT', N'10', N'10', 'INT', 'COMMUNITY', N'Số lượng báo cáo vi phạm tích lũy để bài viết tự động bị tạm ẩn chờ kiểm duyệt', NULL),
-    ('LEGAL_DOCUMENTS', N'{"user_agreement":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png","privacy_policy":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png","terms_of_service":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png","vegan_disclaimer":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png"}', N'{"user_agreement":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png","privacy_policy":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png","terms_of_service":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png","vegan_disclaimer":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png"}', 'STRING', 'GENERAL', N'Tài liệu pháp lý VeggieLife (Điều khoản, Chính sách bảo mật, Cam kết người dùng, Quy chuẩn ẩm thực chay)', N'{"user_agreement":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png","privacy_policy":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png","terms_of_service":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png","vegan_disclaimer":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png"}'),
-    ('LEGAL_USER_AGREEMENT_URL', N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png', N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png', 'STRING', 'GENERAL', N'Bản Cam Kết Và Thỏa Thuận Đăng Ký Người Dùng', N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png'),
-    ('LEGAL_PRIVACY_POLICY_URL', N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png', N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png', 'STRING', 'GENERAL', N'Chính Sách Bảo Mật Dữ Liệu VeggieLife', N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png'),
-    ('LEGAL_TERMS_OF_SERVICE_URL', N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png', N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png', 'STRING', 'GENERAL', N'Điều Khoản Sử Dụng Dịch Vụ VeggieLife', N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png'),
-    ('LEGAL_VEGAN_DISCLAIMER_URL', N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png', N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png', 'STRING', 'GENERAL', N'Quy Chuẩn Ẩm Thực Chay Và Miễn Trừ Y Tế VeggieLife', N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png')
-) AS Source (Setting_Key, Setting_Value, Default_Value, Data_Type, Category, Description, Legal_Documents_Url)
-ON Target.Setting_Key = Source.Setting_Key
+-- Danh mục tài liệu pháp lý tổng hợp (JSON format)
+MERGE dbo.SystemSettings AS Target
+USING (SELECT 'LEGAL_DOCUMENTS' AS Setting_Key) AS Source
+ON (Target.Setting_Key = Source.Setting_Key)
 WHEN MATCHED THEN
     UPDATE SET 
-        Setting_Value = Source.Setting_Value,
-        Default_Value = Source.Default_Value,
-        Data_Type = Source.Data_Type,
-        Category = Source.Category,
-        Description = Source.Description,
-        Legal_Documents_Url = Source.Legal_Documents_Url
-WHEN NOT MATCHED BY TARGET THEN
+        Setting_Value = '{"user_agreement":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg","privacy_policy":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg","terms_of_service":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg","vegan_disclaimer":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg","ai_regulation":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg","info_security":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718553/veggielife/legal/85_2016_ND-CP_317475.jpg","fintech_sandbox":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718656/veggielife/legal/94_2025_ND-CP_584706.jpg"}',
+        Default_Value = '{"user_agreement":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg","privacy_policy":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg","terms_of_service":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg","vegan_disclaimer":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg","ai_regulation":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg","info_security":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718553/veggielife/legal/85_2016_ND-CP_317475.jpg","fintech_sandbox":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718656/veggielife/legal/94_2025_ND-CP_584706.jpg"}',
+        Data_Type = 'STRING',
+        Category = 'GENERAL',
+        Description = N'Danh mục tài liệu pháp lý VeggieLife',
+        Legal_Documents_Url = '{"user_agreement":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg","privacy_policy":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg","terms_of_service":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg","vegan_disclaimer":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg","ai_regulation":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg","info_security":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718553/veggielife/legal/85_2016_ND-CP_317475.jpg","fintech_sandbox":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718656/veggielife/legal/94_2025_ND-CP_584706.jpg"}',
+        Updated_At = @Now
+WHEN NOT MATCHED THEN
     INSERT (Setting_Key, Setting_Value, Default_Value, Data_Type, Category, Description, Legal_Documents_Url, Updated_At)
-    VALUES (Source.Setting_Key, Source.Setting_Value, Source.Default_Value, Source.Data_Type, Source.Category, Source.Description, Source.Legal_Documents_Url, SYSDATETIME());
+    VALUES ('LEGAL_DOCUMENTS', '{"user_agreement":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg","privacy_policy":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg","terms_of_service":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg","vegan_disclaimer":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg","ai_regulation":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg","info_security":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718553/veggielife/legal/85_2016_ND-CP_317475.jpg","fintech_sandbox":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718656/veggielife/legal/94_2025_ND-CP_584706.jpg"}', '{"user_agreement":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg","privacy_policy":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg","terms_of_service":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg","vegan_disclaimer":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg","ai_regulation":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg","info_security":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718553/veggielife/legal/85_2016_ND-CP_317475.jpg","fintech_sandbox":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718656/veggielife/legal/94_2025_ND-CP_584706.jpg"}', 'STRING', 'GENERAL', N'Danh mục tài liệu pháp lý VeggieLife', '{"user_agreement":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg","privacy_policy":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg","terms_of_service":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg","vegan_disclaimer":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg","ai_regulation":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg","info_security":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718553/veggielife/legal/85_2016_ND-CP_317475.jpg","fintech_sandbox":"https://res.cloudinary.com/swrsuenp/image/upload/v1793718656/veggielife/legal/94_2025_ND-CP_584706.jpg"}', @Now);
 
-PRINT N'    Đã đồng bộ thành công Master Data cho SystemSettings.';
-GO
+-- 1. Thỏa thuận người dùng (Luật An ninh mạng 116/2025/QH15)
+MERGE dbo.SystemSettings AS Target
+USING (SELECT 'LEGAL_USER_AGREEMENT_URL' AS Setting_Key) AS Source
+ON (Target.Setting_Key = Source.Setting_Key)
+WHEN MATCHED THEN
+    UPDATE SET 
+        Setting_Value = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg',
+        Default_Value = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg',
+        Data_Type = 'STRING',
+        Category = 'GENERAL',
+        Description = N'Thỏa thuận người dùng (Luật 116/2025/QH15)',
+        Legal_Documents_Url = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg',
+        Updated_At = @Now
+WHEN NOT MATCHED THEN
+    INSERT (Setting_Key, Setting_Value, Default_Value, Data_Type, Category, Description, Legal_Documents_Url, Updated_At)
+    VALUES ('LEGAL_USER_AGREEMENT_URL', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg', 'STRING', 'GENERAL', N'Thỏa thuận người dùng (Luật 116/2025/QH15)', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg', @Now);
+
+-- 2. Chính sách bảo mật (Nghị định 13/2023/NĐ-CP)
+MERGE dbo.SystemSettings AS Target
+USING (SELECT 'LEGAL_PRIVACY_POLICY_URL' AS Setting_Key) AS Source
+ON (Target.Setting_Key = Source.Setting_Key)
+WHEN MATCHED THEN
+    UPDATE SET 
+        Setting_Value = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg',
+        Default_Value = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg',
+        Data_Type = 'STRING',
+        Category = 'GENERAL',
+        Description = N'Chính sách bảo mật dữ liệu (NĐ 13/2023/NĐ-CP)',
+        Legal_Documents_Url = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg',
+        Updated_At = @Now
+WHEN NOT MATCHED THEN
+    INSERT (Setting_Key, Setting_Value, Default_Value, Data_Type, Category, Description, Legal_Documents_Url, Updated_At)
+    VALUES ('LEGAL_PRIVACY_POLICY_URL', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg', 'STRING', 'GENERAL', N'Chính sách bảo mật dữ liệu (NĐ 13/2023/NĐ-CP)', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg', @Now);
+
+-- 3. Điều khoản dịch vụ (Luật 19/2023/QH15)
+MERGE dbo.SystemSettings AS Target
+USING (SELECT 'LEGAL_TERMS_OF_SERVICE_URL' AS Setting_Key) AS Source
+ON (Target.Setting_Key = Source.Setting_Key)
+WHEN MATCHED THEN
+    UPDATE SET 
+        Setting_Value = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg',
+        Default_Value = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg',
+        Data_Type = 'STRING',
+        Category = 'GENERAL',
+        Description = N'Điều khoản dịch vụ & quyền lợi NTD (Luật 19/2023/QH15)',
+        Legal_Documents_Url = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg',
+        Updated_At = @Now
+WHEN NOT MATCHED THEN
+    INSERT (Setting_Key, Setting_Value, Default_Value, Data_Type, Category, Description, Legal_Documents_Url, Updated_At)
+    VALUES ('LEGAL_TERMS_OF_SERVICE_URL', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg', 'STRING', 'GENERAL', N'Điều khoản dịch vụ & quyền lợi NTD (Luật 19/2023/QH15)', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg', @Now);
+
+-- 4. Quy chuẩn Trí tuệ nhân tạo (Nghị định 142/2026/NĐ-CP)
+MERGE dbo.SystemSettings AS Target
+USING (SELECT 'LEGAL_VEGAN_DISCLAIMER_URL' AS Setting_Key) AS Source
+ON (Target.Setting_Key = Source.Setting_Key)
+WHEN MATCHED THEN
+    UPDATE SET 
+        Setting_Value = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg',
+        Default_Value = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg',
+        Data_Type = 'STRING',
+        Category = 'GENERAL',
+        Description = N'Quy chuẩn Trí tuệ nhân tạo và Miễn trừ (NĐ 142/2026/NĐ-CP)',
+        Legal_Documents_Url = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg',
+        Updated_At = @Now
+WHEN NOT MATCHED THEN
+    INSERT (Setting_Key, Setting_Value, Default_Value, Data_Type, Category, Description, Legal_Documents_Url, Updated_At)
+    VALUES ('LEGAL_VEGAN_DISCLAIMER_URL', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg', 'STRING', 'GENERAL', N'Quy chuẩn Trí tuệ nhân tạo và Miễn trừ (NĐ 142/2026/NĐ-CP)', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg', @Now);
+
+-- 5. An toàn thông tin (Nghị định 85/2016/NĐ-CP)
+MERGE dbo.SystemSettings AS Target
+USING (SELECT 'LEGAL_INFO_SECURITY_URL' AS Setting_Key) AS Source
+ON (Target.Setting_Key = Source.Setting_Key)
+WHEN MATCHED THEN
+    UPDATE SET 
+        Setting_Value = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718553/veggielife/legal/85_2016_ND-CP_317475.jpg',
+        Default_Value = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718553/veggielife/legal/85_2016_ND-CP_317475.jpg',
+        Data_Type = 'STRING',
+        Category = 'GENERAL',
+        Description = N'An toàn hệ thống thông tin theo cấp độ (NĐ 85/2016/NĐ-CP)',
+        Legal_Documents_Url = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718553/veggielife/legal/85_2016_ND-CP_317475.jpg',
+        Updated_At = @Now
+WHEN NOT MATCHED THEN
+    INSERT (Setting_Key, Setting_Value, Default_Value, Data_Type, Category, Description, Legal_Documents_Url, Updated_At)
+    VALUES ('LEGAL_INFO_SECURITY_URL', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718553/veggielife/legal/85_2016_ND-CP_317475.jpg', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718553/veggielife/legal/85_2016_ND-CP_317475.jpg', 'STRING', 'GENERAL', N'An toàn hệ thống thông tin theo cấp độ (NĐ 85/2016/NĐ-CP)', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718553/veggielife/legal/85_2016_ND-CP_317475.jpg', @Now);
+
+-- 6. Fintech Sandbox (Nghị định 94/2025/NĐ-CP)
+MERGE dbo.SystemSettings AS Target
+USING (SELECT 'LEGAL_FINTECH_SANDBOX_URL' AS Setting_Key) AS Source
+ON (Target.Setting_Key = Source.Setting_Key)
+WHEN MATCHED THEN
+    UPDATE SET 
+        Setting_Value = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718656/veggielife/legal/94_2025_ND-CP_584706.jpg',
+        Default_Value = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718656/veggielife/legal/94_2025_ND-CP_584706.jpg',
+        Data_Type = 'STRING',
+        Category = 'GENERAL',
+        Description = N'Thử nghiệm có kiểm soát ngân hàng (NĐ 94/2025/NĐ-CP)',
+        Legal_Documents_Url = 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718656/veggielife/legal/94_2025_ND-CP_584706.jpg',
+        Updated_At = @Now
+WHEN NOT MATCHED THEN
+    INSERT (Setting_Key, Setting_Value, Default_Value, Data_Type, Category, Description, Legal_Documents_Url, Updated_At)
+    VALUES ('LEGAL_FINTECH_SANDBOX_URL', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718656/veggielife/legal/94_2025_ND-CP_584706.jpg', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718656/veggielife/legal/94_2025_ND-CP_584706.jpg', 'STRING', 'GENERAL', N'Thử nghiệm có kiểm soát ngân hàng (NĐ 94/2025/NĐ-CP)', 'https://res.cloudinary.com/swrsuenp/image/upload/v1793718656/veggielife/legal/94_2025_ND-CP_584706.jpg', @Now);

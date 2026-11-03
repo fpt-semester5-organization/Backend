@@ -373,10 +373,10 @@ public class SystemSettingService : ISystemSettingService
             _logger.LogWarning(ex, "Lỗi đọc Redis cache cho danh mục tài liệu pháp lý. Chuyển sang đọc Database.");
         }
 
-        const string defaultUserAgreement = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png";
-        const string defaultPrivacyPolicy = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png";
-        const string defaultTermsOfService = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png";
-        const string defaultVeganDisclaimer = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png";
+        const string defaultUserAgreement = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg";
+        const string defaultPrivacyPolicy = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg";
+        const string defaultTermsOfService = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg";
+        const string defaultVeganDisclaimer = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg";
 
         var result = new VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData
         {
