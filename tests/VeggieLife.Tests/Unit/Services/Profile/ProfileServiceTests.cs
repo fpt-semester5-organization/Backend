@@ -17,6 +17,7 @@ using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.Media;
 using VeggieLife.BLL.Services.Profile;
 using VeggieLife.BLL.Services.Email;
+using VeggieLife.BLL.DTOs.Auth;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
 using VeggieLife.DAL.External.Google;
@@ -928,6 +929,114 @@ public class ProfileServiceTests : IDisposable
 
         var updated = await _db.Users.FindAsync(204);
         updated!.AccountStatus.Should().Be(AccountStatuses.SoftDeleted);
+    }
+
+    [Fact]
+    public async Task SendDeactivateOtpAsync_WhenUserNotFound_ThrowsNotFound()
+    {
+        var act = async () => await _service.SendDeactivateOtpAsync(99999);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task SendDeactivateOtpAsync_WhenLocked_ThrowsTooManyRequests()
+    {
+        var user = new User
+        {
+            UserId = 301,
+            Email = "locked_deact@veggielife.vn",
+            FullName = "Locked User",
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.Active
+        };
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync();
+
+        _mockRedis
+            .Setup(r => r.ExistsAsync("otp_lock:locked_deact@veggielife.vn", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var act = async () => await _service.SendDeactivateOtpAsync(301);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(429);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrAuthOtpLocked);
+    }
+
+    [Fact]
+    public async Task SendDeactivateOtpAsync_WhenValidUser_SetsRedisAndSendsEmail()
+    {
+        var user = new User
+        {
+            UserId = 302,
+            Email = "valid_deact@veggielife.vn",
+            FullName = "Valid User",
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.Active
+        };
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync();
+
+        _mockRedis
+            .Setup(r => r.ExistsAsync("otp_lock:valid_deact@veggielife.vn", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        await _service.SendDeactivateOtpAsync(302);
+
+        _mockRedis.Verify(r => r.SetAsync(
+            "otp:ACCOUNT_DEACTIVATION:valid_deact@veggielife.vn",
+            It.IsAny<OtpCacheItem>(),
+            It.IsAny<TimeSpan?>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        _mockEmailService.Verify(e => e.SendOtpEmailAsync(
+            "valid_deact@veggielife.vn",
+            It.IsAny<string>(),
+            OtpPurposes.AccountDeactivation,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteCurrentUserAsync_WithOtp_WhenCorrectOtp_SetsSoftDeleted()
+    {
+        var user = new User
+        {
+            UserId = 303,
+            Email = "otp_deact_success@veggielife.vn",
+            FullName = "Otp Success User",
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.Active
+        };
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync();
+
+        var otp = "123456";
+        var otpHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(otp)));
+        var cacheItem = new OtpCacheItem
+        {
+            OtpHash = otpHash,
+            FailedAttempts = 0,
+            CreatedAt = DateTime.UtcNow,
+            Purpose = OtpPurposes.AccountDeactivation
+        };
+
+        _mockRedis
+            .Setup(r => r.GetAsync<OtpCacheItem>("otp:ACCOUNT_DEACTIVATION:otp_deact_success@veggielife.vn", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cacheItem);
+
+        var request = new DeleteCurrentUserRequest
+        {
+            Otp = otp,
+            Reason = "Tạm nghỉ dịch vụ"
+        };
+
+        var response = await _service.DeleteCurrentUserAsync(303, request);
+
+        response.RestoreDeadline.Should().BeAfter(DateTime.UtcNow.AddDays(29));
+        var updated = await _db.Users.FindAsync(303);
+        updated!.AccountStatus.Should().Be(AccountStatuses.SoftDeleted);
+
+        _mockRedis.Verify(r => r.RemoveAsync("otp:ACCOUNT_DEACTIVATION:otp_deact_success@veggielife.vn", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion

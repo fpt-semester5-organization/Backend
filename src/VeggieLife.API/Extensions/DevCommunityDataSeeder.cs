@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.DAL.Context;
+using Microsoft.EntityFrameworkCore;
 using VeggieLife.DAL.Entities;
 
 namespace VeggieLife.API.Extensions;
@@ -23,7 +24,42 @@ public static class DevCommunityDataSeeder
             return;
         }
 
-        var now = DateTime.UtcNow;
+        var isSqlServer = db.Database.ProviderName?.Contains("SqlServer") == true;
+        void ExecuteWithIdentityInsert(string tableName, Action action)
+        {
+            if (isSqlServer)
+            {
+                var onSql = tableName switch
+                {
+                    "Users" => "SET IDENTITY_INSERT dbo.Users ON;",
+                    "Posts" => "SET IDENTITY_INSERT dbo.Posts ON;",
+                    "Videos" => "SET IDENTITY_INSERT dbo.Videos ON;",
+                    "VideoTranscripts" => "SET IDENTITY_INSERT dbo.VideoTranscripts ON;",
+                    "Comments" => "SET IDENTITY_INSERT dbo.Comments ON;",
+                    _ => throw new ArgumentOutOfRangeException(nameof(tableName))
+                };
+                db.Database.ExecuteSqlRaw(onSql);
+            }
+            action();
+            if (isSqlServer)
+            {
+                var offSql = tableName switch
+                {
+                    "Users" => "SET IDENTITY_INSERT dbo.Users OFF;",
+                    "Posts" => "SET IDENTITY_INSERT dbo.Posts OFF;",
+                    "Videos" => "SET IDENTITY_INSERT dbo.Videos OFF;",
+                    "VideoTranscripts" => "SET IDENTITY_INSERT dbo.VideoTranscripts OFF;",
+                    "Comments" => "SET IDENTITY_INSERT dbo.Comments OFF;",
+                    _ => throw new ArgumentOutOfRangeException(nameof(tableName))
+                };
+                db.Database.ExecuteSqlRaw(offSql);
+            }
+        }
+
+        using var transaction = isSqlServer ? db.Database.BeginTransaction() : null;
+        try
+        {
+            var now = DateTime.UtcNow;
 
         // 1. Đảm bảo đầy đủ 15 tài khoản tác giả & hội viên thực tế
         var authors = new List<User>
@@ -42,14 +78,21 @@ public static class DevCommunityDataSeeder
             new() { UserId = 15, Email = "huonggiang.yoga@gmail.com", FullName = "Hương Giang Yoga", PasswordHash = DefaultPasswordHash, Role = UserRoles.Member, AccountStatus = AccountStatuses.Active, CreatedAt = now.AddDays(-70) }
         };
 
-        foreach (var author in authors)
+        var existingUserIds = db.Users.Select(u => u.UserId).ToHashSet();
+        var existingEmails = db.Users.Select(u => u.Email.ToLower()).ToHashSet();
+
+        var newAuthors = authors
+            .Where(a => !existingUserIds.Contains(a.UserId) && !existingEmails.Contains(a.Email.ToLower()))
+            .ToList();
+
+        if (newAuthors.Any())
         {
-            if (!db.Users.Any(u => u.UserId == author.UserId))
+            ExecuteWithIdentityInsert("Users", () =>
             {
-                db.Users.Add(author);
-            }
+                db.Users.AddRange(newAuthors);
+                db.SaveChanges();
+            });
         }
-        db.SaveChanges();
 
         // 2. Nạp 16 bài viết (6 Video dạy nấu ăn + 10 Chia sẻ kinh nghiệm ăn chay)
         var p1011 = new Post
@@ -261,8 +304,11 @@ public static class DevCommunityDataSeeder
             CreatedAt = now
         };
 
-        db.Posts.AddRange(p1011, p1012, p1013, p1014, p1015, p1016, p1021, p1022, p1023, p1024, p1025, p1026, p1027, p1028, p1029, p1030);
-        db.SaveChanges();
+        ExecuteWithIdentityInsert("Posts", () =>
+        {
+            db.Posts.AddRange(p1011, p1012, p1013, p1014, p1015, p1016, p1021, p1022, p1023, p1024, p1025, p1026, p1027, p1028, p1029, p1030);
+            db.SaveChanges();
+        });
 
         // 3. Nạp 6 Video nấu ăn & VideoTranscripts
         var v1 = new Video
@@ -343,8 +389,11 @@ public static class DevCommunityDataSeeder
             CreatedAt = now.AddDays(-4)
         };
 
-        db.Videos.AddRange(v1, v2, v3, v4, v5, v6);
-        db.SaveChanges();
+        ExecuteWithIdentityInsert("Videos", () =>
+        {
+            db.Videos.AddRange(v1, v2, v3, v4, v5, v6);
+            db.SaveChanges();
+        });
 
         // 4. Nạp VideoTranscripts kèm mốc thời gian Segments & JSON Công thức
         var vt1 = new VideoTranscript
@@ -425,8 +474,11 @@ public static class DevCommunityDataSeeder
             CompletedAt = now.AddDays(-4)
         };
 
-        db.VideoTranscripts.AddRange(vt1, vt2, vt3, vt4, vt5, vt6);
-        db.SaveChanges();
+        ExecuteWithIdentityInsert("VideoTranscripts", () =>
+        {
+            db.VideoTranscripts.AddRange(vt1, vt2, vt3, vt4, vt5, vt6);
+            db.SaveChanges();
+        });
 
         // 5. Nạp 25 Bình luận (Comments) tương tác đa tầng
         var comments = new List<Comment>
@@ -468,8 +520,11 @@ public static class DevCommunityDataSeeder
             new() { CommentId = 4025, UserId = 14, PostId = 1011, Content = "Vừa nấu thử nồi canh chua theo đúng video hướng dẫn trưa nay, cả nhà ăn khen nức nở! Nước canh trong veo ngọt lịm. Cảm ơn Chef Thanh Hòa rất nhiều!", Status = "ACTIVE", CreatedAt = now.AddHours(-2) }
         };
 
-        db.Comments.AddRange(comments);
-        db.SaveChanges();
+        ExecuteWithIdentityInsert("Comments", () =>
+        {
+            db.Comments.AddRange(comments);
+            db.SaveChanges();
+        });
 
         // 6. Nạp lượt Vote tích cực từ các User (mỗi User 1 vote / bài viết)
         var postIds = new[] { 1011, 1012, 1013, 1014, 1015, 1016, 1021, 1022, 1023, 1024, 1025, 1026, 1027, 1028, 1029, 1030 };
@@ -492,6 +547,13 @@ public static class DevCommunityDataSeeder
         }
 
         db.SaveChanges();
+            transaction?.Commit();
+        }
+        catch
+        {
+            transaction?.Rollback();
+            throw;
+        }
     }
 }
 

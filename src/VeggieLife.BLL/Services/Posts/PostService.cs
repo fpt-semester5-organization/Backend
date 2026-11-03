@@ -52,7 +52,7 @@ public class PostService : IPostService
     }
 
     /// <summary>
-    /// TÃ¬m kiáº¿m vÃ  xem danh sÃ¡ch bÃ i viáº¿t chia sáº» Ä‘Ã£ duyá»‡t, cÃ³ phÃ¢n trang, lá»c theo tá»« khÃ³a vÃ  tÃ¡c giáº£ (FN-POST-05).
+    /// Tìm kiếm và xem danh sách bài viết chia sẻ đã duyệt, có phân trang, lọc theo từ khóa và tác giả (FN-POST-05).
     /// </summary>
     public async Task<(IReadOnlyList<PostSummaryDto> Items, PagedMeta Meta)> ListPostsAsync(
         PostFilterRequest filter,
@@ -104,7 +104,7 @@ public class PostService : IPostService
             await SaveGuestSearchHistoryAsync(guestId, normalizedKeyword, ct);
         }
 
-        // 4. XÃ¢y dá»±ng truy váº¥n CSDL: Loáº¡i bá» bÃ i Ä‘Ã£ xÃ³a má»m (DELETED)
+        // 4. Xây dựng truy vấn CSDL: Loại bỏ bài đã xóa mềm (DELETED)
         var query = _db.Posts
             .AsNoTracking()
             .Where(p => p.ModerationStatus != "DELETED");
@@ -112,11 +112,11 @@ public class PostService : IPostService
         // isAuthorQuery đã được tính toán ở đầu hàm để phân biệt truy vấn quản lý cá nhân
 
         // Äiá»u kiá»‡n hiá»ƒn thá»‹ (BR-ADM-CNT-001, FN-POST-05):
-        // 1. Khi tÃ¡c giáº£ xem trang quáº£n lÃ½ bÃ i viáº¿t cá»§a chÃ­nh mÃ¬nh (/me/content, isAuthorQuery = true):
-        //    Cho phÃ©p xem bÃ i cá»§a mÃ¬nh á»Ÿ cÃ¡c tráº¡ng thÃ¡i (APPROVED_ACTIVE, PENDING_REVIEW, DRAFT, QUARANTINED_HIDDEN).
+        // 1. Khi tác giả xem trang quản lý bài viết của chính mình (/me/content, isAuthorQuery = true):
+        //    Cho phép xem bài của mình ở các trạng thái (APPROVED_ACTIVE, PENDING_REVIEW, DRAFT, QUARANTINED_HIDDEN).
         // 2. Khi lá»c theo tÃ¡c giáº£ khÃ¡c (filter.AuthorId != currentUserId):
-        //    Chá»‰ xem bÃ i APPROVED_ACTIVE vÃ  PUBLIC cá»§a tÃ¡c giáº£ Ä‘Ã³.
-        // 3. Khi xem báº£ng tin cá»™ng Ä‘á»“ng cÃ´ng khai (Feed, filter.AuthorId == null):
+        //    Chỉ xem bài APPROVED_ACTIVE và PUBLIC của tác giả đó.
+        // 3. Khi xem bảng tin cộng đồng công khai (Feed, filter.AuthorId == null):
         //    Má»i ngÆ°á»i xem bÃ i APPROVED_ACTIVE vÃ  PUBLIC. TÃ¡c giáº£ xem thÃªm bÃ i cá»§a mÃ¬nh (ngoáº¡i trá»« QUARANTINED_HIDDEN).
         //    TUYá»†T Äá»I KHÃ”NG BAO GIá»œ hiá»ƒn thá»‹ bÃ i viáº¿t bá»‹ cÃ¡ch ly/áº©n (QUARANTINED_HIDDEN) trÃªn báº£ng tin cÃ´ng khai!
         if (isAuthorQuery)
@@ -202,7 +202,7 @@ public class PostService : IPostService
     }
 
     /// <summary>
-    /// Xem chi tiáº¿t Ä‘áº§y Ä‘á»§ bÃ i viáº¿t, áº£nh, video vÃ  cÃ´ng thá»©c Ä‘Ã­nh kÃ¨m; tÄƒng lÆ°á»£t xem View_Count (FN-POST-06).
+    /// Xem chi tiết đầy đủ bài viết, ảnh, video và công thức đính kèm; tăng lượt xem View_Count (FN-POST-06).
     /// </summary>
     public async Task<PostDetailDto> GetPostByIdAsync(
         int id,
@@ -213,10 +213,10 @@ public class PostService : IPostService
         // 1. Kiá»ƒm tra id > 0
         if (id <= 0)
         {
-            throw AppException.BadRequest(ErrorCodes.ErrValidation, "MÃ£ bÃ i viáº¿t pháº£i lá»›n hÆ¡n 0.");
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã bài viết phải lớn hơn 0.");
         }
 
-        // 2. Truy váº¥n CSDL: SELECT Posts + Users (tÃ¡c giáº£) + Videos + Recipes (qua Posts.RecipeId) + Votes + Comments
+        // 2. Truy vấn CSDL: SELECT Posts + Users (tác giả) + Videos + Recipes (qua Posts.RecipeId) + Votes + Comments
         var post = await _db.Posts
             .Include(p => p.User)
             .Include(p => p.Videos)
@@ -229,7 +229,7 @@ public class PostService : IPostService
         // 3. Kiá»ƒm tra Ä‘iá»u kiá»‡n hiá»ƒn thá»‹: BÃ i á»Ÿ tráº¡ng thÃ¡i APPROVED_ACTIVE vÃ  PUBLIC (hoáº·c lÃ  bÃ i cá»§a chÃ­nh ngÆ°á»i xem)
         if (post == null)
         {
-            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Ná»™i dung khÃ´ng tá»“n táº¡i hoáº·c chÆ°a á»Ÿ tráº¡ng thÃ¡i APPROVED_ACTIVE.");
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
         }
 
         var isAuthor = currentUserId.HasValue && post.UserId == currentUserId.Value;
@@ -237,10 +237,10 @@ public class PostService : IPostService
 
         if (!isVisible || post.ModerationStatus == "DELETED")
         {
-            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Ná»™i dung khÃ´ng tá»“n táº¡i hoáº·c chÆ°a á»Ÿ tráº¡ng thÃ¡i APPROVED_ACTIVE.");
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
         }
 
-        // 4. Video Ä‘Ã­nh kÃ¨m
+        // 4. Video đính kèm
         var videos = post.Videos
             .Where(v => v.Status == "READY" || v.Status == "PROCESSING")
             .OrderBy(v => v.VideoId)
@@ -255,7 +255,7 @@ public class PostService : IPostService
             })
             .ToList();
 
-        // 5. CÃ´ng thá»©c Ä‘Ã­nh kÃ¨m (qua Posts.RecipeId)
+        // 5. Công thức đính kèm (qua Posts.RecipeId)
         var recipes = new List<PostRecipeDto>();
         if (post.Recipe != null && post.Recipe.Status != "DELETED")
         {
@@ -302,7 +302,7 @@ public class PostService : IPostService
     }
 
     /// <summary>
-    /// Kiá»ƒm tra vÃ  xÃ¡c thá»±c cÃ¡c tham sá»‘ bá»™ lá»c tÃ¬m kiáº¿m theo Ä‘Ãºng rÃ ng buá»™c Ä‘áº·c táº£.
+    /// Kiểm tra và xác thực các tham số bộ lọc tìm kiếm theo đúng ràng buộc đặc tả.
     /// </summary>
     private static void ValidateFilterRequest(PostFilterRequest filter)
     {
@@ -530,7 +530,7 @@ public class PostService : IPostService
         var post = await _db.Posts.FirstOrDefaultAsync(p => p.PostId == id, ct);
         if (post == null || post.ModerationStatus == "DELETED")
         {
-            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Ná»™i dung khÃ´ng tá»“n táº¡i hoáº·c chÆ°a á»Ÿ tráº¡ng thÃ¡i APPROVED_ACTIVE.");
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
         }
 
         if (post.UserId != userId)
@@ -769,7 +769,7 @@ public class PostService : IPostService
         var post = await _db.Posts.FirstOrDefaultAsync(p => p.PostId == id, ct);
         if (post == null || post.ModerationStatus == "DELETED")
         {
-            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Ná»™i dung khÃ´ng tá»“n táº¡i hoáº·c chÆ°a á»Ÿ tráº¡ng thÃ¡i APPROVED_ACTIVE.");
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
         }
 
         if (post.UserId != userId)

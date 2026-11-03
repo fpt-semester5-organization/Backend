@@ -50,6 +50,11 @@ public interface IProfileService
     Task<(IReadOnlyList<WeightHistoryEntryDto> Items, PagedMeta Meta)> ListWeightHistoryAsync(int userId, DateOnly? from, DateOnly? to, int page = 1, int size = 20, CancellationToken ct = default);
 
     /// <summary>
+    /// Phát hành mã OTP 6 số gửi tới email để xác thực yêu cầu vô hiệu hóa tài khoản (FN-PROF-07).
+    /// </summary>
+    Task SendDeactivateOtpAsync(int userId, CancellationToken ct = default);
+
+    /// <summary>
     /// Vô hiệu hóa tài khoản cá nhân có thời gian ân hạn 30 ngày (FN-PROF-07).
     /// </summary>
     Task<DeleteCurrentUserResponseData> DeleteCurrentUserAsync(
