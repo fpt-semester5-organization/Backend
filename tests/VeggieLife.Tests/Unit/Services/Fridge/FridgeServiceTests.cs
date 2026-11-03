@@ -470,6 +470,7 @@ public class FridgeServiceTests : IDisposable
             userId: 10,
             userRole: UserRoles.Member,
             guestUuid: null,
+            autoSave: true,
             CancellationToken.None);
 
         // Assert
@@ -597,6 +598,7 @@ public class FridgeServiceTests : IDisposable
             userId: 10,
             userRole: UserRoles.Member,
             guestUuid: null,
+            autoSave: true,
             CancellationToken.None);
 
         // Assert
