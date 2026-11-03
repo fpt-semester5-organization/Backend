@@ -61,14 +61,26 @@ public class VideosController : BaseApiController
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Tệp tải lên không được để trống.");
         }
 
+        // Chuẩn hóa tham số: Nếu Swagger UI hoặc form gửi số 0 ở 1 trong 2 trường, tự động coi số 0 là null
+        int? effectivePostId = postId;
+        int? effectiveRecipeId = recipeId;
+        if (postId.HasValue && postId.Value > 0 && recipeId.HasValue && recipeId.Value <= 0)
+        {
+            effectiveRecipeId = null;
+        }
+        else if (recipeId.HasValue && recipeId.Value > 0 && postId.HasValue && postId.Value <= 0)
+        {
+            effectivePostId = null;
+        }
+
         await using var stream = file.OpenReadStream();
         var dto = new CreateVideoDto
         {
             FileStream = stream,
             FileName = file.FileName,
             FileLength = file.Length,
-            PostId = postId,
-            RecipeId = recipeId,
+            PostId = effectivePostId,
+            RecipeId = effectiveRecipeId,
             Title = title
         };
 
