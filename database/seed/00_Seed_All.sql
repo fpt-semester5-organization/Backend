@@ -70,6 +70,10 @@ GO
 :r "17_Seed_Member4_Venues_Products_Fridge.sql"
 GO
 
+-- 12. SEED COMMUNITY VIDEOS, TRANSCRIPTS, POSTS, COMMENTS & VOTES
+:r "21_Seed_Community_Videos_Posts.sql"
+GO
+
 PRINT N'============================================================================';
 PRINT N'  HOÀN TẤT THỰC THI TOÀN BỘ MASTER DATA & SEED DATA CHO VEGGIELIFE DB!';
 PRINT N'============================================================================';

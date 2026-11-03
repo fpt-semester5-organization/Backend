@@ -964,6 +964,7 @@ public static class DevDataSeeder
 
         SeedSystemSettings(db);
         SeedAiquotaLogs(db);
+        DevCommunityDataSeeder.Seed(db);
     }
 
     private static void SeedAiquotaLogs(AppDbContext db)
