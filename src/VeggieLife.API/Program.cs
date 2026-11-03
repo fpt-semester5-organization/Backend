@@ -103,17 +103,36 @@ if (!AppDomain.CurrentDomain.GetAssemblies().Any(a => a.FullName?.Contains("xuni
 
     if (db.Database.ProviderName?.Contains("SqlServer") == true)
     {
+        // 1. Kiểm tra kết nối vật lý tới SQL Server
+        bool canConnect = false;
         try
         {
-            // Tự động tạo CSDL VeggieLifeDb và 38 bảng nếu máy mới chưa có
-            db.Database.EnsureCreated();
-            VeggieLife.API.Extensions.DevDataSeeder.SeedIfEmpty(db);
-            logger.LogInformation("CSDL SQL Server (VeggieLifeDb) đã kết nối thành công và sẵn sàng lưu trữ bền vững.");
+            canConnect = db.Database.CanConnect();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "LỖI KẾT NỐI SQL SERVER: Không thể kết nối tới SQL Server ({ConnectionString}). Vui lòng đảm bảo dịch vụ SQL Server (MSSQLSERVER/SQLEXPRESS) đang chạy trên máy.", connectionString);
             throw new InvalidOperationException($"[LỖI CSDL]: Không thể kết nối tới SQL Server tại '{connectionString}'. Vui lòng bật dịch vụ SQL Server trên máy để lưu dữ liệu bền vững, không lưu trên RAM.", ex);
+        }
+
+        if (!canConnect)
+        {
+            logger.LogError("LỖI KẾT NỐI SQL SERVER: Không thể kết nối tới SQL Server ({ConnectionString}). Vui lòng đảm bảo dịch vụ SQL Server (MSSQLSERVER/SQLEXPRESS) đang chạy trên máy.", connectionString);
+            throw new InvalidOperationException($"[LỖI CSDL]: Không thể kết nối tới SQL Server tại '{connectionString}'. Vui lòng bật dịch vụ SQL Server trên máy để lưu dữ liệu bền vững, không lưu trên RAM.");
+        }
+
+        logger.LogInformation("CSDL SQL Server (VeggieLifeDb) đã kết nối thành công và sẵn sàng lưu trữ bền vững.");
+
+        // 2. Khởi tạo cấu trúc bảng & nạp dữ liệu mẫu ban đầu
+        try
+        {
+            db.Database.EnsureCreated();
+            VeggieLife.API.Extensions.DevDataSeeder.SeedIfEmpty(db);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "LỖI NẠP DỮ LIỆU BAN ĐẦU (SEED DATA): Gặp sự cố khi khởi tạo cấu trúc hoặc nạp dữ liệu mẫu: {Message}. Chi tiết: {InnerMessage}", ex.Message, ex.InnerException?.Message);
+            throw new InvalidOperationException($"[LỖI SEED DATA]: Gặp lỗi khi nạp dữ liệu ban đầu: {ex.Message} (Chi tiết: {ex.InnerException?.Message})", ex);
         }
     }
     else if (db.Database.ProviderName?.Contains("InMemory") == true)

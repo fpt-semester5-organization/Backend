@@ -78,7 +78,13 @@ public static class DevCommunityDataSeeder
             new() { UserId = 15, Email = "huonggiang.yoga@gmail.com", FullName = "Hương Giang Yoga", PasswordHash = DefaultPasswordHash, Role = UserRoles.Member, AccountStatus = AccountStatuses.Active, CreatedAt = now.AddDays(-70) }
         };
 
-        var newAuthors = authors.Where(a => !db.Users.Any(u => u.UserId == a.UserId)).ToList();
+        var existingUserIds = db.Users.Select(u => u.UserId).ToHashSet();
+        var existingEmails = db.Users.Select(u => u.Email.ToLower()).ToHashSet();
+
+        var newAuthors = authors
+            .Where(a => !existingUserIds.Contains(a.UserId) && !existingEmails.Contains(a.Email.ToLower()))
+            .ToList();
+
         if (newAuthors.Any())
         {
             ExecuteWithIdentityInsert("Users", () =>
