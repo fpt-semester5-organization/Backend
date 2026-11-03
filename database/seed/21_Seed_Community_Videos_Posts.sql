@@ -69,27 +69,27 @@ USING (
         -- 6 BÀI VIẾT ĐÍNH KÈM VIDEO NẤU ĂN (1011 - 1016)
         (1011, 2, NULL, N'Hướng dẫn nấu Canh chua chay Nam Bộ thanh mát giải nhiệt chuẩn vị',
          N'Hôm nay gian bếp VeggieLife xin chia sẻ cùng cả nhà công thức Canh chua chay chuẩn vị Nam Bộ thanh mát cho ngày hè. Nước canh chua thanh tự nhiên nhờ me dầm nước sôi, ngọt dịu từ thơm (dứa) và cà chua xào thơm với boa-rô, đậu hũ chiên giòn béo bùi, bạc hà đậu bắp giòn rụm. Xem video hướng dẫn chi tiết từng mốc thời gian kèm công thức chuẩn mực bên dưới nhé!',
-         'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 1420, 'APPROVED_ACTIVE', DATEADD(DAY, -14, SYSDATETIME()), NULL),
+         'https://i.ytimg.com/vi/r6UMcVnSFC0/maxresdefault.jpg', 'PUBLIC', 1420, 'APPROVED_ACTIVE', DATEADD(DAY, -14, SYSDATETIME()), NULL),
 
         (1012, 3, NULL, N'Bí quyết làm Nấm đùi gà kho tiêu hạt sen đậm đà óng ả cực đưa cơm',
          N'Món mặn "quốc dân" trong mâm cơm chay gia đình! Nấm đùi gà tươi cắt khoanh tròn 2cm, khía hoa vảy rồng hai mặt để ngấm trọn gia vị, áp chảo xém vàng rồi kho liu riu cùng nước dừa xiêm, hạt sen bùi béo và tiêu sọ Phú Quốc đập dập. Nước sốt nâu cánh gián sánh keo, đậm vị mặn ngọt hài hòa, chan cùng cơm gạo lứt nóng hổi thơm nức mũi.',
-         'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 2150, 'APPROVED_ACTIVE', DATEADD(DAY, -12, SYSDATETIME()), NULL),
+         'https://i.ytimg.com/vi/GA5BKBB1CLg/maxresdefault.jpg', 'PUBLIC', 2150, 'APPROVED_ACTIVE', DATEADD(DAY, -12, SYSDATETIME()), NULL),
 
         (1013, 4, NULL, N'Nấu Phở bò chay Hà Nội nước dùng trong veo, thảo mộc thơm lừng nức mũi',
          N'Phở chay làm sao để có vị ngọt sâu và hương thơm nồng nàn đặc trưng của phở truyền thống? Bí quyết nằm ở nồi nước dùng ninh 2 tiếng từ củ sắn, mía lau, củ cải trắng và bắp ngọt. Gói thảo mộc gồm hoa hồi, thảo quả, quế thanh, tiểu hồi rang vàng thơm lừng. "Thịt nấm" dai ngọt từ nấm đùi gà xé sợi xào hạt điều đỏ bắt mắt.',
-         'https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 3890, 'APPROVED_ACTIVE', DATEADD(DAY, -10, SYSDATETIME()), NULL),
+         'https://i.ytimg.com/vi/tKSWgq9q94M/maxresdefault.jpg', 'PUBLIC', 3890, 'APPROVED_ACTIVE', DATEADD(DAY, -10, SYSDATETIME()), NULL),
 
         (1014, 9, NULL, N'Gỏi cuốn ngũ sắc thanh lọc chấm sốt bơ đậu phộng béo bùi gây nghiện',
          N'Bữa trưa tươi mát đầy màu sắc và vitamin cho ngày hè bận rộn! Bánh tráng gạo mè dẻo dai cuốn chặt cùng bắp cải tím, dưa leo, xoài xanh, cà rốt giòn ngọt và đậu hũ chiên vàng. Điểm nhấn là chén sốt tương bơ đậu phộng sánh đặc thơm béo ngậy, ai ăn một lần cũng mê mẩn.',
-         'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 1840, 'APPROVED_ACTIVE', DATEADD(DAY, -8, SYSDATETIME()), NULL),
+         'https://i.ytimg.com/vi/d_bznxbRfMk/maxresdefault.jpg', 'PUBLIC', 1840, 'APPROVED_ACTIVE', DATEADD(DAY, -8, SYSDATETIME()), NULL),
 
         (1015, 5, NULL, N'Cà ri chay khoai lang đậu gà cốt dừa béo ngậy ăn cùng bánh mì giòn',
          N'Món cà ri chay thơm lừng mùi sả cây và bột cà ri Ấn Độ hảo hạng, nước sốt vàng ươm sánh ngậy vị cốt dừa tươi Bến Tre. Khoai lang bùi ngọt, đậu gà giàu đạm thực vật mềm tan, nấm hương dai giòn sần sật. Thích hợp cho bữa tiệc gia đình ngày mưa se lạnh!',
-         'https://images.unsplash.com/photo-1546833999-b9f581a1996d?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 2780, 'APPROVED_ACTIVE', DATEADD(DAY, -6, SYSDATETIME()), NULL),
+         'https://i.ytimg.com/vi/P2Fbt6lsiWU/maxresdefault.jpg', 'PUBLIC', 2780, 'APPROVED_ACTIVE', DATEADD(DAY, -6, SYSDATETIME()), NULL),
 
         (1016, 2, NULL, N'Bí quyết đổ Bánh xèo chay giòn rụm cả tiếng không ỉu nhân nấm củ hũ dừa',
          N'Công thức pha bột bánh xèo gia truyền giòn tan: bột gạo, bột bắp, nước cốt dừa và một lon nước có ga để tạo độ xốp rỗng. Nhân bánh thanh mát từ củ hũ dừa Bến Tre bào sợi, nấm hương tươi xào thơm và giá đỗ tươi. Cuốn cùng rau rừng, xà lách chấm nước mắm chay chua ngọt cay cay.',
-         'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 4120, 'APPROVED_ACTIVE', DATEADD(DAY, -4, SYSDATETIME()), NULL),
+         'https://i.ytimg.com/vi/WwIMQAtf_dI/maxresdefault.jpg', 'PUBLIC', 4120, 'APPROVED_ACTIVE', DATEADD(DAY, -4, SYSDATETIME()), NULL),
 
         -- 10 BÀI VIẾT CHIA SẺ KINH NGHIỆM ĂN CHAY TRANG CỘNG ĐỒNG (1021 - 1030)
         (1021, 6, NULL, N'Hành trình 30 ngày chuyển từ ăn mặn sang thuần chay: Những thay đổi kỳ diệu về năng lượng và giấc ngủ',
@@ -103,7 +103,7 @@ Lượng chất xơ tăng vọt từ rau xanh và đậu gà có thể gây chư
 
 **Tuần 3 & 4: Sự bừng sáng về thể chất và tinh thần**
 Giấc ngủ sâu hơn rõ rệt, không còn thức giấc giữa đêm. Sáng dậy tỉnh táo không cần cà phê. Đặc biệt, huyết áp và chỉ số mỡ máu giảm đáng kể. Ăn chay không phải là sự từ bỏ, mà là mở ra một thế giới ẩm thực phong phú, đầy màu sắc và nhân ái!',
-         'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 3450, 'APPROVED_ACTIVE', DATEADD(DAY, -15, SYSDATETIME()), NULL),
+         'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 3450, 'APPROVED_ACTIVE', DATEADD(DAY, -15, SYSDATETIME()), NULL),
 
         (1022, 6, NULL, N'Bí quyết bổ sung Vitamin B12, Sắt và Kẽm cho người ăn chay trường không lo thiếu máu hay suy nhược',
          N'Rất nhiều bạn ăn chay thường lo lắng về tình trạng thiếu máu, rụng tóc hay mệt mỏi. Với góc nhìn y khoa và dinh dưỡng, mình xin đúc kết các quy tắc vàng:
@@ -116,7 +116,7 @@ Sắt trong rau bina, đậu lăng, hạt bí và cải xoăn cần môi trườ
 
 3. **Kẽm (Zinc) cho hệ miễn dịch vững vàng:**
 Hạt bí ngô, hạt gai dầu, mầm yến mạch và đậu phụ non là nguồn kẽm tuyệt vời. Ngâm và ủ mầm đậu trước khi chế biến sẽ vô hiệu hóa phytate, giúp cơ thể hấp thụ trọn vẹn khoáng chất.',
-         'https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 4820, 'APPROVED_ACTIVE', DATEADD(DAY, -13, SYSDATETIME()), NULL),
+         'https://images.unsplash.com/photo-1509358271058-acd22cc93898?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 4820, 'APPROVED_ACTIVE', DATEADD(DAY, -13, SYSDATETIME()), NULL),
 
         (1023, 9, NULL, N'Thực đơn Eat Clean thuần chay giảm 4kg mỡ thừa trong 6 tuần: Vẫn no bụng và tràn đầy sinh lực',
          N'Nhiều bạn nghĩ ăn chay sẽ béo vì ăn nhiều tinh bột trắng hoặc đồ chiên xào giả mặn. Nhưng với phương pháp Eat Clean thuần chay nguyên bản (Whole Food Plant-Based), mình đã giúp hàng trăm học viên yoga giảm từ 3-5kg mỡ thừa nhẹ nhàng.
@@ -145,7 +145,7 @@ Cà rốt, củ cải gọt vỏ cắt que ngâm trong hộp nước sạch đ�
 - Sốt chua ngọt chanh dây (cho gỏi cuốn, đậu hũ chiên).
 - Sốt mè rang dinh dưỡng (cho rau củ luộc và mì trộn).
 Tối đi làm về chỉ mất 10 phút xào nấu là có ngay mâm cơm chay nóng sốt chuẩn vị!',
-         'https://images.unsplash.com/photo-1498837167922-ddd27525d352?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 2930, 'APPROVED_ACTIVE', DATEADD(DAY, -9, SYSDATETIME()), NULL),
+         'https://images.unsplash.com/photo-1547496502-affa22d38842?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 2930, 'APPROVED_ACTIVE', DATEADD(DAY, -9, SYSDATETIME()), NULL),
 
         (1025, 10, NULL, N'Cẩm nang sinh tồn khi đi tiệc mặn, liên hoan công ty hay du lịch xa cho người ăn chay',
          N'Ăn chay tại nhà thì rất dễ, nhưng ra ngoài xã hội tiệc tùng hay đi phượt cùng bạn bè mặn thì thế nào? Dưới đây là những kinh nghiệm xương máu sau 6 năm ăn chay trường của mình:
@@ -153,7 +153,7 @@ Tối đi làm về chỉ mất 10 phút xào nấu là có ngay mâm cơm chay 
 - **Báo trước với người tổ chức một cách tinh tế:** Đừng tạo cảm giác mình đòi hỏi đặc quyền. Hãy nhắn tin nhẹ nhàng: "Em ăn chay thanh đạm nên chỉ cần 1 đĩa đậu hũ chiên sả hoặc rau củ xào là no bụng rồi ạ". Thường các nhà hàng tiệc cưới hiện nay đều có thực đơn chay riêng rất tươm tất nếu được báo trước.
 - **Xem menu nhà hàng mặn với con mắt sáng tạo:** Hầu hết quán lẩu hay nướng mặn đều có nấm tươi, ngô ngọt, khoai lang, đậu hũ trắng và rau xanh. Chỉ cần dặn nhà bếp cho nồi nước lẩu chay (hoặc nước dừa tươi đun sôi nêm muối ớt) là bạn đã có một nồi lẩu ấm cúng bên bạn bè.
 - **Túi "cứu cánh" khi đi du lịch phượt:** Luôn thủ sẵn trong balo: 2 gói rong biển sấy mè, 1 hũ ruốc nấm hương tự làm, thanh ngũ cốc hạt điều, và vài gói cháo yến mạch ăn liền. Dù có kẹt ở sân bay hay vùng sâu vùng xa, bạn vẫn luôn chủ động nguồn dinh dưỡng sạch!',
-         'https://images.unsplash.com/photo-1511690656952-34342bb7c2f2?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 2170, 'APPROVED_ACTIVE', DATEADD(DAY, -7, SYSDATETIME()), NULL),
+         'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 2170, 'APPROVED_ACTIVE', DATEADD(DAY, -7, SYSDATETIME()), NULL),
 
         (1026, 11, NULL, N'Làn da sạch mụn, cơ thể nhẹ nhõm: 90 ngày ăn chay thanh lọc đã thay đổi tôi như thế nào',
          N'Trước đây mình từng chiến đấu với mụn nội tiết dai dẳng suốt 4 năm đại học. Đi da liễu uống thuốc kháng sinh bôi kem đủ loại chỉ đỡ được một thời gian rồi tái phát dữ dội hơn.
@@ -164,7 +164,7 @@ Bước ngoặt xảy ra khi mình quyết định cắt bỏ 100% sữa bò, ph
 - **Tháng thứ ba:** Làn da sáng bừng khỏe khoắn từ bên trong, các vết thâm mờ đi 80%. Quan trọng nhất là tinh thần luôn vui tươi, tràn đầy năng lượng tích cực.
 
 Vẻ đẹp thực sự bắt đầu từ một hệ tiêu hóa khỏe mạnh và nguồn thức ăn thanh khiết từ thiên nhiên!',
-         'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 3760, 'APPROVED_ACTIVE', DATEADD(DAY, -5, SYSDATETIME()), NULL),
+         'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 3760, 'APPROVED_ACTIVE', DATEADD(DAY, -5, SYSDATETIME()), NULL),
 
         (1027, 3, NULL, N'Nấu nước dùng chay ngọt thanh tự nhiên từ 5 loại củ quả: Không cần một hạt mì chính hay hạt nêm',
          N'Nhiều quán ăn chay lạm dụng bột ngọt và hạt nêm giả thịt khiến người ăn xong bị khô cổ khát nước. Người đầu bếp chay chân chính lấy vị ngọt từ lòng đất mẹ.
@@ -192,7 +192,7 @@ Sự thật là protein từ thực vật hoàn toàn có thể xây dựng cơ 
    - **Sau tập 30 phút:** Bột protein thực vật (Pea + Rice protein cô đặc) kết hợp sữa đậu nành ấm.
 
 Hiện tại mình duy trì body fat 11-12%, nâng tạ deadlift 180kg nhẹ nhàng, không bao giờ bị đầy bụng hay nổi mụn như thời kỳ uống Whey Protein từ sữa bò!',
-         'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 4390, 'APPROVED_ACTIVE', DATEADD(DAY, -2, SYSDATETIME()), NULL),
+         'https://images.unsplash.com/photo-1584735935682-2f2b69dff9d2?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 4390, 'APPROVED_ACTIVE', DATEADD(DAY, -2, SYSDATETIME()), NULL),
 
         (1029, 4, NULL, N'Ăn chay chánh niệm và lắng nghe cơ thể: Nuôi dưỡng sự bình an và yêu thương từ bữa cơm gia đình',
          N'Trong nhịp sống hiện đại vội vã, bữa ăn thường bị biến thành việc vừa lướt điện thoại vừa nuốt vội thức ăn. Ăn chay chánh niệm không chỉ là ăn gì, mà là "cách chúng ta ăn".
@@ -214,7 +214,7 @@ Nhiều người e ngại con ăn chay sẽ còi cọc thiếu chất, nhưng th
 - **Cháo & Súp đa sắc:** Nấu cháo cùng hạt kê, đậu lăng đỏ (rất giàu sắt và mềm nhanh), bí đỏ và rong biển wakame cung cấp iot tự nhiên.
 - **Bổ sung chất béo tốt cho não bộ:** Trộn trực tiếp 1 muỗng cà phê dầu hạt lanh hoặc dầu sacha inchi ép lạnh vào bát cháo ấm của bé để bổ sung Omega-3 (DHA/EPA).
 - **Tập cho con yêu thiên nhiên:** Cho con cùng mẹ lặt rau, gieo hạt giá đỗ tại nhà. Các bé rất hào hứng khi được ăn chính những mầm rau do mình chăm sóc!',
-         'https://images.unsplash.com/photo-1476224203421-9ac39bcb3327?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 3120, 'APPROVED_ACTIVE', SYSDATETIME(), NULL)
+         'https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?auto=format&fit=crop&w=800&q=80', 'PUBLIC', 3120, 'APPROVED_ACTIVE', SYSDATETIME(), NULL)
 ) AS source (Post_ID, User_ID, Recipe_ID, Title, Content, Image_Url, Visibility, View_Count, Moderation_Status, Created_At, Updated_At)
 ON target.Post_ID = source.Post_ID
 WHEN MATCHED THEN
@@ -236,12 +236,12 @@ SET IDENTITY_INSERT dbo.Videos ON;
 MERGE INTO dbo.Videos AS target
 USING (
     VALUES
-        (2101, 1011, N'Video hướng dẫn nấu Canh chua chay Nam Bộ thanh mát', 'https://www.youtube.com/embed/r6UMcVnSFC0', 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=800&q=80', 180, 1420, 'READY', DATEADD(DAY, -14, SYSDATETIME())),
-        (2102, 1012, N'Video làm Nấm đùi gà kho tiêu hạt sen đậm đà óng ả', 'https://www.youtube.com/embed/GA5BKBB1CLg', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80', 150, 2150, 'READY', DATEADD(DAY, -12, SYSDATETIME())),
-        (2103, 1013, N'Video nấu Phở bò chay Hà Nội nước dùng thảo mộc thơm lừng', 'https://www.youtube.com/embed/tKSWgq9q94M', 'https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=800&q=80', 210, 3890, 'READY', DATEADD(DAY, -10, SYSDATETIME())),
-        (2104, 1014, N'Video cuốn Gỏi cuốn ngũ sắc thanh lọc sốt bơ đậu phộng', 'https://www.youtube.com/embed/d_bznxbRfMk', 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80', 120, 1840, 'READY', DATEADD(DAY, -8, SYSDATETIME())),
-        (2105, 1015, N'Video nấu Cà ri chay khoai lang đậu gà béo ngậy nước cốt dừa', 'https://www.youtube.com/embed/P2Fbt6lsiWU', 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?auto=format&fit=crop&w=800&q=80', 160, 2780, 'READY', DATEADD(DAY, -6, SYSDATETIME())),
-        (2106, 1016, N'Video bí quyết đổ Bánh xèo chay giòn rụm cả tiếng không ỉu', 'https://www.youtube.com/embed/WwIMQAtf_dI', 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=800&q=80', 190, 4120, 'READY', DATEADD(DAY, -4, SYSDATETIME()))
+        (2101, 1011, N'Video hướng dẫn nấu Canh chua chay Nam Bộ thanh mát', 'https://www.youtube.com/embed/r6UMcVnSFC0', 'https://i.ytimg.com/vi/r6UMcVnSFC0/maxresdefault.jpg', 180, 1420, 'READY', DATEADD(DAY, -14, SYSDATETIME())),
+        (2102, 1012, N'Video làm Nấm đùi gà kho tiêu hạt sen đậm đà óng ả', 'https://www.youtube.com/embed/GA5BKBB1CLg', 'https://i.ytimg.com/vi/GA5BKBB1CLg/maxresdefault.jpg', 150, 2150, 'READY', DATEADD(DAY, -12, SYSDATETIME())),
+        (2103, 1013, N'Video nấu Phở bò chay Hà Nội nước dùng thảo mộc thơm lừng', 'https://www.youtube.com/embed/tKSWgq9q94M', 'https://i.ytimg.com/vi/tKSWgq9q94M/maxresdefault.jpg', 210, 3890, 'READY', DATEADD(DAY, -10, SYSDATETIME())),
+        (2104, 1014, N'Video cuốn Gỏi cuốn ngũ sắc thanh lọc sốt bơ đậu phộng', 'https://www.youtube.com/embed/d_bznxbRfMk', 'https://i.ytimg.com/vi/d_bznxbRfMk/maxresdefault.jpg', 120, 1840, 'READY', DATEADD(DAY, -8, SYSDATETIME())),
+        (2105, 1015, N'Video nấu Cà ri chay khoai lang đậu gà béo ngậy nước cốt dừa', 'https://www.youtube.com/embed/P2Fbt6lsiWU', 'https://i.ytimg.com/vi/P2Fbt6lsiWU/maxresdefault.jpg', 160, 2780, 'READY', DATEADD(DAY, -6, SYSDATETIME())),
+        (2106, 1016, N'Video bí quyết đổ Bánh xèo chay giòn rụm cả tiếng không ỉu', 'https://www.youtube.com/embed/WwIMQAtf_dI', 'https://i.ytimg.com/vi/WwIMQAtf_dI/maxresdefault.jpg', 190, 4120, 'READY', DATEADD(DAY, -4, SYSDATETIME()))
 ) AS source (Video_ID, Post_ID, Title, Video_Url, Thumbnail_Url, Duration_Seconds, View_Count, Status, Created_At)
 ON target.Video_ID = source.Video_ID
 WHEN MATCHED THEN
