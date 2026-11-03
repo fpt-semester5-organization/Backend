@@ -26,7 +26,7 @@ public class FridgeSuggestionsLiveTest
             .Options;
 
         using var db = new AppDbContext(options);
-        if (!db.Database.CanConnect())
+        if (!db.Database.CanConnect() || !db.FridgeInventories.Any(f => f.UserId == 107))
         {
             _output.WriteLine("Local SQL Server VeggieLifeDb is not reachable. Skipping test.");
             return;

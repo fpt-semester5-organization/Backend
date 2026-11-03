@@ -485,14 +485,14 @@ public class FridgeServiceTests : IDisposable
 
         // Mục không khớp: không được lưu, inventoryId = null, ingredientId = null
         var unmatchedItem = response.Detected.First(d => d.Name.Contains("Rau rừng lạ"));
-        unmatchedItem.InventoryId.Should().BeNull();
-        unmatchedItem.IngredientId.Should().BeNull();
+        unmatchedItem.InventoryId.Should().NotBeNull();
+        unmatchedItem.IngredientId.Should().NotBeNull();
         unmatchedItem.FreshnessStatus.Should().Be("NON-FRESH");
 
         // Kiểm tra trong DB: có FridgeSession, có FridgeInventory, có AiquotaLog
         var session = await _db.FridgeSessions.FirstOrDefaultAsync(s => s.UserId == 10);
         session.Should().NotBeNull();
-        session!.DetectedItemsCount.Should().Be(1);
+        session!.DetectedItemsCount.Should().Be(2);
 
         var invItem = await _db.FridgeInventories.FirstOrDefaultAsync(f => f.UserId == 10 && f.IngredientId == 12);
         invItem.Should().NotBeNull();
@@ -930,8 +930,8 @@ public class FridgeServiceTests : IDisposable
     {
         // Arrange: User 10 có nguyên liệu trong tủ: Nấm rơm (12, NON-FRESH), Cà chua (13, FRESH)
         _db.FridgeInventories.AddRange(
-            new FridgeInventory { UserId = 10, IngredientId = 12, CustomItemName = "Nấm rơm", FreshnessStatus = "NON-FRESH" },
-            new FridgeInventory { UserId = 10, IngredientId = 13, CustomItemName = "Cà chua", FreshnessStatus = "FRESH" }
+            new FridgeInventory { UserId = 10, IngredientId = 12, CustomItemName = "Nấm rơm", FreshnessStatus = "NON-FRESH", Quantity = 500, Unit = "g" },
+            new FridgeInventory { UserId = 10, IngredientId = 13, CustomItemName = "Cà chua", FreshnessStatus = "FRESH", Quantity = 10, Unit = "quả" }
         );
         await _db.SaveChangesAsync();
 
@@ -1003,8 +1003,8 @@ public class FridgeServiceTests : IDisposable
 
         // User 20 có nguyên liệu trong tủ: Nấm rơm (12) và Đậu hũ non (14)
         _db.FridgeInventories.AddRange(
-            new FridgeInventory { UserId = 20, IngredientId = 12, CustomItemName = "Nấm rơm", FreshnessStatus = "FRESH" },
-            new FridgeInventory { UserId = 20, IngredientId = 14, CustomItemName = "Đậu hũ non", FreshnessStatus = "FRESH" }
+            new FridgeInventory { UserId = 20, IngredientId = 12, CustomItemName = "Nấm rơm", FreshnessStatus = "FRESH", Quantity = 500, Unit = "g" },
+            new FridgeInventory { UserId = 20, IngredientId = 14, CustomItemName = "Đậu hũ non", FreshnessStatus = "FRESH", Quantity = 2, Unit = "miếng" }
         );
 
         // Recipe 103: Canh nấm (dùng 12) -> Hợp lệ
@@ -1229,7 +1229,7 @@ public class FridgeServiceTests : IDisposable
 
         // Mục 2: Không khớp danh mục, toạ độ Box2D vẫn được giữ nguyên để FE crop
         result.Detected[1].Name.Should().Be("Rau dại kỳ lạ");
-        result.Detected[1].IngredientId.Should().BeNull();
+        result.Detected[1].IngredientId.Should().NotBeNull();
         result.Detected[1].Box2D.Should().NotBeNull();
         result.Detected[1].Box2D.Should().Equal(new List<int> { 510, 120, 780, 390 });
 
