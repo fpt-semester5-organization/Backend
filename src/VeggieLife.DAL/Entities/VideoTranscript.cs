@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace VeggieLife.DAL.Entities;
@@ -14,6 +14,8 @@ public partial class VideoTranscript
     public string? RawTranscript { get; set; }
 
     public string? ExtractedRecipeJson { get; set; }
+
+    public string? AiSummary { get; set; }
 
     public string? SttModelVersion { get; set; }
 
