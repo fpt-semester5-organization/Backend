@@ -36,11 +36,11 @@ public class AiSttClient : IAiSttClient
 
         if (!_client.DefaultRequestHeaders.Contains("X-Internal-Api-Key"))
         {
-            var apiKey = config["AiService:InternalApiKey"] ?? "veggielife-secret-internal-key-2026";
+            var apiKey = config["AiService:InternalApiKey"] ?? string.Empty;
             _client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
         }
 
-        _client.Timeout = TimeSpan.FromSeconds(300);
+        _client.Timeout = Timeout.InfiniteTimeSpan;
     }
 
     public async Task<AiSttResultDto?> ExtractRecipeFromVideoAsync(string videoUrl, CancellationToken ct = default)
