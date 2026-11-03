@@ -24,7 +24,7 @@ public class LegalDocumentsResponseData
     public string TermsOfServiceUrl { get; set; } = string.Empty;
 
     /// <summary>
-    /// Đường dẫn ảnh văn bản Quy Chuẩn Ẩm Thực Chay Và Miễn Trừ Y Tế VeggieLife.
+    /// Đường dẫn ảnh văn bản Quy Định Trí Tuệ Nhân Tạo & Miễn Trừ (Nghị định 142/2026/NĐ-CP).
     /// </summary>
     public string VeganDisclaimerUrl { get; set; } = string.Empty;
 

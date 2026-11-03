@@ -306,4 +306,53 @@ public class ContentModerationServiceTests
         response.ViolationScore.Should().BeLessThan(0.85);
         response.ViolationType.Should().Be("NONE");
     }
+    [Fact]
+    public async Task HttpContentModerationService_FiltersNonCloudinaryImages_BeforeCallingAiService()
+    {
+        // Arrange
+        HttpRequestMessage? capturedRequest = null;
+        var mockHandler = new Mock<HttpMessageHandler>();
+        mockHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .Callback<HttpRequestMessage, CancellationToken>((r, _) => capturedRequest = r)
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.OK,
+                Content = JsonContent.Create(new ModerationCheckResponse
+                {
+                    ViolationScore = 0.05,
+                    ViolationType = "NONE",
+                    Reasons = new List<string>(),
+                    Usage = new ModerationUsage { Model = "gemini-2.5-flash", PromptTokens = 50, CompletionTokens = 10 }
+                })
+            });
+
+        var client = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("http://localhost:8080") };
+        var service = new ContentModerationService(client, NullLogger<ContentModerationService>.Instance);
+
+        var req = new ModerationCheckRequest
+        {
+            Title = "Com nieu nam kim cham kho to",
+            ImageUrls = new List<string>
+            {
+                "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format",
+                "https://res.cloudinary.com/veggielife/image/upload/sample.jpg",
+                "http://insecure.com/test.jpg"
+            }
+        };
+
+        // Act
+        var response = await service.CheckContentAsync(req);
+
+        // Assert
+        response.Should().NotBeNull();
+        capturedRequest.Should().NotBeNull();
+        var requestBody = await capturedRequest!.Content!.ReadAsStringAsync();
+        requestBody.Should().NotContain("images.unsplash.com");
+        requestBody.Should().NotContain("insecure.com");
+        requestBody.Should().Contain("res.cloudinary.com/veggielife/image/upload/sample.jpg");
+    }
 }

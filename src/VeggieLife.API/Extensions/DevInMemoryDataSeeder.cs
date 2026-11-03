@@ -392,6 +392,20 @@ public static class DevInMemoryDataSeeder
             );
         }
 
+        // 14. Cấu hình hệ thống (SystemSettings) bao gồm các liên kết tài liệu pháp lý ảnh số hóa
+        if (!db.SystemSettings.Any())
+        {
+            const string legalJson = "{\"user_agreement\":\"https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg\",\"privacy_policy\":\"https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg\",\"terms_of_service\":\"https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg\",\"vegan_disclaimer\":\"https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg\"}";
+
+            db.SystemSettings.AddRange(
+                new SystemSetting { SettingKey = "LEGAL_DOCUMENTS", SettingValue = legalJson, DefaultValue = legalJson, DataType = "STRING", Category = "GENERAL", Description = "Danh mục tài liệu pháp lý VeggieLife", LegalDocumentsUrl = legalJson, UpdatedAt = DateTime.UtcNow },
+                new SystemSetting { SettingKey = "LEGAL_USER_AGREEMENT_URL", SettingValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg", DefaultValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg", DataType = "STRING", Category = "GENERAL", Description = "Thỏa thuận người dùng (Luật 116/2025/QH15)", LegalDocumentsUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg", UpdatedAt = DateTime.UtcNow },
+                new SystemSetting { SettingKey = "LEGAL_PRIVACY_POLICY_URL", SettingValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg", DefaultValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg", DataType = "STRING", Category = "GENERAL", Description = "Chính sách bảo mật dữ liệu (NĐ 13/2023/NĐ-CP)", LegalDocumentsUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg", UpdatedAt = DateTime.UtcNow },
+                new SystemSetting { SettingKey = "LEGAL_TERMS_OF_SERVICE_URL", SettingValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg", DefaultValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg", DataType = "STRING", Category = "GENERAL", Description = "Điều khoản dịch vụ & quyền lợi NTD (Luật 19/2023/QH15)", LegalDocumentsUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg", UpdatedAt = DateTime.UtcNow },
+                new SystemSetting { SettingKey = "LEGAL_VEGAN_DISCLAIMER_URL", SettingValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg", DefaultValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg", DataType = "STRING", Category = "GENERAL", Description = "Quy chuẩn Trí tuệ nhân tạo và Miễn trừ (NĐ 142/2026/NĐ-CP)", LegalDocumentsUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg", UpdatedAt = DateTime.UtcNow }
+            );
+        }
+
         db.SaveChanges();
     }
 }

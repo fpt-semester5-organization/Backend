@@ -4,6 +4,9 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Security.Cryptography;
+using System.Text;
+using VeggieLife.BLL.DTOs.Auth;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeggieLife.BLL.Common.Constants;
@@ -145,6 +148,8 @@ public class ProfileService : IProfileService
             AvatarUrl = user.AvatarUrl,
             Role = user.Role,
             IsVip = isVip,
+            HasPassword = !string.IsNullOrEmpty(user.PasswordHash),
+            IsGoogleLinked = !string.IsNullOrEmpty(user.GoogleId),
             Health = healthDto,
             Allergens = allergensList
         };
@@ -716,8 +721,59 @@ public class ProfileService : IProfileService
         // 1. Kiểm tra tính hợp lệ dữ liệu đầu vào (FN-PROF-07)
         DeleteCurrentUserValidator.Validate(request, user);
 
-        // 2. Xác thực lại danh tính: Mật khẩu (với tài khoản có password) hoặc Google ID Token (với tài khoản chỉ dùng Google)
-        if (!string.IsNullOrEmpty(user.PasswordHash))
+        // 2. Xác thực lại danh tính: Mã OTP qua Email (ưu tiên), hoặc Mật khẩu, hoặc Google ID Token
+        if (!string.IsNullOrWhiteSpace(request.Otp))
+        {
+            var normalizedEmail = user.Email.Trim().ToLowerInvariant();
+            var lockKey = $"otp_lock:{normalizedEmail}";
+            if (await _redis.ExistsAsync(lockKey, ct))
+            {
+                throw AppException.TooManyRequests(
+                    ErrorCodes.ErrAuthOtpLocked,
+                    "Bạn đã nhập sai mã OTP 5 lần liên tiếp. Chức năng xác thực bị tạm khóa trong vòng 15 phút. Vui lòng thử lại sau.");
+            }
+
+            var otpKey = $"otp:{OtpPurposes.AccountDeactivation}:{normalizedEmail}";
+            var cacheItem = await _redis.GetAsync<OtpCacheItem>(otpKey, ct);
+            if (cacheItem == null)
+            {
+                throw AppException.BadRequest(
+                    ErrorCodes.ErrAuthOtpExpired,
+                    "Mã xác thực không hợp lệ hoặc đã hết hạn. Vui lòng yêu cầu gửi lại mã mới.");
+            }
+
+            var inputHash = ComputeSha256(request.Otp.Trim());
+            var isMatch = CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(inputHash),
+                Encoding.UTF8.GetBytes(cacheItem.OtpHash));
+
+            if (!isMatch)
+            {
+                cacheItem.FailedAttempts++;
+                if (cacheItem.FailedAttempts >= 5)
+                {
+                    await _redis.RemoveAsync(otpKey, ct);
+                    await _redis.SetAsync(lockKey, "LOCKED", TimeSpan.FromMinutes(15), ct);
+                    throw AppException.TooManyRequests(
+                        ErrorCodes.ErrAuthOtpLocked,
+                        "Bạn đã nhập sai mã OTP 5 lần liên tiếp. Chức năng xác thực bị tạm khóa trong vòng 15 phút. Vui lòng thử lại sau.");
+                }
+
+                var remainingTtl = TimeSpan.FromMinutes(5) - (DateTime.UtcNow - cacheItem.CreatedAt);
+                if (remainingTtl <= TimeSpan.Zero) remainingTtl = TimeSpan.FromSeconds(10);
+                await _redis.SetAsync(otpKey, cacheItem, remainingTtl, ct);
+
+                var remainingAttempts = 5 - cacheItem.FailedAttempts;
+                throw AppException.BadRequest(
+                    ErrorCodes.ErrAuthOtpIncorrect,
+                    $"Mã xác thực OTP không chính xác. Bạn còn {remainingAttempts} lần thử.",
+                    new { remainingAttempts });
+            }
+
+            // OTP đúng: Xóa mã khỏi Redis
+            await _redis.RemoveAsync(otpKey, ct);
+        }
+        else if (!string.IsNullOrEmpty(user.PasswordHash))
         {
             var isPasswordValid = BCrypt.Net.BCrypt.Verify(request.ConfirmPassword, user.PasswordHash);
             if (!isPasswordValid)
@@ -821,5 +877,58 @@ public class ProfileService : IProfileService
         {
             RestoreDeadline = restoreDeadline
         };
+    }
+
+    /// <summary>
+    /// Phát hành mã OTP 6 số gửi tới email để xác thực yêu cầu vô hiệu hóa tài khoản (FN-PROF-07).
+    /// </summary>
+    public async Task SendDeactivateOtpAsync(int userId, CancellationToken ct = default)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == userId, ct);
+        if (user == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrAdmNotFound, "Không tìm thấy người dùng.");
+        }
+
+        var normalizedEmail = user.Email.Trim().ToLowerInvariant();
+
+        // 1. Kiểm tra khóa OTP 15 phút (otp_lock:{email})
+        var lockKey = $"otp_lock:{normalizedEmail}";
+        if (await _redis.ExistsAsync(lockKey, ct))
+        {
+            throw AppException.TooManyRequests(
+                ErrorCodes.ErrAuthOtpLocked,
+                "Địa chỉ email này đang bị tạm khóa xác thực OTP trong vòng 15 phút. Vui lòng thử lại sau.");
+        }
+
+        // 2. Sinh mã OTP 6 số an toàn CSPRNG (BR-USR-AUTH-01)
+        var otpCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+        var otpHash = ComputeSha256(otpCode);
+
+        // 3. Lưu SHA-256(OTP) vào Redis TTL 5 phút
+        var otpKey = $"otp:{OtpPurposes.AccountDeactivation}:{normalizedEmail}";
+        var cacheItem = new OtpCacheItem
+        {
+            OtpHash = otpHash,
+            FailedAttempts = 0,
+            CreatedAt = DateTime.UtcNow,
+            Purpose = OtpPurposes.AccountDeactivation
+        };
+
+        await _redis.SetAsync(otpKey, cacheItem, TimeSpan.FromMinutes(5), ct);
+
+        // 4. Gửi email
+        if (_emailService != null)
+        {
+            await _emailService.SendOtpEmailAsync(normalizedEmail, otpCode, OtpPurposes.AccountDeactivation, ct);
+        }
+
+        _logger.LogInformation("Đã phát hành mã OTP vô hiệu hóa tài khoản cho User {UserId} ({Email}).", user.UserId, normalizedEmail);
+    }
+
+    private static string ComputeSha256(string raw)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
+        return Convert.ToHexString(bytes);
     }
 }

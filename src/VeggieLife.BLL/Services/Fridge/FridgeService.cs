@@ -58,11 +58,20 @@ public class FridgeService : IFridgeService
     /// <summary>
     /// FN-VIS-01: Nhận diện nguyên liệu thực vật và độ tươi từ ảnh tủ lạnh/rổ rau bằng Gemini Vision.
     /// </summary>
+    public Task<CreateFridgeDetectionResponseData> DetectIngredientsAsync(
+        FridgeDetectionInputDto input,
+        int? userId,
+        string userRole,
+        string? guestUuid,
+        CancellationToken ct = default)
+        => DetectIngredientsAsync(input, userId, userRole, guestUuid, false, ct);
+
     public async Task<CreateFridgeDetectionResponseData> DetectIngredientsAsync(
         FridgeDetectionInputDto input,
         int? userId,
         string userRole,
         string? guestUuid,
+        bool autoSave,
         CancellationToken ct = default)
     {
         if (input == null || input.ImageStream == null || input.FileLength <= 0)
@@ -412,12 +421,15 @@ public class FridgeService : IFridgeService
                 UserId = memberId,
                 ImageCdnUrl = imageCdnUrl,
                 DetectedItemsCount = matchedItemsForSave.Count,
+                DetectedDataJson = System.Text.Json.JsonSerializer.Serialize(detectedList),
                 CreatedAt = DateTime.UtcNow
             };
             _db.FridgeSessions.Add(fridgeSession);
             await _db.SaveChangesAsync(ct);
 
-            // 6.3 UPSERT vào bảng FridgeInventory: nguyên liệu đã có thì cập nhật độ tươi
+            // 6.3 UPSERT vào bảng FridgeInventory: CHỈ KHI autoSave = true
+            if (autoSave)
+            {
             var existingInventoryList = await _db.FridgeInventories
                 .Where(f => f.UserId == memberId)
                 .ToListAsync(ct);
@@ -455,7 +467,8 @@ public class FridgeService : IFridgeService
                         CustomItemName = customName,
                         FreshnessStatus = dto.FreshnessStatus,
                         Quantity = parsed.Amount,
-                        Unit = parsed.Unit.Length > 30 ? parsed.Unit[..30] : parsed.Unit
+                        Unit = parsed.Unit.Length > 30 ? parsed.Unit[..30] : parsed.Unit,
+                        ThumbnailUrl = dto.ThumbnailUrl
                     };
                     _db.FridgeInventories.Add(newItem);
                     existingInventoryList.Add(newItem);
@@ -476,6 +489,9 @@ public class FridgeService : IFridgeService
                         dto.InventoryId = savedItem.InventoryId;
                     }
                 }
+            }
+
+                saved = true;
             }
 
             // 6.4 Ghi nhận nhật ký AIQuotaLogs
@@ -555,7 +571,8 @@ public class FridgeService : IFridgeService
                 Name = string.IsNullOrWhiteSpace(f.CustomItemName) ? f.Ingredient.IngredientName : f.CustomItemName,
                 FreshnessStatus = f.FreshnessStatus,
                 Quantity = f.Quantity,
-                Unit = string.IsNullOrWhiteSpace(f.Unit) ? f.Ingredient.StandardUnit : f.Unit
+                Unit = string.IsNullOrWhiteSpace(f.Unit) ? f.Ingredient.StandardUnit : f.Unit,
+                ThumbnailUrl = f.ThumbnailUrl
             })
             .ToListAsync(ct);
 
@@ -644,7 +661,8 @@ public class FridgeService : IFridgeService
             CustomItemName = customName.Length > 100 ? customName[..100] : customName,
             FreshnessStatus = freshness,
             Quantity = quantity,
-            Unit = unit.Length > 30 ? unit[..30] : unit
+            Unit = unit.Length > 30 ? unit[..30] : unit,
+            ThumbnailUrl = request.ThumbnailUrl
         };
 
         _db.FridgeInventories.Add(newItem);
@@ -657,7 +675,8 @@ public class FridgeService : IFridgeService
             Name = newItem.CustomItemName,
             FreshnessStatus = newItem.FreshnessStatus,
             Quantity = newItem.Quantity,
-            Unit = newItem.Unit
+            Unit = newItem.Unit,
+            ThumbnailUrl = newItem.ThumbnailUrl
         };
     }
 
@@ -723,6 +742,11 @@ public class FridgeService : IFridgeService
             {
                 item.Unit = request.Unit.Trim();
             }
+
+            if (!string.IsNullOrWhiteSpace(request.ThumbnailUrl))
+            {
+                item.ThumbnailUrl = request.ThumbnailUrl;
+            }
         }
 
         await _db.SaveChangesAsync(ct);
@@ -734,7 +758,8 @@ public class FridgeService : IFridgeService
             Name = string.IsNullOrWhiteSpace(item.CustomItemName) ? item.Ingredient.IngredientName : item.CustomItemName,
             FreshnessStatus = item.FreshnessStatus,
             Quantity = item.Quantity,
-            Unit = string.IsNullOrWhiteSpace(item.Unit) ? item.Ingredient.StandardUnit : item.Unit
+            Unit = string.IsNullOrWhiteSpace(item.Unit) ? item.Ingredient.StandardUnit : item.Unit,
+            ThumbnailUrl = item.ThumbnailUrl
         };
     }
 
@@ -1468,5 +1493,41 @@ public class FridgeService : IFridgeService
             Remaining = Math.Max(0, quotaLimit - currentUsed)
         };
     }
-}
 
+    /// <summary>
+    /// FN-VIS-01: Lấy phiên nhận diện gần nhất đã lưu trong CSDL của người dùng (không gọi lại AI).
+    /// </summary>
+    public async Task<LatestFridgeSessionDto?> GetLatestFridgeSessionAsync(int userId, CancellationToken ct = default)
+    {
+        var session = await _db.FridgeSessions
+            .AsNoTracking()
+            .Where(s => s.UserId == userId)
+            .OrderByDescending(s => s.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        if (session == null) return null;
+
+        var detected = new List<DetectedFridgeIngredientDto>();
+        if (!string.IsNullOrWhiteSpace(session.DetectedDataJson))
+        {
+            try
+            {
+                detected = System.Text.Json.JsonSerializer.Deserialize<List<DetectedFridgeIngredientDto>>(session.DetectedDataJson)
+                           ?? new List<DetectedFridgeIngredientDto>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Không thể deserialize DetectedDataJson của session {SessionId}", session.SessionId);
+            }
+        }
+
+        return new LatestFridgeSessionDto
+        {
+            SessionId = session.SessionId,
+            ImageCdnUrl = session.ImageCdnUrl,
+            DetectedItemsCount = session.DetectedItemsCount,
+            CreatedAt = session.CreatedAt,
+            Detected = detected
+        };
+    }
+}

@@ -78,12 +78,12 @@ public class SystemSettingServiceTests : IDisposable
             new SystemSetting
             {
                 SettingKey = "LEGAL_DOCUMENTS",
-                SettingValue = "{\"user_agreement\":\"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png\"}",
-                DefaultValue = "{\"user_agreement\":\"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png\"}",
+                SettingValue = "{\"user_agreement\":\"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/116_2025_QH15_666020.jpg\"}",
+                DefaultValue = "{\"user_agreement\":\"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/116_2025_QH15_666020.jpg\"}",
                 DataType = "STRING",
                 Category = "GENERAL",
                 Description = "Tài liệu pháp lý VeggieLife",
-                LegalDocumentsUrl = "{\"user_agreement\":\"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png\"}",
+                LegalDocumentsUrl = "{\"user_agreement\":\"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/116_2025_QH15_666020.jpg\"}",
                 UpdatedAt = DateTime.UtcNow
             },
             new SystemSetting
@@ -287,15 +287,15 @@ public class SystemSettingServiceTests : IDisposable
         // Assert
         result.Should().NotBeNull();
         result.SettingKey.Should().Be("LEGAL_DOCUMENTS");
-        result.LegalDocumentsUrl.Should().Contain("Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png");
-        result.SettingValue.Should().Contain("Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png");
+        result.LegalDocumentsUrl.Should().Contain("116_2025_QH15_666020.jpg");
+        result.SettingValue.Should().Contain("116_2025_QH15_666020.jpg");
     }
 
     [Fact]
     public async Task UpdateSettingAsync_WhenUpdatingLegalDocumentsUrl_UpdatesBothSettingValueAndLegalDocumentsUrl()
     {
         // Arrange
-        const string newUrl = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png";
+        const string newUrl = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/13_2023_ND-CP_465185.jpg";
         var request = new UpdateSystemSettingRequest
         {
             SettingValue = newUrl,
@@ -353,8 +353,8 @@ public class SystemSettingServiceTests : IDisposable
 
         // Assert
         result.Should().NotBeNull();
-        result.UserAgreementUrl.Should().Contain("Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png");
-        result.PrivacyPolicyUrl.Should().Contain("Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png");
+        result.UserAgreementUrl.Should().Contain("116_2025_QH15_666020.jpg");
+        result.PrivacyPolicyUrl.Should().Contain("13_2023_ND-CP_465185.jpg");
         result.MedicalDisclaimer.Should().Contain("Khuyến nghị mang tính chất tham khảo dinh dưỡng");
 
         _mockRedis.Verify(r => r.SetAsync("sys_setting:legal_documents:all", It.IsAny<VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Once);

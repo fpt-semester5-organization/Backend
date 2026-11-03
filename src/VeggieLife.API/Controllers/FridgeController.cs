@@ -89,7 +89,8 @@ public class FridgeController : BaseApiController
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> CreateFridgeDetection(
         [FromForm] CreateFridgeDetectionForm form,
-        CancellationToken ct)
+        [FromQuery] bool autoSave = false,
+        CancellationToken ct = default)
     {
         if (User?.Identity?.IsAuthenticated != true)
         {
@@ -123,9 +124,31 @@ public class FridgeController : BaseApiController
             userId,
             userRole,
             guestUuid,
+            autoSave,
             ct);
 
         return OkResponse(result, "Đã nhận diện nguyên liệu.");
+    }
+
+    [NonAction]
+    public Task<IActionResult> CreateFridgeDetection(
+        CreateFridgeDetectionForm form,
+        CancellationToken ct)
+        => CreateFridgeDetection(form, false, ct);
+
+    /// <summary>
+    /// FN-VIS-01: Lấy phiên nhận diện tủ lạnh gần nhất của người dùng đã lưu trong CSDL.
+    /// Giúp người dùng khi mở lại màn hình lấy trực tiếp dữ liệu từ database mà không cần gọi lại AI.
+    /// </summary>
+    [HttpGet("sessions/latest")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<LatestFridgeSessionDto?>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetLatestFridgeSession(CancellationToken ct = default)
+    {
+        var userId = EnsureMemberUser();
+        var session = await _fridgeService.GetLatestFridgeSessionAsync(userId, ct);
+        return OkResponse(session, session != null ? "Lấy phiên nhận diện gần nhất thành công." : "Chưa có phiên nhận diện nào.");
     }
 
     /// <summary>

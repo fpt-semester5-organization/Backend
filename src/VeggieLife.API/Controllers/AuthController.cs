@@ -326,6 +326,22 @@ public class AuthController : BaseApiController
         return OkResponse<object?>(null, "Đổi mật khẩu thành công.");
     }
 
+    /// <summary>
+    /// FN-AUTH-14: Thiết lập mật khẩu lần đầu cho tài khoản OAuth chưa có mật khẩu.
+    /// </summary>
+    /// <param name="request">Mật khẩu mới và mật khẩu xác nhận.</param>
+    /// <param name="ct">Cancellation Token.</param>
+    /// <returns>HTTP 200 OK.</returns>
+    [HttpPost("set-password")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    [ProducesResponseType(typeof(ApiResponse<object?>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> SetPassword([FromBody] SetPasswordRequest request, CancellationToken ct)
+    {
+        var userId = CurrentUserId ?? 0;
+        await _authService.SetPasswordAsync(userId, request, ct);
+        return OkResponse<object?>(null, "Thiết lập mật khẩu thành công.");
+    }
+
     private void SetRefreshTokenCookie(string refreshToken)
     {
         if (string.IsNullOrEmpty(refreshToken)) return;

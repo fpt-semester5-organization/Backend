@@ -585,4 +585,127 @@ public class AuthPasswordServiceTests
         Assert.Equal(400, ex.StatusCode);
         Assert.Equal(ErrorCodes.ErrValidation, ex.ErrorCode);
     }
+
+    [Fact]
+    public async Task SetPassword_WhenUserAlreadyHasPassword_Throws400ErrValidation()
+    {
+        // ARRANGE: Tài khoản đã có mật khẩu
+        var (db, authService, _, _) = CreateTestHarness();
+        var user = new User
+        {
+            Email = "has_pass@gmail.com",
+            FullName = "Has Pass User",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("OldPass@123"),
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.Active
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        // ACT & ASSERT
+        var ex = await Assert.ThrowsAsync<AppException>(() =>
+            authService.SetPasswordAsync(user.UserId, new SetPasswordRequest
+            {
+                NewPassword = "NewValidPass@123",
+                ConfirmPassword = "NewValidPass@123"
+            }));
+
+        Assert.Equal(400, ex.StatusCode);
+        Assert.Equal(ErrorCodes.ErrValidation, ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task SetPassword_WhenPasswordMismatch_Throws400ErrValidation()
+    {
+        // ARRANGE: Tài khoản Google chưa có mật khẩu
+        var (db, authService, _, _) = CreateTestHarness();
+        var user = new User
+        {
+            Email = "oauth_user@gmail.com",
+            FullName = "OAuth User",
+            PasswordHash = null,
+            GoogleId = "g_12345",
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.Active
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        // ACT & ASSERT
+        var ex = await Assert.ThrowsAsync<AppException>(() =>
+            authService.SetPasswordAsync(user.UserId, new SetPasswordRequest
+            {
+                NewPassword = "NewValidPass@123",
+                ConfirmPassword = "DifferentPass@123"
+            }));
+
+        Assert.Equal(400, ex.StatusCode);
+        Assert.Equal(ErrorCodes.ErrValidation, ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task SetPassword_WhenWeakPassword_Throws400ErrAuthWeakPassword()
+    {
+        // ARRANGE
+        var (db, authService, _, _) = CreateTestHarness();
+        var user = new User
+        {
+            Email = "oauth_user_weak@gmail.com",
+            FullName = "OAuth User Weak",
+            PasswordHash = null,
+            GoogleId = "g_67890",
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.Active
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        // ACT & ASSERT
+        var ex = await Assert.ThrowsAsync<AppException>(() =>
+            authService.SetPasswordAsync(user.UserId, new SetPasswordRequest
+            {
+                NewPassword = "weak",
+                ConfirmPassword = "weak"
+            }));
+
+        Assert.Equal(400, ex.StatusCode);
+        Assert.Equal(ErrorCodes.ErrAuthWeakPassword, ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task SetPassword_WhenValidGoogleUser_SetsPasswordHashAndAuditLog()
+    {
+        // ARRANGE
+        var (db, authService, _, _) = CreateTestHarness();
+        var user = new User
+        {
+            Email = "oauth_success@gmail.com",
+            FullName = "OAuth User Success",
+            PasswordHash = null,
+            GoogleId = "g_99999",
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.Active
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var newPassword = "StrongValidPass@2026";
+
+        // ACT
+        await authService.SetPasswordAsync(user.UserId, new SetPasswordRequest
+        {
+            NewPassword = newPassword,
+            ConfirmPassword = newPassword
+        });
+
+        // ASSERT
+        var updated = await db.Users.FindAsync(user.UserId);
+        Assert.NotNull(updated);
+        Assert.NotNull(updated!.PasswordHash);
+        Assert.True(BCrypt.Net.BCrypt.Verify(newPassword, updated.PasswordHash));
+
+        var log = await db.AuditLogs.FirstOrDefaultAsync(l => l.TargetTable == "Users" && l.TargetId == user.UserId.ToString());
+        Assert.NotNull(log);
+        Assert.Equal("PASSWORD_SET", log!.Action);
+    }
 }

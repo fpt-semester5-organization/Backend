@@ -55,6 +55,11 @@ public interface IAuthService
     Task ChangePasswordAsync(long userId, ChangePasswordRequest request, string? currentRefreshToken = null, CancellationToken ct = default);
 
     /// <summary>
+    /// Thiết lập mật khẩu lần đầu cho tài khoản OAuth chưa có mật khẩu (FN-AUTH-14).
+    /// </summary>
+    Task SetPasswordAsync(long userId, SetPasswordRequest request, CancellationToken ct = default);
+
+    /// <summary>
     /// Đăng nhập hoặc đăng ký nhanh bằng Google OAuth ID Token (FN-AUTH-07).
     /// Hỗ trợ tự động tạo tài khoản ACTIVE, liên kết tài khoản mật khẩu hiện có (BR-USR-AUTH-02), cấp cặp token (BR-AUTH-004), hợp nhất khách (BR-GUEST-AUTH-01).
     /// </summary>

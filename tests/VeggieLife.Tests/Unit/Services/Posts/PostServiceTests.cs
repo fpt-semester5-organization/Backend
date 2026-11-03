@@ -996,6 +996,33 @@ public class PostServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdatePost_WithViolationContent_ShouldQuarantine_AndCreateViolationReport()
+    {
+        // Arrange: Sửa bài viết số 1 thêm từ vi phạm (thịt bò)
+        var request = new UpdatePostRequest
+        {
+            Title = "Cách làm món chay nhưng có thịt bò",
+            Content = "Thêm một chút thịt bò vào xào cho ngọt nước..."
+        };
+
+        // Act
+        var result = await _service.UpdatePostAsync(1, request, 1024, "MEMBER");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.PostId.Should().Be(1);
+        result.ModerationStatus.Should().Be("QUARANTINED_HIDDEN");
+
+        var dbPost = await _db.Posts.FindAsync(1);
+        dbPost!.ModerationStatus.Should().Be("QUARANTINED_HIDDEN");
+
+        // Kiểm tra ViolationReports
+        var report = await _db.ViolationReports.FirstOrDefaultAsync(r => r.PostId == 1 && r.ReportSource == "AI_SCAN");
+        report.Should().NotBeNull();
+        report!.Status.Should().Be("PENDING");
+    }
+
+    [Fact]
     public async Task UpdatePost_NotAuthor_ShouldThrowForbidden_403()
     {
         // User 2048 cố tình sửa bài 1 của User 1024

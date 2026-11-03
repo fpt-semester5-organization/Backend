@@ -152,6 +152,20 @@ public class UsersController : BaseApiController
     }
 
     /// <summary>
+    /// FN-PROF-07: Yêu cầu gửi mã OTP qua email để xác thực vô hiệu hóa tài khoản.
+    /// </summary>
+    [HttpPost("me/deactivate-otp")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    [ProducesResponseType(typeof(ApiResponse<object?>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> SendDeactivateOtp(CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+        var userId = (int)CurrentUserId!.Value;
+        await _profileService.SendDeactivateOtpAsync(userId, ct);
+        return OkResponse<object?>(null, "Mã OTP xác nhận vô hiệu hóa tài khoản đã được gửi tới email của bạn.");
+    }
+
+    /// <summary>
     /// FN-PROF-07: Vô hiệu hóa tài khoản cá nhân (ân hạn 30 ngày trước khi ẩn danh hóa vĩnh viễn).
     /// </summary>
     [HttpDelete("me")]

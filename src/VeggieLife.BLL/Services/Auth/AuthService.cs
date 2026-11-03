@@ -334,7 +334,9 @@ public class AuthService : IAuthService
                 IsVip = isVip,
                 AccountStatus = user.AccountStatus ?? AccountStatuses.Active,
                 IsProfileCompleted = isProfileCompleted,
-                AvatarUrl = user.AvatarUrl
+                AvatarUrl = user.AvatarUrl,
+                HasPassword = !string.IsNullOrEmpty(user.PasswordHash),
+                IsGoogleLinked = !string.IsNullOrEmpty(user.GoogleId)
             },
             RedirectUrl = isProfileCompleted ? "/dashboard" : "/onboarding/health-profile"
         };
@@ -658,7 +660,9 @@ public class AuthService : IAuthService
                 IsVip = isVip,
                 AccountStatus = user.AccountStatus,
                 IsProfileCompleted = isProfileCompleted,
-                AvatarUrl = user.AvatarUrl
+                AvatarUrl = user.AvatarUrl,
+                HasPassword = !string.IsNullOrEmpty(user.PasswordHash),
+                IsGoogleLinked = !string.IsNullOrEmpty(user.GoogleId)
             }
         };
     }
@@ -1189,6 +1193,90 @@ public class AuthService : IAuthService
     }
 
     /// <summary>
+    /// FN-AUTH-14: Thiết lập mật khẩu lần đầu cho tài khoản OAuth chưa có mật khẩu.
+    /// </summary>
+    public async Task SetPasswordAsync(long userId, SetPasswordRequest request, CancellationToken ct = default)
+    {
+        // 1. Kiểm tra tham số và tìm người dùng trong CSDL
+        if (userId <= 0)
+        {
+            throw AppException.Unauthorized(
+                ErrorCodes.ErrAuthInvalidToken,
+                "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.");
+        }
+
+        if (request == null)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Dữ liệu yêu cầu không được để trống.");
+        }
+
+        var user = await _dbContext.Users
+            .FirstOrDefaultAsync(u => u.UserId == (int)userId, ct);
+
+        if (user == null)
+        {
+            throw AppException.Unauthorized(
+                ErrorCodes.ErrAuthInvalidToken,
+                "Người dùng không tồn tại hoặc phiên đăng nhập không hợp lệ.");
+        }
+
+        // 2. Chỉ áp dụng cho tài khoản chưa có mật khẩu
+        if (!string.IsNullOrEmpty(user.PasswordHash))
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Tài khoản này đã có mật khẩu. Vui lòng sử dụng tính năng Đổi mật khẩu.");
+        }
+
+        // 3. Kiểm tra mật khẩu xác nhận
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword != request.ConfirmPassword)
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Mật khẩu xác nhận không khớp với mật khẩu mới.");
+        }
+
+        // 4. Kiểm tra độ mạnh mật khẩu theo chuẩn BR-AUTH-001
+        var (isPassValid, passError) = PasswordValidator.Validate(request.NewPassword);
+        if (!isPassValid)
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrAuthWeakPassword,
+                passError ?? "Mật khẩu mới không đạt tiêu chuẩn bảo mật.");
+        }
+
+        // 5. Cập nhật PasswordHash
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword, workFactor: 12);
+        user.UpdatedAt = DateTime.UtcNow;
+
+        // 6. Xóa cache profile trên Redis nếu có
+        try
+        {
+            await _redisService.RemoveAsync($"cache:profile:{user.UserId}", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi khi xóa cache profile User {UserId}.", user.UserId);
+        }
+
+        // 7. Ghi AuditLogs PASSWORD_SET
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            ActorUserId = user.UserId,
+            ActorRole = user.Role ?? UserRoles.Member,
+            Action = "PASSWORD_SET",
+            TargetTable = "Users",
+            TargetId = user.UserId.ToString(),
+            CreatedAt = DateTime.UtcNow,
+            Note = "Người dùng thiết lập mật khẩu lần đầu cho tài khoản OAuth."
+        });
+
+        await _dbContext.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Người dùng UserId {UserId} ({Email}) đã thiết lập mật khẩu thành công.", user.UserId, user.Email);
+    }
+
+    /// <summary>
     /// FN-AUTH-07: Đăng nhập hoặc đăng ký nhanh bằng Google OAuth ID Token.
     /// Xác thực Google ID Token; tạo tài khoản ACTIVE mới (bỏ qua OTP), đăng nhập tài khoản đã liên kết,
     /// hoặc liên kết Google vào tài khoản mật khẩu cùng Email sau khi người dùng xác nhận mật khẩu hiện tại (BR-USR-AUTH-02).
@@ -1558,7 +1646,9 @@ public class AuthService : IAuthService
                 IsVip = isVip,
                 AccountStatus = user.AccountStatus,
                 IsProfileCompleted = isProfileCompleted,
-                AvatarUrl = user.AvatarUrl
+                AvatarUrl = user.AvatarUrl,
+                HasPassword = !string.IsNullOrEmpty(user.PasswordHash),
+                IsGoogleLinked = !string.IsNullOrEmpty(user.GoogleId)
             },
             IsNewAccount = isNewAccount
         };
@@ -1592,10 +1682,10 @@ public class AuthService : IAuthService
 
         return new LegalDocumentsResponseData
         {
-            UserAgreementUrl = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png",
-            PrivacyPolicyUrl = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png",
-            TermsOfServiceUrl = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png",
-            VeganDisclaimerUrl = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png",
+            UserAgreementUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg",
+            PrivacyPolicyUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg",
+            TermsOfServiceUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg",
+            VeganDisclaimerUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg",
             MedicalDisclaimer = "Khuyến nghị mang tính chất tham khảo dinh dưỡng, vui lòng tham vấn ý kiến bác sĩ chuyên khoa đối với các bệnh lý nền.",
             UpdatedAt = DateTime.UtcNow
         };

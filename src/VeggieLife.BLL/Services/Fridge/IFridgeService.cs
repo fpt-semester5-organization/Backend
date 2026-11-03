@@ -22,6 +22,14 @@ public interface IFridgeService
         string? guestUuid,
         CancellationToken ct = default);
 
+    Task<CreateFridgeDetectionResponseData> DetectIngredientsAsync(
+        FridgeDetectionInputDto input,
+        int? userId,
+        string userRole,
+        string? guestUuid,
+        bool autoSave,
+        CancellationToken ct = default);
+
     /// <summary>
     /// FN-VIS-02: Lấy danh sách nguyên liệu trong tủ lạnh ảo của người dùng, ưu tiên NON-FRESH xếp trước.
     /// </summary>
@@ -53,6 +61,13 @@ public interface IFridgeService
     Task DeleteFridgeItemAsync(
         int userId,
         int inventoryId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// FN-VIS-01: Lấy phiên nhận diện gần nhất đã lưu trong CSDL của người dùng (không gọi lại AI).
+    /// </summary>
+    Task<LatestFridgeSessionDto?> GetLatestFridgeSessionAsync(
+        int userId,
         CancellationToken ct = default);
 
     /// <summary>

@@ -44,6 +44,7 @@ public class SmtpEmailService : IEmailService
 
         var isEmailVerify = string.Equals(purpose, OtpPurposes.EmailVerify, StringComparison.OrdinalIgnoreCase);
         var isPasswordReset = string.Equals(purpose, "PASSWORD_RESET", StringComparison.OrdinalIgnoreCase);
+        var isAccountDeactivation = string.Equals(purpose, OtpPurposes.AccountDeactivation, StringComparison.OrdinalIgnoreCase);
 
         string subject;
         string actionTitle;
@@ -60,6 +61,12 @@ public class SmtpEmailService : IEmailService
             subject = "[VeggieLife] Mã OTP đặt lại mật khẩu của bạn";
             actionTitle = "Yêu cầu đặt lại mật khẩu";
             actionDescription = "Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản VeggieLife của bạn. Vui lòng nhập mã OTP bên dưới để tạo mật khẩu đăng nhập mới.";
+        }
+        else if (isAccountDeactivation)
+        {
+            subject = "[VeggieLife] Mã OTP xác nhận vô hiệu hóa tài khoản của bạn";
+            actionTitle = "Xác nhận vô hiệu hóa tài khoản";
+            actionDescription = "Chúng tôi nhận được yêu cầu vô hiệu hóa tài khoản VeggieLife của bạn. Vui lòng nhập mã OTP bên dưới để hoàn tất thao tác. Lưu ý: Bạn có 30 ngày để khôi phục tài khoản trước khi bị ẩn danh hóa vĩnh viễn.";
         }
         else
         {

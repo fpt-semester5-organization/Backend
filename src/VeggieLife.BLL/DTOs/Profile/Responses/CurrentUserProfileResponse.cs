@@ -14,6 +14,8 @@ public class CurrentUserProfileResponse
     public string? AvatarUrl { get; set; }
     public string Role { get; set; } = string.Empty;
     public bool IsVip { get; set; }
+    public bool HasPassword { get; set; }
+    public bool IsGoogleLinked { get; set; }
     public HealthProfileDto? Health { get; set; }
     public List<AllergenBriefDto> Allergens { get; set; } = new();
 }
