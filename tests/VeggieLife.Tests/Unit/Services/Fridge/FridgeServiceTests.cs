@@ -470,7 +470,8 @@ public class FridgeServiceTests : IDisposable
             userId: 10,
             userRole: UserRoles.Member,
             guestUuid: null,
-            CancellationToken.None);
+            autoSave: true,
+            ct: CancellationToken.None);
 
         // Assert
         response.Should().NotBeNull();
@@ -597,7 +598,8 @@ public class FridgeServiceTests : IDisposable
             userId: 10,
             userRole: UserRoles.Member,
             guestUuid: null,
-            CancellationToken.None);
+            autoSave: true,
+            ct: CancellationToken.None);
 
         // Assert
         response.Warnings.Should().NotBeEmpty();
@@ -941,7 +943,6 @@ public class FridgeServiceTests : IDisposable
         var r1 = new Recipe
         {
             RecipeId = 101,
-            CategoryId = 1,
             DietarySchoolId = 1,
             Title = "Canh nấm cà chua",
             Instructions = "Nấu canh",
@@ -953,7 +954,6 @@ public class FridgeServiceTests : IDisposable
         var r2 = new Recipe
         {
             RecipeId = 102,
-            CategoryId = 1,
             DietarySchoolId = 1,
             Title = "Salad cà chua",
             Instructions = "Trộn salad",
@@ -1012,7 +1012,6 @@ public class FridgeServiceTests : IDisposable
         var r1 = new Recipe
         {
             RecipeId = 103,
-            CategoryId = 1,
             Title = "Canh nấm an toàn",
             Instructions = "B1",
             DifficultyLevel = "EASY",
@@ -1023,7 +1022,6 @@ public class FridgeServiceTests : IDisposable
         var r2 = new Recipe
         {
             RecipeId = 104,
-            CategoryId = 1,
             Title = "Đậu hũ sốt chua cay",
             Instructions = "B1",
             DifficultyLevel = "EASY",
@@ -1074,7 +1072,6 @@ public class FridgeServiceTests : IDisposable
         var r = new Recipe
         {
             RecipeId = 105,
-            CategoryId = 1,
             Title = "Súp sữa chay",
             Instructions = "B1",
             DifficultyLevel = "EASY",
@@ -1110,7 +1107,6 @@ public class FridgeServiceTests : IDisposable
         var r = new Recipe
         {
             RecipeId = 106,
-            CategoryId = 1,
             Title = "Hành xào tương",
             Instructions = "B1",
             DifficultyLevel = "EASY",
@@ -1145,7 +1141,6 @@ public class FridgeServiceTests : IDisposable
         var r = new Recipe
         {
             RecipeId = 107,
-            CategoryId = 1,
             Title = "Lẩu nấm thập cẩm 4 món",
             Instructions = "B1",
             DifficultyLevel = "HARD",

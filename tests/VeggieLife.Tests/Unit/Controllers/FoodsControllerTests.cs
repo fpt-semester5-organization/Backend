@@ -107,7 +107,7 @@ public class FoodsControllerTests
         var request = new CreateFoodRequest { FoodName = "Cơm tấm chay", CategoryId = 2 };
         var entity = new Food { FoodId = 10, FoodName = "Cơm tấm chay", CategoryId = 2 };
 
-        _mockFoodService.Setup(s => s.GetOrCreateFoodAsync("Cơm tấm chay", 2, It.IsAny<CancellationToken>()))
+        _mockFoodService.Setup(s => s.GetOrCreateFoodAsync("Cơm tấm chay", 2, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(entity);
 
         // Act

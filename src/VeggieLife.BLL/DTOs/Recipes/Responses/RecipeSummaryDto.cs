@@ -21,6 +21,21 @@ public class RecipeSummaryDto
     public string? FoodName { get; set; }
 
     /// <summary>
+    /// Đường dẫn ảnh đại diện món ăn (Food).
+    /// </summary>
+    public string? FoodImageUrl { get; set; }
+
+    /// <summary>
+    /// Mã danh mục món ăn (Category).
+    /// </summary>
+    public int? CategoryId { get; set; }
+
+    /// <summary>
+    /// Tên danh mục món ăn (Category).
+    /// </summary>
+    public string? CategoryName { get; set; }
+
+    /// <summary>
     /// Loại nội dung: RECIPE hoặc VIDEO.
     /// </summary>
     public string Type { get; set; } = "RECIPE";

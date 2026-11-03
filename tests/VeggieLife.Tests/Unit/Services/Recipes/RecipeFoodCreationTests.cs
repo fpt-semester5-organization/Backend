@@ -60,7 +60,6 @@ public class RecipeFoodCreationTests : IDisposable
             Title = "Bún Huế chay thanh đạm",
             FoodName = "Bún Huế chay", // Brand new food name
             FoodId = null,
-            CategoryId = 1,
             DietarySchoolId = 1,
             Submit = false // Draft
         };

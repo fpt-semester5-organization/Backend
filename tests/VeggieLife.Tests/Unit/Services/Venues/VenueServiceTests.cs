@@ -775,7 +775,6 @@ public class VenueServiceTests : IDisposable
         var recipe = new Recipe
         {
             RecipeId = 501,
-            CategoryId = 9,
             DietarySchoolId = 1,
             Title = "Lẩu Nấm Chay Thập Cẩm",
             Instructions = "Nấu nước dùng nấm, nhúng rau củ",
@@ -832,7 +831,6 @@ public class VenueServiceTests : IDisposable
         var recipe = new Recipe
         {
             RecipeId = 502,
-            CategoryId = 9,
             DietarySchoolId = 1,
             Title = "Lẩu Chưa Duyệt",
             Instructions = "Chưa duyệt",
@@ -907,7 +905,6 @@ public class VenueServiceTests : IDisposable
         var recipe = new Recipe
         {
             RecipeId = 503,
-            CategoryId = 1,
             DietarySchoolId = 1,
             Title = "Cơm Chiên Dương Châu Chay",
             Instructions = "Chiên cơm với rau củ",
@@ -947,7 +944,6 @@ public class VenueServiceTests : IDisposable
         var recipe = new Recipe
         {
             RecipeId = 504,
-            CategoryId = 1,
             DietarySchoolId = 1,
             Title = "Cơm Trắng Chay",
             Instructions = "Nấu cơm",

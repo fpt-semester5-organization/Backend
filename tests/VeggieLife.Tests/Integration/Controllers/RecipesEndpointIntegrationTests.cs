@@ -88,7 +88,6 @@ public class RecipesEndpointIntegrationTests : IClassFixture<WebApplicationFacto
         var r1 = new Recipe
         {
             RecipeId = 201,
-            CategoryId = 3,
             DietarySchoolId = 7,
             Title = "Canh nấm đậu phụ rong biển",
             Description = "Món canh thanh mát",
@@ -108,7 +107,6 @@ public class RecipesEndpointIntegrationTests : IClassFixture<WebApplicationFacto
         var r2 = new Recipe
         {
             RecipeId = 202,
-            CategoryId = 9,
             DietarySchoolId = 1,
             Title = "Nấm kho tiêu chay",
             Description = "Món kho đậm đà",
@@ -128,7 +126,6 @@ public class RecipesEndpointIntegrationTests : IClassFixture<WebApplicationFacto
         var r3 = new Recipe
         {
             RecipeId = 203,
-            CategoryId = 14,
             DietarySchoolId = 7,
             Title = "Mì xào nấm rau củ",
             Description = "Món xào thơm ngon có video",
@@ -148,7 +145,6 @@ public class RecipesEndpointIntegrationTests : IClassFixture<WebApplicationFacto
         var rDraft = new Recipe
         {
             RecipeId = 204,
-            CategoryId = 3,
             DietarySchoolId = 7,
             Title = "Bản nháp không xuất hiện",
             Instructions = "Nháp",

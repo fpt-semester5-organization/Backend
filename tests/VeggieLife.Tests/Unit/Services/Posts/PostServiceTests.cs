@@ -105,8 +105,7 @@ public class PostServiceTests : IDisposable
         {
             RecipeId = 50,
             UserId = 1024,
-            CategoryId = 1,
-            Category = category,
+            Food = new Food { FoodId = 50, FoodName = "Món test", Category = category },
             DietarySchoolId = 7,
             DietarySchool = school,
             Title = "Canh chua chay thanh đạm",

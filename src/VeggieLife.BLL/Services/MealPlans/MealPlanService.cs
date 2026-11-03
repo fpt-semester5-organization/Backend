@@ -138,7 +138,8 @@ public class MealPlanService : IMealPlanService
 
             // 8. Lọc trước kho Recipes (APPROVED_ACTIVE) loại trừ 100% món vi phạm trường phái hoặc dị ứng
             var allActiveRecipes = await _db.Recipes
-                .Include(r => r.Category)
+                .Include(r => r.Food).ThenInclude(f => f.Category)
+                .Include(r => r.Food)
                 .Include(r => r.RecipeIngredients)
                     .ThenInclude(ri => ri.Ingredient)
                 .Where(r => r.Status == "APPROVED_ACTIVE")
@@ -358,6 +359,12 @@ public class MealPlanService : IMealPlanService
         {
             var isViolated = false;
 
+            // Loại trừ Category 15 (Nước Chấm & Sốt Gia Vị Chay) khỏi ứng viên bữa chính
+            if ((recipe.Food?.CategoryId ?? 0) == 15)
+            {
+                continue;
+            }
+
             if (recipe.RecipeIngredients == null || recipe.RecipeIngredients.Count == 0)
             {
                 // Bỏ qua công thức không có danh sách nguyên liệu
@@ -436,7 +443,9 @@ public class MealPlanService : IMealPlanService
                     RecipeId = r.RecipeId,
                     Title = r.Title,
                     CaloriesKcal = r.CaloriesKcal,
-                    CategoryName = r.Category?.CategoryName,
+                    CategoryName = r.Food?.Category?.CategoryName,
+                    FoodId = r.FoodId,
+                    FoodName = r.Food?.FoodName,
                     Description = r.Description,
                     Instructions = r.Instructions,
                     PrepTimeMinutes = r.PrepTimeMinutes,
@@ -985,7 +994,12 @@ public class MealPlanService : IMealPlanService
                     RecipeId = recipe.RecipeId,
                     Title = recipe.Title,
                     CaloriesKcal = recipe.CaloriesKcal,
-                    ImageUrl = recipe.ImageUrl
+                    ImageUrl = recipe.ImageUrl ?? recipe.Food?.ImageUrl,
+                    FoodId = recipe.FoodId,
+                    FoodName = recipe.Food?.FoodName,
+                    FoodImageUrl = recipe.Food?.ImageUrl,
+                    CategoryId = recipe.Food?.CategoryId,
+                    CategoryName = recipe.Food?.Category?.CategoryName
                 } : null
             };
         }).ToList();
@@ -1070,12 +1084,15 @@ public class MealPlanService : IMealPlanService
         var plan = await _db.MealPlans
             .Include(p => p.MealSlots)
                 .ThenInclude(ms => ms.Recipe)
+                    .ThenInclude(r => r.Food)
             .Include(p => p.MealSlots)
                 .ThenInclude(ms => ms.SwapHistories)
                     .ThenInclude(sh => sh.OldRecipe)
+                        .ThenInclude(r => r.Food)
             .Include(p => p.MealSlots)
                 .ThenInclude(ms => ms.SwapHistories)
                     .ThenInclude(sh => sh.NewRecipe)
+                        .ThenInclude(r => r.Food)
             .FirstOrDefaultAsync(p => p.PlanId == id && p.UserId == userId, ct);
 
         if (plan == null)
@@ -1116,7 +1133,12 @@ public class MealPlanService : IMealPlanService
                     RecipeId = s.Recipe.RecipeId,
                     Title = s.Recipe.Title,
                     CaloriesKcal = s.Recipe.CaloriesKcal,
-                    ImageUrl = s.Recipe.ImageUrl
+                    ImageUrl = s.Recipe.ImageUrl ?? s.Recipe.Food?.ImageUrl,
+                    FoodId = s.Recipe.FoodId,
+                    FoodName = s.Recipe.Food?.FoodName,
+                    FoodImageUrl = s.Recipe.Food?.ImageUrl,
+                    CategoryId = s.Recipe.Food?.CategoryId,
+                    CategoryName = s.Recipe.Food?.Category?.CategoryName
                 } : null,
                 SwapCount = s.SwapHistories.Count,
                 SwapHistories = s.SwapHistories
@@ -1134,7 +1156,9 @@ public class MealPlanService : IMealPlanService
                             RecipeId = h.OldRecipe.RecipeId,
                             Title = h.OldRecipe.Title,
                             CaloriesKcal = h.OldRecipe.CaloriesKcal,
-                            ImageUrl = h.OldRecipe.ImageUrl
+                            ImageUrl = h.OldRecipe.ImageUrl ?? h.OldRecipe.Food?.ImageUrl,
+                            FoodId = h.OldRecipe.FoodId,
+                            FoodName = h.OldRecipe.Food?.FoodName
                         } : null,
                         NewRecipeId = h.NewRecipeId,
                         NewRecipeTitle = h.NewRecipe?.Title ?? string.Empty,
@@ -1145,7 +1169,9 @@ public class MealPlanService : IMealPlanService
                             RecipeId = h.NewRecipe.RecipeId,
                             Title = h.NewRecipe.Title,
                             CaloriesKcal = h.NewRecipe.CaloriesKcal,
-                            ImageUrl = h.NewRecipe.ImageUrl
+                            ImageUrl = h.NewRecipe.ImageUrl ?? h.NewRecipe.Food?.ImageUrl,
+                            FoodId = h.NewRecipe.FoodId,
+                            FoodName = h.NewRecipe.Food?.FoodName
                         } : null,
                         SwapReason = h.SwapReason,
                         CaloriesDelta = h.CaloriesDelta,
@@ -1205,41 +1231,7 @@ public class MealPlanService : IMealPlanService
                 "Chỉ kích hoạt được thực đơn DRAFT.");
         }
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-
-        // 1. Không cho phép kích hoạt thực đơn của tuần tương lai trước khi tuần đó bắt đầu
-        if (plan.StartDate > today)
-        {
-            throw AppException.Conflict(
-                ErrorCodes.ErrMealPlanNotDraft,
-                "Chưa đến thời gian áp dụng thực đơn tuần này. Bạn chỉ có thể kích hoạt khi tuần mới bắt đầu.");
-        }
-
-        // 2. Không cho phép kích hoạt nếu thực đơn tuần này đã qua thời gian áp dụng (quá khứ)
-        if (plan.EndDate < today)
-        {
-            throw AppException.Conflict(
-                ErrorCodes.ErrMealPlanNotDraft,
-                "Thực đơn tuần này đã hết hạn áp dụng, không thể kích hoạt.");
-        }
-
-        // 3. Không cho phép kích hoạt nếu đang có thực đơn tuần khác đang ACTIVE và trong thời gian hoạt động
-        var hasActivePlanInCurrentPeriod = await _db.MealPlans.AnyAsync(p =>
-            p.UserId == userId &&
-            p.PlanId != id &&
-            p.PlanStatus == "ACTIVE" &&
-            p.StartDate != plan.StartDate &&
-            p.StartDate <= today &&
-            p.EndDate >= today, ct);
-
-        if (hasActivePlanInCurrentPeriod)
-        {
-            throw AppException.Conflict(
-                ErrorCodes.ErrMealPlanNotDraft,
-                "Không thể kích hoạt thực đơn tuần mới khi thực đơn tuần hiện tại vẫn đang hoạt động. Không thể sử dụng song song 2 thực đơn tuần tại cùng một thời điểm.");
-        }
-
-        // 4. Chuyển các thực đơn ACTIVE khác của người dùng sang ARCHIVED (FN-MEAL-02)
+        // Chuyển tất cả thực đơn ACTIVE khác của người dùng sang ARCHIVED để nhường chỗ cho thực đơn mới (FN-MEAL-02)
         var otherActivePlans = await _db.MealPlans
             .Where(p => p.UserId == userId && p.PlanId != id && p.PlanStatus == "ACTIVE")
             .ToListAsync(ct);
@@ -1406,6 +1398,7 @@ public class MealPlanService : IMealPlanService
         if (request?.NewRecipeId.HasValue == true && request.NewRecipeId.Value > 0)
         {
             var chosenRecipe = await _db.Recipes
+                .Include(r => r.Food)
                 .Include(r => r.RecipeIngredients)
                     .ThenInclude(ri => ri.Ingredient)
                 .FirstOrDefaultAsync(r => r.RecipeId == request.NewRecipeId.Value && r.Status == "APPROVED_ACTIVE", ct);
@@ -1463,6 +1456,7 @@ public class MealPlanService : IMealPlanService
             };
 
             var allCandidates = await _db.Recipes
+                .Include(r => r.Food)
                 .Include(r => r.RecipeIngredients)
                     .ThenInclude(ri => ri.Ingredient)
                 .Where(r => r.Status == "APPROVED_ACTIVE" && !excludedIds.Contains(r.RecipeId))
@@ -1550,16 +1544,19 @@ public class MealPlanService : IMealPlanService
                 }
             }
 
-            // Giai đoạn 1: Tìm món trong khoảng dung sai calo cơ sở (nếu chưa lọc theo ghi chú)
+            // Giai đoạn 1: Tìm món trong khoảng dung sai calo cơ sở, ưu tiên CÙNG CHỦNG LOẠI (CategoryId) & phù hợp SwapReason
             if (substituteCandidates.Count == 0)
             {
                 substituteCandidates = filteredCandidates
                     .Where(r => r.CaloriesKcal >= minKcal && r.CaloriesKcal <= maxKcal)
-                    .OrderBy(r => Math.Abs(r.CaloriesKcal - oldCalories))
+                    .OrderByDescending(r => (r.Food != null && oldRecipe.Food != null && r.Food.CategoryId == oldRecipe.Food.CategoryId) ? 1 : 0)
+                    .ThenBy(r => request != null && request.SwapReason == "TIME_LIMIT" ? (r.CookTimeMinutes <= oldRecipe.CookTimeMinutes ? 0 : 1) : 0)
+                    .ThenBy(r => request != null && request.SwapReason == "MISSING_INGREDIENT" ? r.RecipeIngredients.Count : 0)
+                    .ThenBy(r => Math.Abs(r.CaloriesKcal - oldCalories))
                     .ToList();
             }
 
-            // Giai đoạn 2 (Fallback): Nới rộng khoảng calo (+-350 kcal hoặc 40%)
+            // Giai đoạn 2 (Fallback): Nới rộng khoảng calo (+-350 kcal hoặc 40%), duy trì ưu tiên CÙNG CHỦNG LOẠI
             if (substituteCandidates.Count == 0)
             {
                 var expandedDelta = Math.Max(350m, oldCalories * 0.4m);
@@ -1568,7 +1565,9 @@ public class MealPlanService : IMealPlanService
 
                 substituteCandidates = filteredCandidates
                     .Where(r => r.CaloriesKcal >= expandedMinKcal && r.CaloriesKcal <= expandedMaxKcal)
-                    .OrderBy(r => Math.Abs(r.CaloriesKcal - oldCalories))
+                    .OrderByDescending(r => (r.Food != null && oldRecipe.Food != null && r.Food.CategoryId == oldRecipe.Food.CategoryId) ? 1 : 0)
+                    .ThenBy(r => request != null && request.SwapReason == "TIME_LIMIT" ? (r.CookTimeMinutes <= oldRecipe.CookTimeMinutes ? 0 : 1) : 0)
+                    .ThenBy(r => Math.Abs(r.CaloriesKcal - oldCalories))
                     .ToList();
             }
 
@@ -1576,7 +1575,8 @@ public class MealPlanService : IMealPlanService
             if (substituteCandidates.Count == 0 && filteredCandidates.Count > 0)
             {
                 substituteCandidates = filteredCandidates
-                    .OrderBy(r => Math.Abs(r.CaloriesKcal - oldCalories))
+                    .OrderByDescending(r => (r.Food != null && oldRecipe.Food != null && r.Food.CategoryId == oldRecipe.Food.CategoryId) ? 1 : 0)
+                    .ThenBy(r => Math.Abs(r.CaloriesKcal - oldCalories))
                     .Take(10)
                     .ToList();
             }
@@ -1690,7 +1690,12 @@ public class MealPlanService : IMealPlanService
                     RecipeId = newRecipe.RecipeId,
                     Title = newRecipe.Title,
                     CaloriesKcal = newRecipe.CaloriesKcal,
-                    ImageUrl = newRecipe.ImageUrl
+                    ImageUrl = newRecipe.ImageUrl ?? newRecipe.Food?.ImageUrl,
+                    FoodId = newRecipe.FoodId,
+                    FoodName = newRecipe.Food?.FoodName,
+                    FoodImageUrl = newRecipe.Food?.ImageUrl,
+                    CategoryId = newRecipe.Food?.CategoryId,
+                    CategoryName = newRecipe.Food?.Category?.CategoryName
                 },
                 SwapCount = slotHistories.Count,
                 SwapHistories = slotHistories
@@ -1719,7 +1724,7 @@ public class MealPlanService : IMealPlanService
             .Include(s => s.Plan)
                 .ThenInclude(p => p.DietarySchool)
             .Include(s => s.Recipe)
-                .ThenInclude(r => r.Category)
+                .ThenInclude(r => r.Food).ThenInclude(f => f.Category)
             .Include(s => s.Recipe)
                 .ThenInclude(r => r.RecipeIngredients)
                     .ThenInclude(ri => ri.Ingredient)
@@ -1807,7 +1812,8 @@ public class MealPlanService : IMealPlanService
 
         // Cào database khoảng 100 món APPROVED_ACTIVE phù hợp
         var allActiveRecipes = await _db.Recipes
-            .Include(r => r.Category)
+            .Include(r => r.Food).ThenInclude(f => f.Category)
+            .Include(r => r.Food)
             .Include(r => r.RecipeIngredients)
                 .ThenInclude(ri => ri.Ingredient)
             .Where(r => r.Status == "APPROVED_ACTIVE" && !excludedIds.Contains(r.RecipeId))
@@ -1840,7 +1846,7 @@ public class MealPlanService : IMealPlanService
             Servings = r.Servings,
             DifficultyLevel = r.DifficultyLevel,
             CaloriesKcal = r.CaloriesKcal,
-            CategoryName = r.Category?.CategoryName,
+            CategoryName = r.Food?.Category?.CategoryName,
             UsesFridgeItem = false,
             MealTypePreference = slot.MealType,
             FavoriteCount = r.ViewCount,
@@ -2038,7 +2044,12 @@ public class MealPlanService : IMealPlanService
                     RecipeId = selectedRecipe.RecipeId,
                     Title = selectedRecipe.Title,
                     CaloriesKcal = selectedRecipe.CaloriesKcal,
-                    ImageUrl = selectedRecipe.ImageUrl
+                    ImageUrl = selectedRecipe.ImageUrl ?? selectedRecipe.Food?.ImageUrl,
+                    FoodId = selectedRecipe.FoodId,
+                    FoodName = selectedRecipe.Food?.FoodName,
+                    FoodImageUrl = selectedRecipe.Food?.ImageUrl,
+                    CategoryId = selectedRecipe.Food?.CategoryId,
+                    CategoryName = selectedRecipe.Food?.Category?.CategoryName
                 },
                 SwapCount = slotHistories.Count,
                 SwapHistories = slotHistories

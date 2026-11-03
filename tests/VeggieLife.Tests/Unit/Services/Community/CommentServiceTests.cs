@@ -138,7 +138,6 @@ public class CommentServiceTests : IDisposable
         {
             RecipeId = 10,
             UserId = 100,
-            CategoryId = 1,
             DietarySchoolId = 1,
             Title = "Công thức nấm kho tiêu",
             Instructions = "Bước 1 kho nấm. Bước 2 nêm tiêu.",
@@ -153,7 +152,6 @@ public class CommentServiceTests : IDisposable
         {
             RecipeId = 20,
             UserId = 100,
-            CategoryId = 1,
             DietarySchoolId = 1,
             Title = "Công thức cách ly",
             Instructions = "Nội dung",

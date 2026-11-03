@@ -59,7 +59,10 @@ public class FoodService : IFoodService
             {
                 FoodId = f.FoodId,
                 FoodName = f.FoodName,
-                CategoryId = f.CategoryId
+                CategoryId = f.CategoryId,
+                CategoryName = f.Category != null ? f.Category.CategoryName : null,
+                ImageUrl = f.ImageUrl,
+                RecipeCount = f.Recipes.Count(r => r.Status == "APPROVED_ACTIVE")
             })
             .ToListAsync(ct);
 
@@ -92,6 +95,9 @@ public class FoodService : IFoodService
                 FoodId = f.FoodId,
                 FoodName = f.FoodName,
                 CategoryId = f.CategoryId,
+                CategoryName = f.Category != null ? f.Category.CategoryName : null,
+                ImageUrl = f.ImageUrl,
+                RecipeCount = f.Recipes.Count(r => r.Status == "APPROVED_ACTIVE")
             })
             .ToListAsync(ct);
 
@@ -101,11 +107,18 @@ public class FoodService : IFoodService
     /// <summary>
     /// Tìm Food theo tên (case-insensitive). Nếu chưa có → INSERT mới rồi trả về entity.
     /// </summary>
+    public Task<Food> GetOrCreateFoodAsync(string foodName, int categoryId, CancellationToken ct = default)
+        => GetOrCreateFoodAsync(foodName, categoryId, null, ct);
+
+    /// <summary>
+    /// Tìm Food theo tên (case-insensitive) kèm ảnh minh họa. Nếu chưa có → INSERT mới rồi trả về entity.
+    /// </summary>
     /// <param name="foodName">Tên món ăn cần lấy hoặc tạo.</param>
     /// <param name="categoryId">Danh mục sẽ gán khi tạo mới.</param>
+    /// <param name="imageUrl">Đường dẫn hình ảnh minh họa (tùy chọn).</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Entity Food đã tồn tại hoặc vừa được tạo mới.</returns>
-    public async Task<Food> GetOrCreateFoodAsync(string foodName, int categoryId, CancellationToken ct = default)
+    public async Task<Food> GetOrCreateFoodAsync(string foodName, int categoryId, string? imageUrl, CancellationToken ct = default)
     {
         var normalizedName = (foodName ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(normalizedName))
@@ -118,6 +131,12 @@ public class FoodService : IFoodService
 
         if (existing is not null)
         {
+            if (string.IsNullOrWhiteSpace(existing.ImageUrl) && !string.IsNullOrWhiteSpace(imageUrl))
+            {
+                existing.ImageUrl = imageUrl.Trim();
+                existing.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync(ct);
+            }
             return existing;
         }
 
@@ -125,14 +144,15 @@ public class FoodService : IFoodService
         {
             FoodName = normalizedName,
             CategoryId = categoryId > 0 ? categoryId : 1,
+            ImageUrl = !string.IsNullOrWhiteSpace(imageUrl) ? imageUrl.Trim() : null,
             CreatedAt = DateTime.UtcNow,
         };
 
         _db.Foods.Add(newFood);
         await _db.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Created new Food: Id={FoodId}, Name={FoodName}, CategoryId={CategoryId}",
-            newFood.FoodId, newFood.FoodName, newFood.CategoryId);
+        _logger.LogInformation("Created new Food: Id={FoodId}, Name={FoodName}, CategoryId={CategoryId}, ImageUrl={ImageUrl}",
+            newFood.FoodId, newFood.FoodName, newFood.CategoryId, newFood.ImageUrl);
 
         return newFood;
     }
@@ -157,6 +177,9 @@ public class FoodService : IFoodService
                 FoodId = f.FoodId,
                 FoodName = f.FoodName,
                 CategoryId = f.CategoryId,
+                CategoryName = f.Category != null ? f.Category.CategoryName : null,
+                ImageUrl = f.ImageUrl,
+                RecipeCount = f.Recipes.Count(r => r.Status == "APPROVED_ACTIVE")
             })
             .FirstOrDefaultAsync(ct);
     }

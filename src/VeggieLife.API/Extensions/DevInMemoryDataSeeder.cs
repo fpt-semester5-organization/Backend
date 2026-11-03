@@ -159,7 +159,6 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 101,
             UserId = 1,
-            CategoryId = 3,
             DietarySchoolId = 7, // VEGAN
             Title = "Canh nấm đậu phụ rong biển",
             Description = "Món canh thanh đạm bổ dưỡng mát lành giải nhiệt cơ thể.",
@@ -181,7 +180,6 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 102,
             UserId = 1,
-            CategoryId = 9,
             DietarySchoolId = 1, // BUDDHIST
             Title = "Nấm kho tiêu hạt sen đậm đà",
             Description = "Nấm kho sánh quyện đậm đà đưa cơm chuẩn vị chay Phật giáo.",
@@ -203,7 +201,6 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 103,
             UserId = 2,
-            CategoryId = 14,
             DietarySchoolId = 7, // VEGAN
             Title = "Mì xào nấm rau củ giòn ngọt",
             Description = "Món mì xào giòn thơm kèm video hướng dẫn từng bước.",
@@ -225,7 +222,6 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 104,
             UserId = 2,
-            CategoryId = 3,
             DietarySchoolId = 2, // LACTO
             Title = "Súp ngô ngọt kem tươi dinh dưỡng",
             Description = "Súp thơm mùi bơ sữa và ngọt thanh tự nhiên từ bắp ngọt.",
@@ -247,7 +243,6 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 105,
             UserId = 2,
-            CategoryId = 3,
             DietarySchoolId = 7,
             Title = "Canh bí đỏ nháp đang soạn",
             Description = "Bản nháp chưa gửi duyệt.",
@@ -268,7 +263,6 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 106,
             UserId = 2,
-            CategoryId = 9,
             DietarySchoolId = 7,
             Title = "Công thức vi phạm cách ly",
             Description = "Bị cách ly kiểm duyệt.",

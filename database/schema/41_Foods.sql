@@ -17,6 +17,7 @@ BEGIN
         [Food_ID]       INT IDENTITY(1,1) NOT NULL,
         [Category_ID]   INT NOT NULL,
         [Food_Name]     NVARCHAR(150) NOT NULL,
+        [Image_URL]     NVARCHAR(500) NULL,
         [Created_At]    DATETIME2(7) NOT NULL CONSTRAINT [DF_Foods_Created_At] DEFAULT (SYSDATETIME()),
         [Updated_At]    DATETIME2(7) NULL,
 

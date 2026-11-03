@@ -692,7 +692,7 @@ public class VenueService : IVenueService
         // 4. Lấy Recipes.Category_ID của công thức (chỉ công thức APPROVED_ACTIVE)
         var recipe = await _db.Recipes
             .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.RecipeId == recipeId && r.Status == "APPROVED_ACTIVE", ct);
+            .Include(r => r.Food).FirstOrDefaultAsync(r => r.RecipeId == recipeId && r.Status == "APPROVED_ACTIVE", ct);
 
         if (recipe == null)
         {
@@ -704,7 +704,7 @@ public class VenueService : IVenueService
         // 5. Tìm VeganVenues có VenueCategories.Category_ID trùng, trong bán kính cho phép (Khách 5 km, Thành viên 10 km), chưa bị ẩn (Is_Active = 1, BR-ADM-MAP-001)
         var query = _db.VeganVenues
             .AsNoTracking()
-            .Where(v => v.IsActive && v.VenueCategories.Any(vc => vc.CategoryId == recipe.CategoryId));
+            .Where(v => v.IsActive && v.VenueCategories.Any(vc => vc.CategoryId == (recipe.Food != null ? recipe.Food.CategoryId : 0)));
 
         var venuesFromDb = await query
             .Include(v => v.VenueCategories)
