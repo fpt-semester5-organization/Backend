@@ -346,7 +346,7 @@ public class PostsControllerTests
         var responseDto = new UpdatePostResponseDto
         {
             PostId = 77,
-            ModerationStatus = "PENDING_REVIEW"
+            ModerationStatus = "APPROVED_ACTIVE"
         };
 
         _mockService.Setup(s => s.UpdatePostAsync(77, req, 1024, "MEMBER", It.IsAny<CancellationToken>()))
@@ -365,7 +365,7 @@ public class PostsControllerTests
         envelope!.StatusCode.Should().Be(200);
         envelope.Message.Should().Be("Đã cập nhật.");
         envelope.Data!.PostId.Should().Be(77);
-        envelope.Data.ModerationStatus.Should().Be("PENDING_REVIEW");
+        envelope.Data.ModerationStatus.Should().Be("APPROVED_ACTIVE");
     }
 
     [Fact]
