@@ -236,12 +236,12 @@ SET IDENTITY_INSERT dbo.Videos ON;
 MERGE INTO dbo.Videos AS target
 USING (
     VALUES
-        (2101, 1011, N'Video hướng dẫn nấu Canh chua chay Nam Bộ thanh mát', 'https://www.youtube.com/embed/5qap5aO4i9A', 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=800&q=80', 180, 1420, 'READY', DATEADD(DAY, -14, SYSDATETIME())),
-        (2102, 1012, N'Video làm Nấm đùi gà kho tiêu hạt sen đậm đà óng ả', 'https://www.youtube.com/embed/gN3Zg3L6sX4', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80', 150, 2150, 'READY', DATEADD(DAY, -12, SYSDATETIME())),
-        (2103, 1013, N'Video nấu Phở bò chay Hà Nội nước dùng thảo mộc thơm lừng', 'https://www.tiktok.com/embed/v2/7234567890123456789', 'https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=800&q=80', 210, 3890, 'READY', DATEADD(DAY, -10, SYSDATETIME())),
-        (2104, 1014, N'Video cuốn Gỏi cuốn ngũ sắc thanh lọc sốt bơ đậu phộng', 'https://www.tiktok.com/embed/v2/7198765432109876543', 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80', 120, 1840, 'READY', DATEADD(DAY, -8, SYSDATETIME())),
-        (2105, 1015, N'Video nấu Cà ri chay khoai lang đậu gà béo ngậy nước cốt dừa', 'https://www.youtube.com/embed/kJQP7kiw5Fk', 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?auto=format&fit=crop&w=800&q=80', 160, 2780, 'READY', DATEADD(DAY, -6, SYSDATETIME())),
-        (2106, 1016, N'Video bí quyết đổ Bánh xèo chay giòn rụm cả tiếng không ỉu', 'https://www.youtube.com/embed/L_LUpnjgPso', 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=800&q=80', 190, 4120, 'READY', DATEADD(DAY, -4, SYSDATETIME()))
+        (2101, 1011, N'Video hướng dẫn nấu Canh chua chay Nam Bộ thanh mát', 'https://www.youtube.com/embed/r6UMcVnSFC0', 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=800&q=80', 180, 1420, 'READY', DATEADD(DAY, -14, SYSDATETIME())),
+        (2102, 1012, N'Video làm Nấm đùi gà kho tiêu hạt sen đậm đà óng ả', 'https://www.youtube.com/embed/GA5BKBB1CLg', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80', 150, 2150, 'READY', DATEADD(DAY, -12, SYSDATETIME())),
+        (2103, 1013, N'Video nấu Phở bò chay Hà Nội nước dùng thảo mộc thơm lừng', 'https://www.youtube.com/embed/tKSWgq9q94M', 'https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=800&q=80', 210, 3890, 'READY', DATEADD(DAY, -10, SYSDATETIME())),
+        (2104, 1014, N'Video cuốn Gỏi cuốn ngũ sắc thanh lọc sốt bơ đậu phộng', 'https://www.youtube.com/embed/d_bznxbRfMk', 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80', 120, 1840, 'READY', DATEADD(DAY, -8, SYSDATETIME())),
+        (2105, 1015, N'Video nấu Cà ri chay khoai lang đậu gà béo ngậy nước cốt dừa', 'https://www.youtube.com/embed/P2Fbt6lsiWU', 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?auto=format&fit=crop&w=800&q=80', 160, 2780, 'READY', DATEADD(DAY, -6, SYSDATETIME())),
+        (2106, 1016, N'Video bí quyết đổ Bánh xèo chay giòn rụm cả tiếng không ỉu', 'https://www.youtube.com/embed/WwIMQAtf_dI', 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=800&q=80', 190, 4120, 'READY', DATEADD(DAY, -4, SYSDATETIME()))
 ) AS source (Video_ID, Post_ID, Title, Video_Url, Thumbnail_Url, Duration_Seconds, View_Count, Status, Created_At)
 ON target.Video_ID = source.Video_ID
 WHEN MATCHED THEN
