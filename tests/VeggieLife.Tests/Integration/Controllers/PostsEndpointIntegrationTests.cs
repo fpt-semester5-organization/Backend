@@ -348,7 +348,7 @@ public class PostsEndpointIntegrationTests : IClassFixture<WebApplicationFactory
         envelope!.StatusCode.Should().Be(200);
         envelope.Message.Should().Be("Đã cập nhật.");
         envelope.Data!.PostId.Should().Be(501);
-        envelope.Data.ModerationStatus.Should().Be("PENDING_REVIEW");
+        envelope.Data.ModerationStatus.Should().Be("APPROVED_ACTIVE");
     }
 
     [Fact]

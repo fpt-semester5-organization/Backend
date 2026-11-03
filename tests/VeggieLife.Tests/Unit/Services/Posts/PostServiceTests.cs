@@ -926,7 +926,7 @@ public class PostServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task UpdatePost_ValidAuthor_ShouldUpdateAndReturnPendingReview_AndWriteAuditLog()
+    public async Task UpdatePost_ValidAuthor_ShouldUpdateAndReturnApprovedActive_AndWriteAuditLog()
     {
         // Arrange: Sửa bài viết số 1 (do user 1024 tạo)
         var request = new UpdatePostRequest
@@ -941,17 +941,44 @@ public class PostServiceTests : IDisposable
         // Assert
         result.Should().NotBeNull();
         result.PostId.Should().Be(1);
-        result.ModerationStatus.Should().Be("PENDING_REVIEW");
+        result.ModerationStatus.Should().Be("APPROVED_ACTIVE");
 
         var dbPost = await _db.Posts.FindAsync(1);
         dbPost!.Title.Should().Be("Tiêu đề bài viết đã được chỉnh sửa hợp lệ");
-        dbPost.ModerationStatus.Should().Be("PENDING_REVIEW");
+        dbPost.ModerationStatus.Should().Be("APPROVED_ACTIVE");
 
         // Kiểm tra AuditLogs
         var audit = await _db.AuditLogs.FirstOrDefaultAsync(a => a.TargetTable == "Posts" && a.TargetId == "1" && a.Action == "UPDATE_POST");
         audit.Should().NotBeNull();
         audit!.ActorUserId.Should().Be(1024);
         audit.ActorRole.Should().Be("MEMBER");
+    }
+
+    [Fact]
+    public async Task UpdatePost_WithViolationContent_ShouldQuarantine_AndCreateViolationReport()
+    {
+        // Arrange: Sửa bài viết số 1 thêm từ vi phạm (thịt bò)
+        var request = new UpdatePostRequest
+        {
+            Title = "Cách làm món chay nhưng có thịt bò",
+            Content = "Thêm một chút thịt bò vào xào cho ngọt nước..."
+        };
+
+        // Act
+        var result = await _service.UpdatePostAsync(1, request, 1024, "MEMBER");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.PostId.Should().Be(1);
+        result.ModerationStatus.Should().Be("QUARANTINED_HIDDEN");
+
+        var dbPost = await _db.Posts.FindAsync(1);
+        dbPost!.ModerationStatus.Should().Be("QUARANTINED_HIDDEN");
+
+        // Kiểm tra ViolationReports
+        var report = await _db.ViolationReports.FirstOrDefaultAsync(r => r.PostId == 1 && r.ReportSource == "AI_SCAN");
+        report.Should().NotBeNull();
+        report!.Status.Should().Be("PENDING");
     }
 
     [Fact]

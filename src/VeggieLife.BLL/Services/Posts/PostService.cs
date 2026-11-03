@@ -608,7 +608,12 @@ public class PostService : IPostService
 
         if (request.ImageUrl != null)
         {
-            post.ImageUrl = string.IsNullOrWhiteSpace(request.ImageUrl) ? null : request.ImageUrl.Trim();
+            var newImageUrl = string.IsNullOrWhiteSpace(request.ImageUrl) ? null : request.ImageUrl.Trim();
+            if (newImageUrl != post.ImageUrl)
+            {
+                post.ImageUrl = newImageUrl;
+                titleOrContentChanged = true;
+            }
         }
 
         if (request.Visibility != null)
@@ -618,46 +623,52 @@ public class PostService : IPostService
 
         post.UpdatedAt = DateTime.UtcNow;
 
-        // Xá»­ lÃ½ gá»­i duyá»‡t báº£n nhÃ¡p (submit = true khi Ä‘ang DRAFT)
-        if (request.Submit == true && post.ModerationStatus == "DRAFT")
+        // 1. Xử lý gửi duyệt bản nháp (submit = true khi đang DRAFT)
+        if (post.ModerationStatus == "DRAFT")
         {
-            await CheckDailyPostLimitAsync(userId, ct);
-
-            var modResult = await _moderationService.ModeratePostAsync(post.Title, post.Content, post.ImageUrl, ct);
-            await LogAiQuotaAsync(userId, modResult, ct);
-
-            var isQuarantined = modResult.ViolationScore >= 85.0
-                || (!string.IsNullOrEmpty(modResult.ViolationType) && modResult.ViolationType != "NONE")
-                || !modResult.IsApproved
-                || modResult.ModerationStatus == "QUARANTINED_HIDDEN";
-
-            if (isQuarantined)
+            if (request.Submit == true)
             {
-                post.ModerationStatus = "QUARANTINED_HIDDEN";
-                _db.ViolationReports.Add(new ViolationReport
+                await CheckDailyPostLimitAsync(userId, ct);
+
+                var modResult = await _moderationService.ModeratePostAsync(post.Title, post.Content, post.ImageUrl, ct);
+                await LogAiQuotaAsync(userId, modResult, ct);
+
+                var isQuarantined = modResult.ViolationScore >= 85.0
+                    || (!string.IsNullOrEmpty(modResult.ViolationType) && modResult.ViolationType != "NONE")
+                    || !modResult.IsApproved
+                    || modResult.ModerationStatus == "QUARANTINED_HIDDEN";
+
+                if (isQuarantined)
                 {
-                    PostId = post.PostId,
-                    ViolationType = MapToValidViolationType(modResult.ViolationType),
-                    EvidenceSummary = (modResult.Note ?? "AI phÃ¡t hiá»‡n vi pháº¡m ná»™i dung.").Length > 500
-                        ? (modResult.Note ?? "AI phÃ¡t hiá»‡n vi pháº¡m ná»™i dung.").Substring(0, 500)
-                        : (modResult.Note ?? "AI phÃ¡t hiá»‡n vi pháº¡m ná»™i dung."),
-                    ReportSource = "AI_SCAN",
-                    Status = "PENDING",
-                    CreatedAt = DateTime.UtcNow
-                });
-            }
-            else
-            {
-                post.ModerationStatus = "APPROVED_ACTIVE";
-                if (post.Visibility == "PUBLIC")
+                    post.ModerationStatus = "QUARANTINED_HIDDEN";
+                    _db.ViolationReports.Add(new ViolationReport
+                    {
+                        PostId = post.PostId,
+                        ViolationType = MapToValidViolationType(modResult.ViolationType),
+                        EvidenceSummary = (modResult.Note ?? "AI phát hiện vi phạm nội dung.").Length > 500
+                            ? (modResult.Note ?? "AI phát hiện vi phạm nội dung.").Substring(0, 500)
+                            : (modResult.Note ?? "AI phát hiện vi phạm nội dung."),
+                        ReportSource = "AI_SCAN",
+                        Status = "PENDING",
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+                else
                 {
-                    await _knowledgeSyncQueue.EnqueueUpsertAsync("POST", post.PostId, ct);
+                    post.ModerationStatus = "APPROVED_ACTIVE";
+                    if (post.Visibility == "PUBLIC")
+                    {
+                        await _knowledgeSyncQueue.EnqueueUpsertAsync("POST", post.PostId, ct);
+                    }
                 }
             }
         }
-        else if (post.ModerationStatus == "APPROVED_ACTIVE" && titleOrContentChanged)
+        else if (titleOrContentChanged)
         {
-            // BÃ i viáº¿t Ä‘Ã£ cÃ´ng khai sá»­a ná»™i dung -> quÃ©t láº¡i AI vÃ  chuyá»ƒn PENDING_REVIEW (hoáº·c QUARANTINED_HIDDEN náº¿u vi pháº¡m)
+            // 2. Bài viết đã đăng khi sửa nội dung (tiêu đề, nội dung hoặc ảnh):
+            // Giống luồng đăng bài, quét AI kiểm duyệt tự động:
+            // - Nếu AI nghi ngờ vi phạm (>= 85% hoặc có violationType): chuyển QUARANTINED_HIDDEN, tạo phiếu ViolationReport, gỡ khỏi Vector DB
+            // - Nếu hợp lệ, không vi phạm: giữ/chuyển trạng thái APPROVED_ACTIVE, cập nhật Vector DB nếu PUBLIC
             var modResult = await _moderationService.ModeratePostAsync(post.Title, post.Content, post.ImageUrl, ct);
             await LogAiQuotaAsync(userId, modResult, ct);
 
@@ -673,9 +684,9 @@ public class PostService : IPostService
                 {
                     PostId = post.PostId,
                     ViolationType = MapToValidViolationType(modResult.ViolationType),
-                    EvidenceSummary = (modResult.Note ?? "AI phÃ¡t hiá»‡n vi pháº¡m ná»™i dung.").Length > 500
-                        ? (modResult.Note ?? "AI phÃ¡t hiá»‡n vi pháº¡m ná»™i dung.").Substring(0, 500)
-                        : (modResult.Note ?? "AI phÃ¡t hiá»‡n vi pháº¡m ná»™i dung."),
+                    EvidenceSummary = (modResult.Note ?? "AI phát hiện vi phạm nội dung.").Length > 500
+                        ? (modResult.Note ?? "AI phát hiện vi phạm nội dung.").Substring(0, 500)
+                        : (modResult.Note ?? "AI phát hiện vi phạm nội dung."),
                     ReportSource = "AI_SCAN",
                     Status = "PENDING",
                     CreatedAt = DateTime.UtcNow
@@ -684,7 +695,27 @@ public class PostService : IPostService
             }
             else
             {
-                post.ModerationStatus = "PENDING_REVIEW";
+                post.ModerationStatus = "APPROVED_ACTIVE";
+                if (post.Visibility == "PUBLIC")
+                {
+                    await _knowledgeSyncQueue.EnqueueUpsertAsync("POST", post.PostId, ct);
+                }
+                else
+                {
+                    await _knowledgeSyncQueue.EnqueueDeleteAsync("POST", post.PostId, ct);
+                }
+            }
+        }
+        else if (post.ModerationStatus == "APPROVED_ACTIVE" && !titleOrContentChanged)
+        {
+            // Không đổi nội dung nhưng có thể đổi chế độ hiển thị (PUBLIC <-> PRIVATE)
+            if (post.Visibility == "PUBLIC")
+            {
+                await _knowledgeSyncQueue.EnqueueUpsertAsync("POST", post.PostId, ct);
+            }
+            else
+            {
+                await _knowledgeSyncQueue.EnqueueDeleteAsync("POST", post.PostId, ct);
             }
         }
 
