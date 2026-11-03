@@ -56,10 +56,13 @@ public static class DevCommunityDataSeeder
             }
         }
 
-        using var transaction = isSqlServer ? db.Database.BeginTransaction() : null;
-        try
+        var strategy = db.Database.CreateExecutionStrategy();
+        strategy.Execute(() =>
         {
-            var now = DateTime.UtcNow;
+            using var transaction = isSqlServer ? db.Database.BeginTransaction() : null;
+            try
+            {
+                var now = DateTime.UtcNow;
 
         // 1. Đảm bảo đầy đủ 15 tài khoản tác giả & hội viên thực tế
         var authors = new List<User>
@@ -552,8 +555,10 @@ public static class DevCommunityDataSeeder
         catch
         {
             transaction?.Rollback();
+            db.ChangeTracker.Clear();
             throw;
         }
+        });
     }
 }
 
