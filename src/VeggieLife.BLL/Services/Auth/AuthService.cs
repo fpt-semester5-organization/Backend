@@ -546,7 +546,7 @@ public class AuthService : IAuthService
             try
             {
                 var activeAdminIp = await _redisService.GetAsync<string>(adminSessionKey, ct);
-                if (!string.IsNullOrEmpty(activeAdminIp) && !string.IsNullOrEmpty(clientIp) && activeAdminIp != clientIp)
+                if (!string.IsNullOrEmpty(activeAdminIp) && !string.IsNullOrEmpty(clientIp) && !IsSameIpOrBothLoopback(activeAdminIp, clientIp))
                 {
                     throw AppException.Forbidden(
                         ErrorCodes.ErrAdmForbidden,
@@ -1658,6 +1658,19 @@ public class AuthService : IAuthService
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(bytes);
+    }
+
+    private static bool IsSameIpOrBothLoopback(string ip1, string ip2)
+    {
+        if (string.Equals(ip1, ip2, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var isLoopback1 = ip1 == "127.0.0.1" || ip1 == "::1" || ip1 == "localhost" ||
+                          (System.Net.IPAddress.TryParse(ip1, out var parsed1) && System.Net.IPAddress.IsLoopback(parsed1));
+        var isLoopback2 = ip2 == "127.0.0.1" || ip2 == "::1" || ip2 == "localhost" ||
+                          (System.Net.IPAddress.TryParse(ip2, out var parsed2) && System.Net.IPAddress.IsLoopback(parsed2));
+
+        return isLoopback1 && isLoopback2;
     }
 
     public async Task<LegalDocumentsResponseData> GetLegalDocumentsAsync(CancellationToken ct = default)

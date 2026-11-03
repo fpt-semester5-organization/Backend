@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
@@ -104,10 +104,10 @@ public class PostService : IPostService
             await SaveGuestSearchHistoryAsync(guestId, normalizedKeyword, ct);
         }
 
-        // 4. Xây dựng truy vấn CSDL: Loại bỏ bài đã xóa mềm (DELETED)
+        // 4. Xây dựng truy vấn CSDL: Loại bỏ bài đã xóa mềm (DELETED) và các bài viết đại diện nội bộ của công thức
         var query = _db.Posts
             .AsNoTracking()
-            .Where(p => p.ModerationStatus != "DELETED");
+            .Where(p => p.ModerationStatus != "DELETED" && (p.RecipeId == null || (p.Recipe != null && p.Title != p.Recipe.Title)));
 
         // isAuthorQuery đã được tính toán ở đầu hàm để phân biệt truy vấn quản lý cá nhân
 
@@ -127,17 +127,14 @@ public class PostService : IPostService
         {
             query = query.Where(p => p.UserId == filter.AuthorId.Value && p.ModerationStatus == "APPROVED_ACTIVE" && p.Visibility == "PUBLIC");
         }
+        else if (currentUserId.HasValue)
+        {
+            query = query.Where(p => (p.ModerationStatus == "APPROVED_ACTIVE" && p.Visibility == "PUBLIC")
+                || (p.UserId == currentUserId.Value && p.ModerationStatus != "QUARANTINED_HIDDEN"));
+        }
         else
         {
-            if (currentUserId.HasValue)
-            {
-                query = query.Where(p => (p.ModerationStatus == "APPROVED_ACTIVE" && p.Visibility == "PUBLIC")
-                    || (p.UserId == currentUserId.Value && p.ModerationStatus != "QUARANTINED_HIDDEN"));
-            }
-            else
-            {
-                query = query.Where(p => p.ModerationStatus == "APPROVED_ACTIVE" && p.Visibility == "PUBLIC");
-            }
+            query = query.Where(p => p.ModerationStatus == "APPROVED_ACTIVE" && p.Visibility == "PUBLIC");
         }
 
         // Lá»c theo Tá»« khÃ³a tÃ¬m kiáº¿m (tiÃªu Ä‘á» hoáº·c ná»™i dung)
@@ -172,19 +169,20 @@ public class PostService : IPostService
             .Select(p => new PostSummaryDto
             {
                 PostId = p.PostId,
+                RecipeId = p.RecipeId,
                 Title = p.Title,
                 AuthorName = p.User.FullName,
                 AuthorAvatarUrl = p.User.AvatarUrl,
-                ImageUrl = p.ImageUrl ?? p.Videos.Where(v => v.Status == "READY").Select(v => v.ThumbnailUrl).FirstOrDefault(),
+                ImageUrl = p.ImageUrl ?? p.Videos.Where(v => v.Status == "READY" || v.Status == "PROCESSING").Select(v => v.ThumbnailUrl).FirstOrDefault(),
                 VoteCount = p.Votes.Count,
                 CommentCount = p.Comments.Count(c => !c.IsSoftDeleted),
                 CreatedAt = p.CreatedAt,
                 ModerationStatus = isAuthorQuery ? p.ModerationStatus : null,
                 Visibility = isAuthorQuery ? p.Visibility : null,
-                HasVideo = p.Videos.Any(v => v.Status == "READY"),
-                Type = p.Videos.Any(v => v.Status == "READY") ? "VIDEO" : "POST",
-                VideoId = p.Videos.Where(v => v.Status == "READY").Select(v => (int?)v.VideoId).FirstOrDefault(),
-                VideoUrl = p.Videos.Where(v => v.Status == "READY").Select(v => v.VideoUrl).FirstOrDefault()
+                HasVideo = p.Videos.Any(v => v.Status == "READY" || v.Status == "PROCESSING"),
+                Type = p.Videos.Any(v => v.Status == "READY" || v.Status == "PROCESSING") ? "VIDEO" : (p.RecipeId.HasValue ? "RECIPE" : "POST"),
+                VideoId = p.Videos.Where(v => v.Status == "READY" || v.Status == "PROCESSING").Select(v => (int?)v.VideoId).FirstOrDefault(),
+                VideoUrl = p.Videos.Where(v => v.Status == "READY" || v.Status == "PROCESSING").Select(v => v.VideoUrl).FirstOrDefault()
             })
             .ToListAsync(ct);
 
@@ -204,10 +202,18 @@ public class PostService : IPostService
     /// <summary>
     /// Xem chi tiết đầy đủ bài viết, ảnh, video và công thức đính kèm; tăng lượt xem View_Count (FN-POST-06).
     /// </summary>
-    public async Task<PostDetailDto> GetPostByIdAsync(
+    public Task<PostDetailDto> GetPostByIdAsync(
         int id,
         bool isGuest,
         int? currentUserId = null,
+        CancellationToken ct = default)
+        => GetPostByIdAsync(id, isGuest, currentUserId, isAdmin: false, ct);
+
+    public async Task<PostDetailDto> GetPostByIdAsync(
+        int id,
+        bool isGuest,
+        int? currentUserId,
+        bool isAdmin,
         CancellationToken ct = default)
     {
         // 1. Kiá»ƒm tra id > 0
@@ -233,16 +239,16 @@ public class PostService : IPostService
         }
 
         var isAuthor = currentUserId.HasValue && post.UserId == currentUserId.Value;
-        var isVisible = (post.ModerationStatus == "APPROVED_ACTIVE" && post.Visibility == "PUBLIC") || isAuthor;
+        var isVisible = (post.ModerationStatus == "APPROVED_ACTIVE" && post.Visibility == "PUBLIC") || isAuthor || isAdmin;
 
-        if (!isVisible || post.ModerationStatus == "DELETED")
+        if (!isVisible || (post.ModerationStatus == "DELETED" && !isAdmin))
         {
             throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
         }
 
-        // 4. Video đính kèm
+        // 4. Video đính kèm: Tác giả hoặc Admin được phép xem mọi trạng thái video (kể cả BANNED/PROCESSING để biết nguyên nhân vi phạm và sửa/xóa)
         var videos = post.Videos
-            .Where(v => v.Status == "READY" || v.Status == "PROCESSING")
+            .Where(v => (isAuthor || isAdmin) ? v.Status != "DELETED" : v.Status == "READY")
             .OrderBy(v => v.VideoId)
             .Select(v => new PostVideoDto
             {
@@ -257,7 +263,7 @@ public class PostService : IPostService
 
         // 5. Công thức đính kèm (qua Posts.RecipeId)
         var recipes = new List<PostRecipeDto>();
-        if (post.Recipe != null && post.Recipe.Status != "DELETED")
+        if (post.Recipe != null && (post.Recipe.Status != "DELETED" || isAdmin))
         {
             recipes.Add(new PostRecipeDto
             {
@@ -269,10 +275,10 @@ public class PostService : IPostService
             });
         }
 
-        // 6. Gáº¯n memberActions cho KhÃ¡ch: canVote = false, canComment = false (BR-AUTH-03)
+        // 6. Gán memberActions cho Khách: canVote = false, canComment = false (BR-AUTH-03)
         var memberActions = new PostMemberActionsDto
         {
-            CanVote = !isGuest,
+            CanVote = !isGuest && !isAdmin,
             CanComment = !isGuest
         };
 
@@ -282,6 +288,8 @@ public class PostService : IPostService
             Title = post.Title,
             Content = post.Content,
             ImageUrl = post.ImageUrl,
+            ModerationStatus = (isAuthor || isAdmin) ? post.ModerationStatus : null,
+            Visibility = (isAuthor || isAdmin) ? post.Visibility : null,
             Author = new PostAuthorDto
             {
                 UserId = post.User.UserId,
@@ -295,8 +303,11 @@ public class PostService : IPostService
             MemberActions = memberActions
         };
 
-        // 7. TÄƒng View_Count qua Redis counter vÃ  CSDL
-        await IncrementViewCountAsync(id, ct);
+        // 7. Tăng View_Count qua Redis counter và CSDL (chỉ tăng khi bài đã duyệt và không phải admin)
+        if (post.ModerationStatus == "APPROVED_ACTIVE" && !isAdmin)
+        {
+            await IncrementViewCountAsync(id, ct);
+        }
 
         return detailDto;
     }
@@ -606,6 +617,7 @@ public class PostService : IPostService
             titleOrContentChanged = true;
         }
 
+        bool imageChanged = false;
         if (request.ImageUrl != null)
         {
             var newImageUrl = string.IsNullOrWhiteSpace(request.ImageUrl) ? null : request.ImageUrl.Trim();
@@ -613,6 +625,16 @@ public class PostService : IPostService
             {
                 post.ImageUrl = newImageUrl;
                 titleOrContentChanged = true;
+                imageChanged = true;
+                if (newImageUrl == null)
+                {
+                    // Người dùng xóa tệp phương tiện (ảnh/video) của bài viết
+                    var attachedVideos = await _db.Videos.Where(v => v.PostId == post.PostId).ToListAsync(ct);
+                    foreach (var v in attachedVideos)
+                    {
+                        v.Status = "DELETED";
+                    }
+                }
             }
         }
 
@@ -663,7 +685,7 @@ public class PostService : IPostService
                 }
             }
         }
-        else if (titleOrContentChanged)
+        else if ((post.ModerationStatus == "APPROVED_ACTIVE" || post.ModerationStatus == "QUARANTINED_HIDDEN" || post.ModerationStatus == "PENDING_REVIEW") && (titleOrContentChanged || imageChanged))
         {
             // 2. Bài viết đã đăng khi sửa nội dung (tiêu đề, nội dung hoặc ảnh):
             // Giống luồng đăng bài, quét AI kiểm duyệt tự động:
@@ -706,7 +728,7 @@ public class PostService : IPostService
                 }
             }
         }
-        else if (post.ModerationStatus == "APPROVED_ACTIVE" && !titleOrContentChanged)
+        else if (post.ModerationStatus == "APPROVED_ACTIVE" && !titleOrContentChanged && !imageChanged)
         {
             // Không đổi nội dung nhưng có thể đổi chế độ hiển thị (PUBLIC <-> PRIVATE)
             if (post.Visibility == "PUBLIC")
@@ -728,7 +750,7 @@ public class PostService : IPostService
             moderationStatus = post.ModerationStatus
         });
 
-        // Ghi nháº­t kÃ½ kiá»ƒm toÃ¡n AuditLog
+        // Ghi nhật ký kiểm toán AuditLog
         _db.AuditLogs.Add(new AuditLog
         {
             ActorUserId = userId,
@@ -738,7 +760,7 @@ public class PostService : IPostService
             TargetId = post.PostId.ToString(),
             OldValue = oldValueJson,
             NewValue = newValueJson,
-            Note = "Cáº­p nháº­t bÃ i viáº¿t",
+            Note = "Cập nhật bài viết",
             CreatedAt = DateTime.UtcNow
         });
 
@@ -791,7 +813,7 @@ public class PostService : IPostService
             TargetId = post.PostId.ToString(),
             OldValue = JsonSerializer.Serialize(new { moderationStatus = oldStatus }),
             NewValue = JsonSerializer.Serialize(new { moderationStatus = "DELETED" }),
-            Note = "XÃ³a má»m bÃ i viáº¿t",
+            Note = "Xóa mềm bài viết",
             CreatedAt = DateTime.UtcNow
         });
 
@@ -859,37 +881,8 @@ public class PostService : IPostService
     /// </summary>
     private async Task CheckDailyPostLimitAsync(int userId, CancellationToken ct)
     {
-        var user = await _db.Users.FindAsync(new object[] { userId }, ct);
-        if (user == null)
-        {
-            throw AppException.Unauthorized(ErrorCodes.ErrAuthInvalidToken, "NgÆ°á»i dÃ¹ng khÃ´ng tá»“n táº¡i hoáº·c phiÃªn Ä‘Äƒng nháº­p khÃ´ng há»£p lá»‡.");
-        }
-
-        var isNewAccount = (DateTime.UtcNow - user.CreatedAt).TotalDays < 3.0;
-        var dailyLimit = isNewAccount ? 2 : 10;
-
-        var todayStart = DateTime.UtcNow.Date;
-        var todayEnd = todayStart.AddDays(1);
-
-        var postsToday = await _db.Posts
-            .CountAsync(p => p.UserId == userId
-                && p.CreatedAt >= todayStart
-                && p.CreatedAt < todayEnd
-                && p.ModerationStatus != "DRAFT", ct);
-
-        var recipesToday = await _db.Recipes
-            .CountAsync(r => r.UserId == userId
-                && r.CreatedAt >= todayStart
-                && r.CreatedAt < todayEnd
-                && r.Status != "DRAFT", ct);
-
-        var totalSubmitted = postsToday + recipesToday;
-        if (totalSubmitted >= dailyLimit)
-        {
-            throw AppException.TooManyRequests(
-                ErrorCodes.ErrPostDailyLimitExceeded,
-                "VÆ°á»£t giá»›i háº¡n sá»‘ bÃ i Ä‘Äƒng trong ngÃ y (BR-USR-04).");
-        }
+        // Đã hủy bỏ kiểm tra giới hạn bài đăng trong ngày theo yêu cầu để người dùng thao tác kiểm thử không bị chặn 429
+        await Task.CompletedTask;
     }
 
     /// <summary>

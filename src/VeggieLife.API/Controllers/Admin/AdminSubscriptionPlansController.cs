@@ -78,6 +78,24 @@ public class AdminSubscriptionPlansController : BaseApiController
         return OkResponse(result, "Đã cập nhật gói.");
     }
 
+    /// <summary>
+    /// FN-ADM-13: Xóa gói VIP (nếu chưa có giao dịch phát sinh) hoặc ẩn gói nếu đã có giao dịch.
+    /// </summary>
+    [HttpDelete("{id:int}")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteSubscriptionPlan(
+        [FromRoute] int id,
+        CancellationToken ct)
+    {
+        var adminId = EnsureAdmin();
+        await _subscriptionService.DeleteSubscriptionPlanAsync(id, adminId, ct);
+        return OkResponse<object?>(null, "Đã xóa gói VIP thành công.");
+    }
+
     private int EnsureAdmin()
     {
         if (User.Identity == null || !User.Identity.IsAuthenticated)

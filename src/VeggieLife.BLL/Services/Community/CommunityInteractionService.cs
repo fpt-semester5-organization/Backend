@@ -31,6 +31,7 @@ public class CommunityInteractionService : ICommunityInteractionService, IIntera
     private readonly AppDbContext _db;
     private readonly IRedisService _redis;
     private readonly ILogger<CommunityInteractionService> _logger;
+    private readonly VeggieLife.BLL.Services.Settings.ISystemSettingService? _settingService;
 
     private static readonly HashSet<string> ValidTargetTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -45,11 +46,13 @@ public class CommunityInteractionService : ICommunityInteractionService, IIntera
     public CommunityInteractionService(
         AppDbContext db,
         IRedisService redis,
-        ILogger<CommunityInteractionService> logger)
+        ILogger<CommunityInteractionService> logger,
+        VeggieLife.BLL.Services.Settings.ISystemSettingService? settingService = null)
     {
         _db = db;
         _redis = redis;
         _logger = logger;
+        _settingService = settingService;
     }
 
     /// <summary>
@@ -261,15 +264,19 @@ public class CommunityInteractionService : ICommunityInteractionService, IIntera
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Nội dung tóm tắt chứng cứ vi phạm phải từ 10 đến 500 ký tự.");
         }
 
-        // 2. Kiểm tra giới hạn tối đa 10 báo cáo/ngày/tài khoản (BR-USR-04)
+        // 2. Kiểm tra giới hạn tối đa báo cáo/ngày/tài khoản (BR-USR-04, COMMUNITY_REPORT_LIMIT)
         var todayUtc = DateTime.UtcNow.Date;
         var tomorrowUtc = todayUtc.AddDays(1);
         var todayReportCount = await _db.ViolationReports
             .CountAsync(r => r.ReporterUserId == userId && r.CreatedAt >= todayUtc && r.CreatedAt < tomorrowUtc, ct);
 
-        if (todayReportCount >= 10)
+        var maxReports = _settingService != null
+            ? await _settingService.GetIntSettingAsync("COMMUNITY_REPORT_LIMIT", 10, ct)
+            : 10;
+
+        if (todayReportCount >= maxReports)
         {
-            throw AppException.TooManyRequests(ErrorCodes.ErrReportDailyLimit, "Quá 10 báo cáo trong 1 ngày.");
+            throw AppException.TooManyRequests(ErrorCodes.ErrReportDailyLimit, $"Quá {maxReports} báo cáo trong 1 ngày.");
         }
 
         // 3. Kiểm tra đối tượng đích có tồn tại và đang ở trạng thái hiển thị hay không (ERR_CONTENT_NOT_FOUND)

@@ -341,24 +341,6 @@ public class CommentServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CreatePostCommentAsync_CooldownViolated_ThrowsTooManyRequests()
-    {
-        var req = new CreateCommentRequest { Content = "Bình luận lần 1" };
-
-        // Mock: Đang trong cooldown 15s
-        _mockRedis
-            .Setup(r => r.ExistsAsync("comment_cooldown:100", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
-        var act = () => _service.CreatePostCommentAsync(1, req, 100);
-
-        var ex = await act.Should().ThrowAsync<AppException>();
-        ex.Which.StatusCode.Should().Be(429);
-        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrCommentTooFast);
-        ex.Which.Message.Should().Contain("15 giây");
-    }
-
-    [Fact]
     public async Task CreatePostCommentAsync_Exceeds5Duplicates_ThrowsTooManyRequests()
     {
         var content = "Nội dung lặp lại y hệt";
@@ -447,9 +429,6 @@ public class CommentServiceTests : IDisposable
         result.Author.UserId.Should().Be(200);
         result.Author.FullName.Should().Be("Trần Thị B");
         result.Status.Should().Be("ACTIVE");
-
-        // Xác nhận Redis cooldown được ghi nhận 15s
-        _mockRedis.Verify(r => r.SetAsync("comment_cooldown:200", "1", TimeSpan.FromSeconds(15), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

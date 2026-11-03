@@ -363,6 +363,89 @@ public class VideoServiceTests : IDisposable
 
         var updatedPost = await _context.Posts.FindAsync(50);
         updatedPost!.ImageUrl.Should().Be("https://res.cloudinary.com/demo/image/upload/img_50.jpg");
+        updatedPost.ModerationStatus.Should().Be("APPROVED_ACTIVE");
+    }
+
+    [Fact]
+    public async Task CreateVideoAsync_WhenImageContainsMeat_QuarantinesPostAndCreatesViolationReport()
+    {
+        // Arrange
+        var post = new Post
+        {
+            PostId = 51,
+            UserId = 1,
+            Title = "Món ăn có ảnh thịt",
+            Content = "Nội dung bài viết",
+            Visibility = "PUBLIC",
+            ModerationStatus = "APPROVED_ACTIVE"
+        };
+        _context.Posts.Add(post);
+        await _context.SaveChangesAsync();
+
+        _mockMediaService.Setup(m => m.UploadImageAsync(
+            It.IsAny<Stream>(),
+            It.IsAny<string>(),
+            "veggielife/images",
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MediaUploadResponse
+            {
+                PublicId = "img_pork_51",
+                SecureUrl = "https://res.cloudinary.com/demo/image/upload/pork.jpg",
+                ResourceType = "image"
+            });
+
+        var mockModeration = new Mock<VeggieLife.BLL.Services.Moderation.IContentModerationService>();
+        mockModeration.Setup(m => m.ModeratePostAsync(
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VeggieLife.BLL.Services.Moderation.ContentModerationResult
+            {
+                ViolationScore = 100,
+                ViolationType = "VIO_MEAT",
+                Note = "Phát hiện thịt heo trong ảnh",
+                IsApproved = false,
+                ModerationStatus = "QUARANTINED_HIDDEN"
+            });
+
+        var mockKnowledge = new Mock<VeggieLife.BLL.Services.Knowledge.IKnowledgeSyncQueue>();
+
+        var customVideoService = new VideoService(
+            _context,
+            _mockMediaService.Object,
+            _mockRedisService.Object,
+            _mockLogger.Object,
+            mockModeration.Object,
+            mockKnowledge.Object);
+
+        using var stream = new MemoryStream(new byte[100]);
+        var dto = new CreateVideoDto
+        {
+            FileStream = stream,
+            FileName = "pork.jpg",
+            FileLength = 100,
+            PostId = 51
+        };
+
+        // Act
+        var result = await customVideoService.CreateVideoAsync(1, dto);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Status.Should().Be("READY");
+        result.ModerationStatus.Should().Be("QUARANTINED_HIDDEN");
+
+        var updatedPost = await _context.Posts.FindAsync(51);
+        updatedPost!.ImageUrl.Should().Be("https://res.cloudinary.com/demo/image/upload/pork.jpg");
+        updatedPost.ModerationStatus.Should().Be("QUARANTINED_HIDDEN");
+
+        var report = await _context.ViolationReports.FirstOrDefaultAsync(r => r.PostId == 51);
+        report.Should().NotBeNull();
+        report!.ViolationType.Should().Be("VIO_MEAT");
+        report.ReportSource.Should().Be("AI_SCAN");
+
+        mockKnowledge.Verify(k => k.EnqueueDeleteAsync("POST", 51, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -422,12 +505,214 @@ public class VideoServiceTests : IDisposable
         video.VideoUrl.Should().Be("https://res.cloudinary.com/demo/video/upload/vid_60.mp4");
         video.ThumbnailUrl.Should().Be("https://res.cloudinary.com/demo/video/upload/vid_60.jpg");
         video.DurationSeconds.Should().Be(120);
-        video.Status.Should().Be("READY");
+        video.Status.Should().Be("PROCESSING");
 
         _mockRedisService.Verify(r => r.EnqueueAsync(
             "stt_queue",
             It.IsAny<object>(),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateVideoAsync_WhenVideoTranscriptContainsViolations_QuarantinesPostAndBansVideo()
+    {
+        // Arrange
+        var post = new Post
+        {
+            PostId = 65,
+            UserId = 1,
+            Title = "Video có lời lẽ đe dọa thù ghét",
+            Content = "Nội dung bài viết",
+            Visibility = "PUBLIC",
+            ModerationStatus = "APPROVED_ACTIVE"
+        };
+        _context.Posts.Add(post);
+        await _context.SaveChangesAsync();
+
+        _mockMediaService.Setup(m => m.UploadVideoAsync(
+            It.IsAny<Stream>(),
+            It.IsAny<string>(),
+            "veggielife/videos",
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MediaUploadResponse
+            {
+                PublicId = "vid_65",
+                SecureUrl = "https://res.cloudinary.com/demo/video/upload/vid_65.mp4",
+                ResourceType = "video",
+                DurationSeconds = 15.0
+            });
+
+        _mockMediaService.Setup(m => m.GetImageUrl("vid_65", null, null, "fill", "jpg"))
+            .Returns("https://res.cloudinary.com/demo/video/upload/vid_65.jpg");
+
+        var mockModeration = new Mock<VeggieLife.BLL.Services.Moderation.IContentModerationService>();
+        // Thumbnail clean
+        mockModeration.Setup(m => m.ModeratePostAsync(
+            post.Title,
+            post.Content,
+            It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VeggieLife.BLL.Services.Moderation.ContentModerationResult
+            {
+                ViolationScore = 0,
+                ViolationType = "NONE",
+                IsApproved = true,
+                ModerationStatus = "APPROVED_ACTIVE"
+            });
+
+        // Transcript hate speech
+        mockModeration.Setup(m => m.ModeratePostAsync(
+            post.Title,
+            "Mày dám đụng của tao à? Khôn hồn thì biến ngay!",
+            It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VeggieLife.BLL.Services.Moderation.ContentModerationResult
+            {
+                ViolationScore = 100,
+                ViolationType = "VIO_HATE",
+                Note = "Phát hiện ngôn từ đe dọa thù ghét",
+                IsApproved = false,
+                ModerationStatus = "QUARANTINED_HIDDEN"
+            });
+
+        var mockStt = new Mock<VeggieLife.BLL.Services.AI.IAiSttClient>();
+        mockStt.Setup(s => s.ExtractRecipeFromVideoAsync(
+            "https://res.cloudinary.com/demo/video/upload/vid_65.mp4",
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VeggieLife.BLL.DTOs.Videos.Responses.AiSttResultDto
+            {
+                RawTranscript = "Mày dám đụng của tao à? Khôn hồn thì biến ngay!",
+                Recipe = null
+            });
+
+        var mockKnowledge = new Mock<VeggieLife.BLL.Services.Knowledge.IKnowledgeSyncQueue>();
+
+        var customVideoService = new VideoService(
+            _context,
+            _mockMediaService.Object,
+            _mockRedisService.Object,
+            _mockLogger.Object,
+            mockModeration.Object,
+            mockKnowledge.Object,
+            mockStt.Object);
+
+        using var stream = new MemoryStream(new byte[500]);
+        var dto = new CreateVideoDto
+        {
+            FileStream = stream,
+            FileName = "threat_video.mp4",
+            FileLength = 500,
+            PostId = 65
+        };
+
+        // Act
+        var result = await customVideoService.CreateVideoAsync(1, dto);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Status.Should().Be("BANNED");
+        result.ModerationStatus.Should().Be("QUARANTINED_HIDDEN");
+
+        var updatedPost = await _context.Posts.FindAsync(65);
+        updatedPost!.ModerationStatus.Should().Be("QUARANTINED_HIDDEN");
+
+        var video = await _context.Videos.FindAsync(result.VideoId);
+        video!.Status.Should().Be("BANNED");
+
+        var report = await _context.ViolationReports.FirstOrDefaultAsync(r => r.PostId == 65);
+        report.Should().NotBeNull();
+        report!.ViolationType.Should().Be("VIO_HATE");
+    }
+
+    [Fact]
+    public async Task CreateVideoAsync_WhenVideoTranscriptClean_ApprovesPostAndSetsVideoReady()
+    {
+        // Arrange
+        var post = new Post
+        {
+            PostId = 66,
+            UserId = 1,
+            Title = "Video hướng dẫn làm món chay sạch",
+            Content = "Nội dung bài viết",
+            Visibility = "PUBLIC",
+            ModerationStatus = "APPROVED_ACTIVE"
+        };
+        _context.Posts.Add(post);
+        await _context.SaveChangesAsync();
+
+        _mockMediaService.Setup(m => m.UploadVideoAsync(
+            It.IsAny<Stream>(),
+            It.IsAny<string>(),
+            "veggielife/videos",
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MediaUploadResponse
+            {
+                PublicId = "vid_66",
+                SecureUrl = "https://res.cloudinary.com/demo/video/upload/vid_66.mp4",
+                ResourceType = "video",
+                DurationSeconds = 30.0
+            });
+
+        _mockMediaService.Setup(m => m.GetImageUrl("vid_66", null, null, "fill", "jpg"))
+            .Returns("https://res.cloudinary.com/demo/video/upload/vid_66.jpg");
+
+        var mockModeration = new Mock<VeggieLife.BLL.Services.Moderation.IContentModerationService>();
+        mockModeration.Setup(m => m.ModeratePostAsync(
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VeggieLife.BLL.Services.Moderation.ContentModerationResult
+            {
+                ViolationScore = 0,
+                ViolationType = "NONE",
+                IsApproved = true,
+                ModerationStatus = "APPROVED_ACTIVE"
+            });
+
+        var mockStt = new Mock<VeggieLife.BLL.Services.AI.IAiSttClient>();
+        mockStt.Setup(s => s.ExtractRecipeFromVideoAsync(
+            "https://res.cloudinary.com/demo/video/upload/vid_66.mp4",
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VeggieLife.BLL.DTOs.Videos.Responses.AiSttResultDto
+            {
+                RawTranscript = "Hôm nay mình sẽ hướng dẫn nấu món canh nấm hạt sen chay rất thơm ngon bổ dưỡng.",
+                Recipe = null
+            });
+
+        var mockKnowledge = new Mock<VeggieLife.BLL.Services.Knowledge.IKnowledgeSyncQueue>();
+
+        var customVideoService = new VideoService(
+            _context,
+            _mockMediaService.Object,
+            _mockRedisService.Object,
+            _mockLogger.Object,
+            mockModeration.Object,
+            mockKnowledge.Object,
+            mockStt.Object);
+
+        using var stream = new MemoryStream(new byte[500]);
+        var dto = new CreateVideoDto
+        {
+            FileStream = stream,
+            FileName = "vegan_soup.mp4",
+            FileLength = 500,
+            PostId = 66
+        };
+
+        // Act
+        var result = await customVideoService.CreateVideoAsync(1, dto);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Status.Should().Be("READY");
+        result.ModerationStatus.Should().Be("APPROVED_ACTIVE");
+
+        var updatedPost = await _context.Posts.FindAsync(66);
+        updatedPost!.ModerationStatus.Should().Be("APPROVED_ACTIVE");
+
+        var video = await _context.Videos.FindAsync(result.VideoId);
+        video!.Status.Should().Be("READY");
     }
 
     [Fact]

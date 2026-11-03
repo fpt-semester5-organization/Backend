@@ -79,5 +79,14 @@ public interface IFridgeService
         double minSimilarity = 0.7,
         int limit = 10,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Lấy hạn mức quét ảnh tủ lạnh hôm nay của người dùng đồng bộ từ SystemSettings.
+    /// </summary>
+    Task<FridgeDetectionQuotaDto> GetFridgeQuotaAsync(
+        int? userId,
+        string? guestUuid,
+        string userRole,
+        CancellationToken ct = default);
 }
 

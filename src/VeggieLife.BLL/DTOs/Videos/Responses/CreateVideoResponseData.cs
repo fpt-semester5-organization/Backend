@@ -23,4 +23,10 @@ public class CreateVideoResponseData
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ImageUrl { get; set; }
+
+    /// <summary>
+    /// Trạng thái kiểm duyệt nội dung sau khi gắn phương tiện ("APPROVED_ACTIVE", "QUARANTINED_HIDDEN", ...).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ModerationStatus { get; set; }
 }

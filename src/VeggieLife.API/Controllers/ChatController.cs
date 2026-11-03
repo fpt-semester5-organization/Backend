@@ -30,6 +30,22 @@ public class ChatController : BaseApiController
     }
 
     /// <summary>
+    /// Lấy hạn mức và số câu hỏi Chatbot hôm nay của người dùng (Khách vãng lai, Thành viên hoặc VIP) đồng bộ với SystemSettings.
+    /// Auth: Bearer (GUEST | MEMBER | VIP)
+    /// </summary>
+    [HttpGet("quota")]
+    [Authorize(Policy = PolicyNames.RequireGuestOrAbove)]
+    [ProducesResponseType(typeof(ApiResponse<ChatQuotaDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetQuota(CancellationToken ct)
+    {
+        var guestId = ResolveGuestId();
+        var role = CurrentUserRole ?? (guestId != null ? UserRoles.Guest : UserRoles.Member);
+
+        var result = await _chatService.GetUserChatQuotaAsync(CurrentUserId, guestId, role, ct);
+        return OkResponse(result, "Lấy hạn mức Chatbot thành công.");
+    }
+
+    /// <summary>
     /// FN-CHAT-01: Tạo phiên hội thoại mới với trợ lý AI.
     /// Auth: Bearer (GUEST | MEMBER | VIP)
     /// </summary>

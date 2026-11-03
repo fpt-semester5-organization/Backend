@@ -55,4 +55,9 @@ public interface ISystemSettingService
     /// Lấy danh sách liên kết các tài liệu pháp lý công khai của hệ thống với Redis Cache-Aside (FN-AUTH-04).
     /// </summary>
     Task<VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData> GetLegalDocumentsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Lấy toàn bộ các chỉ số cấu hình công khai phục vụ Frontend (MEAL_PLAN, AI_QUOTA, LEGAL).
+    /// </summary>
+    Task<VeggieLife.BLL.DTOs.Settings.PublicSystemSettingsDto> GetPublicSettingsAsync(CancellationToken ct = default);
 }

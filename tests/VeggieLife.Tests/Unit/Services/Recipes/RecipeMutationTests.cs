@@ -471,7 +471,7 @@ public class RecipeMutationTests : IDisposable
     }
 
     [Fact]
-    public async Task UpdateRecipe_Quarantined_Throws409ErrRecipeLocked()
+    public async Task UpdateRecipe_Quarantined_WhenValid_PassesAiAndBecomesApprovedActive()
     {
         // Arrange: Recipe đang bị cách ly
         var quarantinedRecipe = new Recipe
@@ -482,25 +482,42 @@ public class RecipeMutationTests : IDisposable
             DietarySchoolId = 7,
             Title = "Công thức đang bị cách ly",
             Instructions = "[\"Bước 1\", \"Bước 2\"]",
+            CookTimeMinutes = 20,
             DifficultyLevel = "MEDIUM",
             Source = "USER",
             Status = "QUARANTINED_HIDDEN",
             CreatedAt = DateTime.UtcNow.AddDays(-1)
         };
         _db.Recipes.Add(quarantinedRecipe);
+        _db.RecipeIngredients.Add(new RecipeIngredient
+        {
+            RecipeId = 502,
+            IngredientId = 1,
+            QuantityNeeded = 100,
+            Unit = "g"
+        });
         await _db.SaveChangesAsync();
+
+        _mockModeration.Setup(m => m.CheckContentAsync(It.IsAny<ModerationCheckRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModerationCheckResponse
+            {
+                ViolationType = "NONE",
+                ViolationScore = 0.05,
+                Reasons = new List<string>()
+            });
 
         var updateReq = new UpdateRecipeRequest
         {
-            Title = "Tự sửa khi đang bị cách ly"
+            Title = "Đã sửa sạch và hợp lệ"
         };
 
-        // Act & Assert
-        var ex = await Assert.ThrowsAsync<AppException>(() =>
-            _service.UpdateRecipeAsync(502, 101, UserRoles.Member, updateReq, CancellationToken.None));
+        // Act
+        var result = await _service.UpdateRecipeAsync(502, 101, UserRoles.Member, updateReq, CancellationToken.None);
 
-        ex.StatusCode.Should().Be(409);
-        ex.ErrorCode.Should().Be(ErrorCodes.ErrRecipeLocked);
+        // Assert
+        result.Status.Should().Be("APPROVED_ACTIVE");
+        var updated = await _db.Recipes.FindAsync(502);
+        updated!.Status.Should().Be("APPROVED_ACTIVE");
     }
 
     [Fact]

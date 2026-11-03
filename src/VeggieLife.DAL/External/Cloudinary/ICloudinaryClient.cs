@@ -21,6 +21,11 @@ public interface ICloudinaryClient
     Task<CloudinaryMediaResult> UploadVideoAsync(Stream stream, string fileName, string folder = "veggielife/videos", CancellationToken ct = default);
 
     /// <summary>
+    /// Tải tệp tài liệu nguyên bản (PDF, văn bản) lên Cloudinary CDN.
+    /// </summary>
+    Task<CloudinaryMediaResult> UploadRawAsync(Stream stream, string fileName, string folder = "veggielife/documents", CancellationToken ct = default);
+
+    /// <summary>
     /// Xóa tài nguyên khỏi Cloudinary theo publicId và loại tài nguyên ("image" hoặc "video").
     /// </summary>
     Task<CloudinaryDeleteResult> DeleteResourceAsync(string publicId, string resourceType = "image", CancellationToken ct = default);

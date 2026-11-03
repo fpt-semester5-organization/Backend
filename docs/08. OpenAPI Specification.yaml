@@ -4536,6 +4536,14 @@ components:
     UpdateAdminSubscriptionPlanRequest:
       type: object
       properties:
+        planName:
+          type: string
+          maxLength: 100
+          description: Tên gói VIP
+        durationDays:
+          type: integer
+          minimum: 1
+          description: Thời hạn gói (ngày)
         priceVnd:
           type: integer
           minimum: 1
@@ -12455,6 +12463,63 @@ paths:
               $ref: '#/components/schemas/UpdateAdminSubscriptionPlanRequest'
             example:
               priceVnd: 45000
+    delete:
+      tags:
+      - ADM
+      operationId: deleteAdminSubscriptionPlan
+      summary: FN-ADM-13 Xóa gói VIP
+      description: 'Xóa hoàn toàn gói VIP nếu chưa có giao dịch phát sinh, hoặc tự động chuyển sang ẩn gói nếu đã có giao dịch phát sinh để bảo lưu lịch sử kế toán. Auth: Bearer (ADMIN).'
+      x-fn-id: FN-ADM-13
+      x-status: Approved
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+        description: '> 0'
+      responses:
+        '200':
+          description: Đã xóa gói VIP thành công.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  statusCode:
+                    type: integer
+                  message:
+                    type: string
+              example:
+                statusCode: 200
+                message: Đã xóa gói VIP thành công.
+        '400':
+          description: 'ERR_VALIDATION: Gói này đã phát sinh giao dịch thanh toán, đã tự động chuyển sang trạng thái Ẩn gói.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_ADM_FORBIDDEN: Claim role khác ADMIN.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'ERR_ADM_NOT_FOUND: Gói VIP không tồn tại.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /admin/payments/{id}/reconcile:
     post:
       tags:

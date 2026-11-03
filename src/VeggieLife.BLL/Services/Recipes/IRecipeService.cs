@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using VeggieLife.BLL.Common.Responses;
@@ -29,6 +29,7 @@ public interface IRecipeService
         int id,
         bool isGuest,
         int? currentUserId = null,
+        bool isAdmin = false,
         CancellationToken ct = default);
 
     /// <summary>

@@ -185,7 +185,7 @@ public class SubscriptionServiceTests
         result.Benefits.Free.FridgePhotosPerDay.Should().Be(10);
 
         result.Benefits.Vip.MealPlansPerWeek.Should().Be(3);
-        result.Benefits.Vip.ChatPerDay.Should().BeNull();
+        result.Benefits.Vip.ChatPerDay.Should().Be(200);
         result.Benefits.Vip.FridgePhotosPerDay.Should().Be(30);
 
         // Kiểm tra Redis cache đã lưu

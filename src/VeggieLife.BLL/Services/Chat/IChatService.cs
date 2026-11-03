@@ -68,4 +68,13 @@ public interface IChatService
         long userId,
         CreateSurveyRequest request,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Lấy hạn mức câu hỏi Chatbot hôm nay của người dùng (Khách vãng lai, Thành viên hoặc VIP).
+    /// </summary>
+    Task<ChatQuotaDto> GetUserChatQuotaAsync(
+        long? userId,
+        string? guestUuid,
+        string userRole,
+        CancellationToken ct = default);
 }

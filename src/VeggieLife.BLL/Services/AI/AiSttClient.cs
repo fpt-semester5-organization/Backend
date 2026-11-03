@@ -75,7 +75,32 @@ public class AiSttClient : IAiSttClient
             if (!response.IsSuccessStatusCode)
             {
                 var errorBody = await response.Content.ReadAsStringAsync(ct);
-                _logger.LogError("AI STT Microservice trả về mã lỗi {StatusCode}: {ErrorBody}", response.StatusCode, errorBody);
+                _logger.LogWarning("AI STT Microservice trả về mã {StatusCode}: {ErrorBody}", response.StatusCode, errorBody);
+
+                // Nếu video có lời thoại nhưng không phải công thức nấu ăn (NOT_A_RECIPE), vẫn lấy rawTranscript để kiểm duyệt nội dung
+                if (response.StatusCode == System.Net.HttpStatusCode.UnprocessableEntity)
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(errorBody);
+                        if (doc.RootElement.TryGetProperty("rawTranscript", out var transcriptProp) &&
+                            !string.IsNullOrWhiteSpace(transcriptProp.GetString()))
+                        {
+                            var transcriptText = transcriptProp.GetString()!;
+                            _logger.LogInformation("Trích xuất được rawTranscript từ phản hồi 422: length={Len}", transcriptText.Length);
+                            return new AiSttResultDto
+                            {
+                                RawTranscript = transcriptText,
+                                Recipe = null
+                            };
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Không thể parse rawTranscript từ lỗi 422: {ErrorBody}", errorBody);
+                    }
+                }
+
                 return null;
             }
 

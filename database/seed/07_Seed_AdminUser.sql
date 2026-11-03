@@ -1,4 +1,4 @@
-﻿-- ============================================================
+-- ============================================================
 -- File: 07_Seed_AdminUser.sql
 -- Thư mục: database/seed/
 -- Mục đích: Khởi tạo tài khoản Administrator đầu tiên của hệ thống (Role = 'ADMIN', Status = 'ACTIVE').
@@ -17,7 +17,7 @@ PRINT N'>> [Seed 07/08] Đang khởi tạo Tài Khoản Quản Trị Viên Đầ
 
 -- Thiết lập giá trị mặc định cho sqlcmd scripting variables (có thể ghi đè qua tham số -v từ command line)
 :setvar ADMIN_EMAIL "admin@veggielife.vn"
-:setvar ADMIN_PASSWORD_HASH "$2a$11$O.xL1H4j8f1mQ0t5S.R8gOaX9G1kL7Q4dM6pS2nU5tW9vB3zE7h1y"
+:setvar ADMIN_PASSWORD_HASH "$2a$11$GBRajsAbFfn4G4UI7bhu.O8MGs4mXfn/clcozGAZ0npIHYrlShxwO"
 :setvar ADMIN_FULLNAME "System Administrator"
 
 SET NOCOUNT ON;
@@ -38,7 +38,8 @@ BEGIN
         Account_Status,
         Failed_Login_Count,
         Created_At,
-        Updated_At
+        Updated_At,
+        Count_ViolationReports
     )
     VALUES (
         @AdminEmail,
@@ -48,7 +49,8 @@ BEGIN
         'ACTIVE',
         0,
         @Now,
-        @Now
+        @Now,
+        0
     );
 
     PRINT N'   -> Đã khởi tạo thành công tài khoản Admin: ' + @AdminEmail;
@@ -59,6 +61,8 @@ BEGIN
     UPDATE dbo.Users
     SET Role = 'ADMIN',
         Account_Status = 'ACTIVE',
+        Password_Hash = @AdminPasswordHash,
+        Failed_Login_Count = 0,
         Updated_At = @Now
     WHERE Email = @AdminEmail;
 

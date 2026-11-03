@@ -97,7 +97,7 @@ public class CommentsControllerTests
         var expectedMeta = new PagedMeta(1, 20, 1);
 
         _mockCommentService
-            .Setup(s => s.ListPostCommentsAsync(1, 1, 20, It.IsAny<CancellationToken>()))
+            .Setup(s => s.ListPostCommentsAsync(1, 1, 20, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync((expectedItems, expectedMeta));
 
         var result = await _postsController.ListPostComments(1, 1, 20, CancellationToken.None);
@@ -120,7 +120,7 @@ public class CommentsControllerTests
         var expectedMeta = new PagedMeta(1, 20, 0);
 
         _mockCommentService
-            .Setup(s => s.ListRecipeCommentsAsync(10, 1, 20, It.IsAny<CancellationToken>()))
+            .Setup(s => s.ListRecipeCommentsAsync(10, 1, 20, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync((expectedItems, expectedMeta));
 
         var result = await _recipesController.ListRecipeComments(10, 1, 20, CancellationToken.None);

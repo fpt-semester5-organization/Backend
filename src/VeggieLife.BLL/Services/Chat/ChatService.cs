@@ -769,4 +769,60 @@ public class ChatService : IChatService
 
         return survey.SurveyId;
     }
+
+    /// <summary>
+    /// Lấy hạn mức câu hỏi Chatbot hôm nay của người dùng (Khách vãng lai, Thành viên hoặc VIP) đồng bộ thời gian thực từ SystemSettings.
+    /// </summary>
+    public async Task<ChatQuotaDto> GetUserChatQuotaAsync(
+        long? userId,
+        string? guestUuid,
+        string userRole,
+        CancellationToken ct = default)
+    {
+        var isGuest = !userId.HasValue ||
+                      string.Equals(userRole, UserRoles.Guest, StringComparison.OrdinalIgnoreCase);
+
+        if (isGuest)
+        {
+            var guestLimit = _settingService != null
+                ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_GUEST", ChatConstants.GuestAiLimit, ct)
+                : ChatConstants.GuestAiLimit;
+
+            long guestUsed = 0;
+            if (!string.IsNullOrEmpty(guestUuid))
+            {
+                var redisVal = await _redisService.GetAsync<long?>($"guest_quota:ai:{guestUuid}", ct);
+                guestUsed = redisVal ?? 0;
+            }
+
+            return new ChatQuotaDto
+            {
+                Used = (int)guestUsed,
+                Limit = guestLimit,
+                Remaining = Math.Max(0, guestLimit - (int)guestUsed),
+                Scope = "GUEST_SESSION"
+            };
+        }
+
+        var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase);
+        var quotaLimit = _settingService != null
+            ? (isVip
+                ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_VIP", ChatConstants.VipDailyLimit, ct)
+                : await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_FREE", ChatConstants.FreeMemberDailyLimit, ct))
+            : (isVip ? ChatConstants.VipDailyLimit : ChatConstants.FreeMemberDailyLimit);
+
+        var todayStart = DateTime.UtcNow.Date;
+        var memberUsedToday = await _dbContext.ChatMessages
+            .CountAsync(m => m.ChatSession.UserId == (int)userId!.Value &&
+                             m.SenderType == ChatConstants.SenderUser &&
+                             m.CreatedAt >= todayStart, ct);
+
+        return new ChatQuotaDto
+        {
+            Used = memberUsedToday,
+            Limit = quotaLimit,
+            Remaining = Math.Max(0, quotaLimit - memberUsedToday),
+            Scope = "DAILY"
+        };
+    }
 }

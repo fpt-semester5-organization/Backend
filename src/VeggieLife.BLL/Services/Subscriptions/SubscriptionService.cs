@@ -29,19 +29,22 @@ public class SubscriptionService : ISubscriptionService
     private readonly IPaymentGatewayService _paymentGateway;
     private readonly IEmailService _emailService;
     private readonly ILogger<SubscriptionService> _logger;
+    private readonly VeggieLife.BLL.Services.Settings.ISystemSettingService? _settingService;
 
     public SubscriptionService(
         AppDbContext db,
         IRedisService redis,
         IPaymentGatewayService paymentGateway,
         IEmailService emailService,
-        ILogger<SubscriptionService> logger)
+        ILogger<SubscriptionService> logger,
+        VeggieLife.BLL.Services.Settings.ISystemSettingService? settingService = null)
     {
         _db = db;
         _redis = redis;
         _paymentGateway = paymentGateway;
         _emailService = emailService;
         _logger = logger;
+        _settingService = settingService;
     }
 
     /// <summary>
@@ -79,6 +82,25 @@ public class SubscriptionService : ISubscriptionService
             })
             .ToListAsync(ct);
 
+        var freeChat = _settingService != null
+            ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_FREE", 20, ct)
+            : 20;
+        var vipChat = _settingService != null
+            ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_VIP", 200, ct)
+            : 200;
+        var freeMeal = _settingService != null
+            ? await _settingService.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_FREE", 1, ct)
+            : 1;
+        var vipMeal = _settingService != null
+            ? await _settingService.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_VIP", 3, ct)
+            : 3;
+        var freeFridge = _settingService != null
+            ? await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_FREE", 10, ct)
+            : 10;
+        var vipFridge = _settingService != null
+            ? await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_VIP", 30, ct)
+            : 30;
+
         var response = new ListSubscriptionPlansResponseDto
         {
             Plans = plans,
@@ -86,15 +108,15 @@ public class SubscriptionService : ISubscriptionService
             {
                 Free = new BenefitDetailDto
                 {
-                    MealPlansPerWeek = 1,
-                    ChatPerDay = 20,
-                    FridgePhotosPerDay = 10
+                    MealPlansPerWeek = freeMeal,
+                    ChatPerDay = freeChat,
+                    FridgePhotosPerDay = freeFridge
                 },
                 Vip = new BenefitDetailDto
                 {
-                    MealPlansPerWeek = 3,
-                    ChatPerDay = null, // Không giới hạn (hoặc 200 câu/ngày theo BR-PAY-SUB-01)
-                    FridgePhotosPerDay = 30
+                    MealPlansPerWeek = vipMeal,
+                    ChatPerDay = vipChat,
+                    FridgePhotosPerDay = vipFridge
                 }
             }
         };

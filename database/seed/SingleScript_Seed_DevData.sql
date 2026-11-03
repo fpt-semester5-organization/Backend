@@ -90,20 +90,20 @@ PRINT N'>> [2/8] Đang nạp 14 Nhóm dị ứng thực phẩm (Allergens)...';
 MERGE INTO dbo.Allergens AS target
 USING (
     VALUES
-        ('SOY', N'Đậu nành & Chế phẩm đậu nành', N'Bao gồm hạt đậu nành, sữa đậu nành, đậu hũ, phù trúc, tương đậu nành'),
-        ('PEANUTS', N'Đậu phộng (Lạc)', N'Bao gồm củ lạc, dầu lạc ép mộc, bơ đậu phộng, bánh kẹo có chứa lạc'),
-        ('TREE_NUTS', N'Hạt cây có vỏ cứng', N'Bao gồm hạt điều, hạt óc chó, hạnh nhân, mắc ca, hạt dẻ cười, hạt phỉ'),
-        ('GLUTEN', N'Gluten & Ngũ cốc chứa Gluten', N'Bao gồm lúa mì, lúa mạch đen, lúa mạch, mì căn (seitan), bột mì đa dụng'),
+        ('SOY', N'Đậu nành (Đỗ tương)', N'Bao gồm hạt đậu nành, sữa đậu nành, đậu hũ, phù trúc, tương đậu nành'),
+        ('PEANUT', N'Đậu phộng (Lạc)', N'Bao gồm củ lạc, dầu lạc ép mộc, bơ đậu phộng, bánh kẹo có chứa lạc'),
+        ('TREE_NUT', N'Quả hạch (Hạt cây)', N'Bao gồm hạt điều, hạt óc chó, hạnh nhân, mắc ca, hạt dẻ cười, hạt phỉ'),
+        ('GLUTEN', N'Gluten (Lúa mì & Ngũ cốc)', N'Bao gồm lúa mì, lúa mạch đen, lúa mạch, mì căn (seitan), bột mì đa dụng'),
         ('SESAME', N'Mè (Vừng)', N'Bao gồm hạt mè trắng, mè đen, dầu mè thơm nguyên chất, sốt bơ mè tahini'),
-        ('SULFITES', N'Sunfit (Chất bảo quản Sulfite)', N'Nồng độ sunfit tồn dư trên 10mg/kg trong trái cây sấy khô, rượu vang, gia vị lên men'),
+        ('SULFITES', N'Sunfit (Chất bảo quản Sulfites)', N'Nồng độ sunfit tồn dư trên 10mg/kg trong trái cây sấy khô, rượu vang, gia vị lên men'),
         ('CELERY', N'Cần tây', N'Cần tây tươi, cần tây củ, hạt cần tây khô và bột gia vị cần tây'),
-        ('MUSTARD', N'Mù tạt (Moutarde)', N'Hạt cải mù tạt, bột mù tạt, sốt mù tạt vàng và xanh chấm kèm'),
-        ('LUPIN', N'Đậu cánh bướm (Lupin)', N'Bột hạt đậu lupin dùng làm chất phụ gia độn giàu protein trong bánh mì ngọt'),
-        ('MOLLUSCS', N'Động vật thân mềm', N'Nghêu, sò, ốc, hến, mực, bạch tuộc (cảnh báo lây nhiễm chéo dầu chiên xào)'),
-        ('CRUSTACEANS', N'Giáp xác', N'Tôm, cua, ghẹ (cảnh báo nhiễm chéo trong đồ chay chế biến sẵn)'),
-        ('FISH', N'Cá biển & Cá nước ngọt', N'Thịt cá, dầu cá, nước mắm cá (cảnh báo lây nhiễm chéo nước dùng lẩu/canh)'),
-        ('EGGS', N'Trứng gia cầm', N'Trứng gà, trứng vịt, lòng trắng trứng, lòng đỏ trứng, sốt trứng mayonnaise'),
-        ('MILK', N'Sữa động vật & Lactose', N'Sữa bò tươi, sữa dê, bơ lạt động vật, phô mai động vật, whey protein, casein')
+        ('MUSTARD', N'Mù tạt (Mustard)', N'Hạt cải mù tạt, bột mù tạt, sốt mù tạt vàng và xanh chấm kèm'),
+        ('LUPIN', N'Đậu Lupin (Lupine)', N'Bột hạt đậu lupin dùng làm chất phụ gia độn giàu protein trong bánh mì ngọt'),
+        ('MOLLUSCS', N'Động vật thân mềm (Mực, Bạch tuộc, Ốc)', N'Nghêu, sò, ốc, hến, mực, bạch tuộc (cảnh báo lây nhiễm chéo dầu chiên xào)'),
+        ('CRUSTACEAN', N'Động vật giáp xác (Tôm, Cua)', N'Tôm, cua, ghẹ (cảnh báo nhiễm chéo trong đồ chay chế biến sẵn)'),
+        ('FISH', N'Cá (Cá biển & Cá nước ngọt)', N'Thịt cá, dầu cá, nước mắm cá (cảnh báo lây nhiễm chéo nước dùng lẩu/canh)'),
+        ('EGG', N'Trứng gia cầm', N'Trứng gà, trứng vịt, lòng trắng trứng, lòng đỏ trứng, sốt trứng mayonnaise'),
+        ('DAIRY', N'Sữa & Chế phẩm sữa động vật', N'Sữa bò tươi, sữa dê, bơ lạt động vật, phô mai động vật, whey protein, casein')
 ) AS source (Code, Allergen_Name, Description)
 ON (target.Code = source.Code)
 WHEN MATCHED THEN
@@ -158,46 +158,46 @@ PRINT N'>> [4/8] Đang nạp danh mục Nguyên Liệu Chuẩn (Ingredients)...'
 MERGE INTO dbo.Ingredients AS target
 USING (
     VALUES
-        (N'Đậu hũ non (Silken Tofu)', N'miếng', 'PLANT_PROTEIN', 55.0, 0, 'SOY'),
-        (N'Đậu hũ trắng', N'miếng', 'PLANT_PROTEIN', 76.0, 0, 'SOY'),
-        (N'Đậu hũ chiên vàng', N'miếng', 'PLANT_PROTEIN', 271.0, 0, 'SOY'),
-        (N'Nấm rơm', N'g', 'PRODUCE', 32.0, 0, 'MUSHROOM'),
-        (N'Nấm đùi gà (King Oyster)', N'g', 'PRODUCE', 35.0, 0, 'MUSHROOM'),
-        (N'Nấm bào ngư xám', N'g', 'PRODUCE', 33.0, 0, 'MUSHROOM'),
-        (N'Nấm kim châm', N'g', 'PRODUCE', 37.0, 0, 'MUSHROOM'),
-        (N'Nấm đông cô tươi (Shiitake)', N'g', 'PRODUCE', 34.0, 0, 'MUSHROOM'),
-        (N'Cà chua', N'quả', 'PRODUCE', 18.0, 0, 'VEGETABLE'),
-        (N'Cà rốt', N'củ', 'PRODUCE', 41.0, 0, 'VEGETABLE'),
-        (N'Bông cải xanh (Broccoli)', N'g', 'PRODUCE', 34.0, 0, 'VEGETABLE'),
-        (N'Bông cải trắng (Cauliflower)', N'g', 'PRODUCE', 25.0, 0, 'VEGETABLE'),
-        (N'Bắp cải trắng', N'g', 'PRODUCE', 25.0, 0, 'VEGETABLE'),
-        (N'Rau cải ngọt', N'g', 'PRODUCE', 16.0, 0, 'VEGETABLE'),
-        (N'Rau cải xanh', N'g', 'PRODUCE', 20.0, 0, 'VEGETABLE'),
-        (N'Cải thìa (Bok choy)', N'g', 'PRODUCE', 13.0, 0, 'VEGETABLE'),
-        (N'Rau muống', N'g', 'PRODUCE', 19.0, 0, 'VEGETABLE'),
-        (N'Rau mồng tơi', N'g', 'PRODUCE', 14.0, 0, 'VEGETABLE'),
-        (N'Bí đỏ (Bí ngô)', N'g', 'PRODUCE', 26.0, 0, 'VEGETABLE'),
-        (N'Bí xanh (Bí đao)', N'g', 'PRODUCE', 14.0, 0, 'VEGETABLE'),
-        (N'Khoai tây', N'củ', 'PRODUCE', 77.0, 0, 'VEGETABLE'),
-        (N'Khoai lang vàng', N'củ', 'PRODUCE', 86.0, 0, 'VEGETABLE'),
-        (N'Hành tây', N'củ', 'PRODUCE', 40.0, 1, 'ALLIUM'),
-        (N'Tỏi củ', N'củ', 'PRODUCE', 149.0, 1, 'ALLIUM'),
-        (N'Hành tím', N'củ', 'PRODUCE', 70.0, 1, 'ALLIUM'),
-        (N'Hành lá', N'nhánh', 'PRODUCE', 32.0, 1, 'ALLIUM'),
-        (N'Hẹ lá', N'g', 'PRODUCE', 30.0, 1, 'ALLIUM'),
-        (N'Hành boa-rô (Tỏi tây)', N'cây', 'PRODUCE', 61.0, 1, 'ALLIUM'),
-        (N'Gừng tươi', N'củ', 'PRODUCE', 80.0, 0, 'VEGETABLE'),
-        (N'Sả cây', N'cây', 'PRODUCE', 99.0, 0, 'VEGETABLE'),
-        (N'Ớt chuông đỏ', N'quả', 'PRODUCE', 31.0, 0, 'VEGETABLE'),
-        (N'Dưa leo (Dưa chuột)', N'quả', 'PRODUCE', 15.0, 0, 'VEGETABLE'),
+        (N'Đậu hũ non (Silken Tofu)', N'miếng', 'PLANT_PROTEIN', 55.0, 0, 'PLANT'),
+        (N'Đậu hũ trắng', N'miếng', 'PLANT_PROTEIN', 76.0, 0, 'PLANT'),
+        (N'Đậu hũ chiên vàng', N'miếng', 'PLANT_PROTEIN', 271.0, 0, 'PLANT'),
+        (N'Nấm rơm', N'g', 'PRODUCE', 32.0, 0, 'PLANT'),
+        (N'Nấm đùi gà (King Oyster)', N'g', 'PRODUCE', 35.0, 0, 'PLANT'),
+        (N'Nấm bào ngư xám', N'g', 'PRODUCE', 33.0, 0, 'PLANT'),
+        (N'Nấm kim châm', N'g', 'PRODUCE', 37.0, 0, 'PLANT'),
+        (N'Nấm đông cô tươi (Shiitake)', N'g', 'PRODUCE', 34.0, 0, 'PLANT'),
+        (N'Cà chua', N'quả', 'PRODUCE', 18.0, 0, 'PLANT'),
+        (N'Cà rốt', N'củ', 'PRODUCE', 41.0, 0, 'PLANT'),
+        (N'Bông cải xanh (Broccoli)', N'g', 'PRODUCE', 34.0, 0, 'PLANT'),
+        (N'Bông cải trắng (Cauliflower)', N'g', 'PRODUCE', 25.0, 0, 'PLANT'),
+        (N'Bắp cải trắng', N'g', 'PRODUCE', 25.0, 0, 'PLANT'),
+        (N'Rau cải ngọt', N'g', 'PRODUCE', 16.0, 0, 'PLANT'),
+        (N'Rau cải xanh', N'g', 'PRODUCE', 20.0, 0, 'PLANT'),
+        (N'Cải thìa (Bok choy)', N'g', 'PRODUCE', 13.0, 0, 'PLANT'),
+        (N'Rau muống', N'g', 'PRODUCE', 19.0, 0, 'PLANT'),
+        (N'Rau mồng tơi', N'g', 'PRODUCE', 14.0, 0, 'PLANT'),
+        (N'Bí đỏ (Bí ngô)', N'g', 'PRODUCE', 26.0, 0, 'PLANT'),
+        (N'Bí xanh (Bí đao)', N'g', 'PRODUCE', 14.0, 0, 'PLANT'),
+        (N'Khoai tây', N'củ', 'PRODUCE', 77.0, 0, 'PLANT'),
+        (N'Khoai lang vàng', N'củ', 'PRODUCE', 86.0, 0, 'PLANT'),
+        (N'Hành tây', N'củ', 'PRODUCE', 40.0, 1, 'PLANT'),
+        (N'Tỏi củ', N'củ', 'PRODUCE', 149.0, 1, 'PLANT'),
+        (N'Hành tím', N'củ', 'PRODUCE', 70.0, 1, 'PLANT'),
+        (N'Hành lá', N'nhánh', 'PRODUCE', 32.0, 1, 'PLANT'),
+        (N'Hẹ lá', N'g', 'PRODUCE', 30.0, 1, 'PLANT'),
+        (N'Hành boa-rô (Tỏi tây)', N'cây', 'PRODUCE', 61.0, 1, 'PLANT'),
+        (N'Gừng tươi', N'củ', 'PRODUCE', 80.0, 0, 'PLANT'),
+        (N'Sả cây', N'cây', 'PRODUCE', 99.0, 0, 'PLANT'),
+        (N'Ớt chuông đỏ', N'quả', 'PRODUCE', 31.0, 0, 'PLANT'),
+        (N'Dưa leo (Dưa chuột)', N'quả', 'PRODUCE', 15.0, 0, 'PLANT'),
         (N'Rong biển cuộn cơm (Nori)', N'g', 'DRY_GOODS', 35.0, 0, 'PLANT'),
         (N'Rong biển Wakame nấu canh', N'g', 'DRY_GOODS', 45.0, 0, 'PLANT'),
-        (N'Đậu phộng hạt khô (Lạc)', N'g', 'DRY_GOODS', 567.0, 0, 'NUT'),
-        (N'Hạt điều rang mộc', N'g', 'DRY_GOODS', 553.0, 0, 'NUT'),
-        (N'Hạt óc chó', N'g', 'DRY_GOODS', 654.0, 0, 'NUT'),
-        (N'Yến mạch cán dẹt', N'g', 'DRY_GOODS', 389.0, 0, 'GRAIN'),
-        (N'Gạo lứt đỏ', N'g', 'DRY_GOODS', 362.0, 0, 'GRAIN'),
-        (N'Đậu gà (Chickpeas)', N'g', 'DRY_GOODS', 364.0, 0, 'PLANT_PROTEIN')
+        (N'Đậu phộng hạt khô (Lạc)', N'g', 'DRY_GOODS', 567.0, 0, 'PLANT'),
+        (N'Hạt điều rang mộc', N'g', 'DRY_GOODS', 553.0, 0, 'PLANT'),
+        (N'Hạt óc chó', N'g', 'DRY_GOODS', 654.0, 0, 'PLANT'),
+        (N'Yến mạch cán dẹt', N'g', 'DRY_GOODS', 389.0, 0, 'PLANT'),
+        (N'Gạo lứt đỏ', N'g', 'DRY_GOODS', 362.0, 0, 'PLANT'),
+        (N'Đậu gà (Chickpeas)', N'g', 'DRY_GOODS', 364.0, 0, 'PLANT')
 ) AS source (Ingredient_Name, Standard_Unit, Default_Stall_Type, Calories_Per_100g, Is_Allium, Food_Group)
 ON (target.Ingredient_Name = source.Ingredient_Name)
 WHEN MATCHED THEN
@@ -206,11 +206,10 @@ WHEN MATCHED THEN
         target.Default_Stall_Type = source.Default_Stall_Type,
         target.Calories_Per_100g = source.Calories_Per_100g,
         target.Is_Allium = source.Is_Allium,
-        target.Food_Group = source.Food_Group,
-        target.Updated_At = @Now
+        target.Food_Group = source.Food_Group
 WHEN NOT MATCHED BY TARGET THEN
-    INSERT (Ingredient_Name, Standard_Unit, Default_Stall_Type, Calories_Per_100g, Is_Allium, Food_Group, Created_At, Updated_At)
-    VALUES (source.Ingredient_Name, source.Standard_Unit, source.Default_Stall_Type, source.Calories_Per_100g, source.Is_Allium, source.Food_Group, @Now, @Now);
+    INSERT (Ingredient_Name, Standard_Unit, Default_Stall_Type, Calories_Per_100g, Is_Allium, Food_Group, Created_At)
+    VALUES (source.Ingredient_Name, source.Standard_Unit, source.Default_Stall_Type, source.Calories_Per_100g, source.Is_Allium, source.Food_Group, @Now);
 
 -- ============================================================================
 -- 5. SEED USERS (TÀI KHOẢN ADMIN, MEMBER, VIP - MẬT KHẨU: Veggie@2026)

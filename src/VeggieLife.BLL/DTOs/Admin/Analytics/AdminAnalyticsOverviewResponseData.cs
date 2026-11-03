@@ -25,6 +25,21 @@ public class UsersOverviewDto
     public int NewInPeriod { get; set; }
 
     public Dictionary<string, int> ByStatus { get; set; } = new();
+
+    /// <summary>
+    /// Số lượng thành viên tiêu chuẩn (MEMBER không có VIP).
+    /// </summary>
+    public int StandardMembers { get; set; }
+
+    /// <summary>
+    /// Số lượng hội viên VIP đang hoạt động.
+    /// </summary>
+    public int VipMembers { get; set; }
+
+    /// <summary>
+    /// Số lượng tài khoản bị tạm khóa / đình chỉ (SUSPENDED / LOCKED).
+    /// </summary>
+    public int SuspendedMembers { get; set; }
 }
 
 public class ContentOverviewDto

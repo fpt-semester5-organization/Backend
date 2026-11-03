@@ -319,6 +319,39 @@ public class AdminSubscriptionsEndpointIntegrationTests : IClassFixture<WebAppli
         error!.ErrorCode.Should().Be(ErrorCodes.ErrAdmNotFound);
     }
 
+    [Fact]
+    public async Task DeleteSubscriptionPlan_WithAdminToken_Returns200OK()
+    {
+        var client = _factory.CreateClient();
+        var token = GenerateJwtToken(1, UserRoles.Admin);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        // Tạo gói mới để xóa (chưa có transaction)
+        var createRequest = new CreateAdminSubscriptionPlanRequest
+        {
+            PlanName = "Gói Thử Nghiệm Xóa " + Guid.NewGuid().ToString("N")[..8],
+            DurationDays = 14,
+            PriceVnd = 19000
+        };
+        var createRes = await client.PostAsJsonAsync("/api/v1/admin/subscription-plans", createRequest);
+        var created = await createRes.Content.ReadFromJsonAsync<ApiResponse<CreateAdminSubscriptionPlanResponseData>>();
+        var planId = created!.Data!.PlanId;
+
+        var deleteRes = await client.DeleteAsync($"/api/v1/admin/subscription-plans/{planId}");
+        deleteRes.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task DeleteSubscriptionPlan_NonExistent_Returns404NotFound()
+    {
+        var client = _factory.CreateClient();
+        var token = GenerateJwtToken(1, UserRoles.Admin);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var deleteRes = await client.DeleteAsync("/api/v1/admin/subscription-plans/99999");
+        deleteRes.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     // ==========================================
     // 4. POST /api/v1/admin/payments/{id}/reconcile
     // ==========================================

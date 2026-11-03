@@ -1,4 +1,4 @@
-﻿-- ============================================================
+-- ============================================================
 -- File: 06_Seed_ENumberDictionary.sql
 -- Thư mục: database/seed/
 -- Mục đích: Nạp sẵn từ điển 65 mã phụ gia thực phẩm E-Number quốc tế

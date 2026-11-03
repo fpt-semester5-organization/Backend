@@ -382,7 +382,6 @@ public static class ServiceExtensions
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminCategoryService, VeggieLife.BLL.Services.Admin.AdminCategoryService>();
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminRecipeService, VeggieLife.BLL.Services.Admin.AdminRecipeService>();
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminIngredientService, VeggieLife.BLL.Services.Admin.AdminIngredientService>();
-        services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminVenueService, VeggieLife.BLL.Services.Admin.AdminVenueService>();
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminModerationService, VeggieLife.BLL.Services.Admin.AdminModerationService>();
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminSubscriptionService, VeggieLife.BLL.Services.Admin.AdminSubscriptionService>();
         services.AddScoped<VeggieLife.BLL.Services.Admin.IAdminDietarySchoolService, VeggieLife.BLL.Services.Admin.AdminDietarySchoolService>();
@@ -456,7 +455,11 @@ public static class ServiceExtensions
             client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
             client.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
         });
-        services.AddScoped<VeggieLife.BLL.Services.Knowledge.IKnowledgeSyncQueue, VeggieLife.BLL.Services.Knowledge.KnowledgeSyncQueueStub>();
+        services.AddScoped<VeggieLife.BLL.Services.Knowledge.IKnowledgeSyncQueue, VeggieLife.BLL.Services.Knowledge.RedisKnowledgeSyncQueue>();
+        services.AddScoped<VeggieLife.BLL.Services.Knowledge.IKnowledgeSyncService, VeggieLife.BLL.Services.Knowledge.KnowledgeSyncService>();
+        services.AddScoped<VeggieLife.BLL.Services.Knowledge.IKnowledgeReindexService, VeggieLife.BLL.Services.Knowledge.KnowledgeReindexService>();
+        services.AddScoped<VeggieLife.BLL.Services.Knowledge.INutritionDocumentService, VeggieLife.BLL.Services.Knowledge.NutritionDocumentService>();
+        services.AddHostedService<VeggieLife.API.BackgroundJobs.KnowledgeSyncWorker>();
 
         // Bộ ngắt mạch AI & Client giao tiếp AI Microservice (/chat/answer) (BR-ADM-AI-002, D118)
         services.AddSingleton<VeggieLife.BLL.Services.AI.IAiCircuitBreaker, VeggieLife.BLL.Services.AI.AiCircuitBreaker>();

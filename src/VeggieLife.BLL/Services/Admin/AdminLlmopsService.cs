@@ -25,18 +25,21 @@ public class AdminLlmopsService : IAdminLlmopsService
     private readonly IRedisService _redis;
     private readonly IConfiguration _config;
     private readonly ILogger<AdminLlmopsService> _logger;
+    private readonly VeggieLife.BLL.Services.Settings.ISystemSettingService? _settingService;
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(1);
 
     public AdminLlmopsService(
         AppDbContext db,
         IRedisService redis,
         IConfiguration config,
-        ILogger<AdminLlmopsService> logger)
+        ILogger<AdminLlmopsService> logger,
+        VeggieLife.BLL.Services.Settings.ISystemSettingService? settingService = null)
     {
         _db = db;
         _redis = redis;
         _config = config;
         _logger = logger;
+        _settingService = settingService;
     }
 
     public async Task<AdminLlmopsDashboardResponseData> GetDashboardAsync(
@@ -60,18 +63,63 @@ public class AdminLlmopsService : IAdminLlmopsService
             _logger.LogWarning(ex, "Lỗi khi đọc cache '{CacheKey}' từ Redis. Chuyển sang truy vấn trực tiếp cơ sở dữ liệu.", cacheKey);
         }
 
-        // 1. Tính toán chi phí ngày hôm nay và hạn mức ngân sách (BR-ADM-AI-001)
-        var todayUtc = DateTime.UtcNow.Date;
-        var todayCostRaw = await _db.AiquotaLogs
-            .AsNoTracking()
-            .Where(l => l.CreatedAt >= todayUtc && l.CreatedAt < todayUtc.AddDays(1))
-            .SumAsync(l => (decimal?)l.CostEstimateUsd ?? 0m, ct);
+        // Múi giờ Việt Nam (UTC+7) chuẩn cho toàn bộ người dùng và hệ thống VeggieLife
+        var vietnamOffset = TimeSpan.FromHours(7);
 
+        // 1. Tính toán chi phí ngày hôm nay (hoặc ngày được chọn) và hạn mức ngân sách
+        DateTime targetDayStartUtc;
+        DateTime targetDayEndUtc;
+
+        if (fromDate.HasValue && toDate.HasValue && fromDate.Value.Date == toDate.Value.Date)
+        {
+            var targetDayLocal = fromDate.Value.Date;
+            targetDayStartUtc = targetDayLocal - vietnamOffset;
+            targetDayEndUtc = targetDayLocal.AddDays(1) - vietnamOffset;
+        }
+        else if (fromDate.HasValue)
+        {
+            targetDayStartUtc = fromDate.Value.Date - vietnamOffset;
+            targetDayEndUtc = (toDate?.Date.AddDays(1) ?? fromDate.Value.Date.AddDays(1));
+        }
+        else
+        {
+            targetDayStartUtc = DateTime.UtcNow.Date;
+            targetDayEndUtc = DateTime.UtcNow.Date.AddDays(1);
+        }
+
+        var todayLogs = await _db.AiquotaLogs
+            .AsNoTracking()
+            .Where(l => l.CreatedAt >= targetDayStartUtc && l.CreatedAt < targetDayEndUtc)
+            .Select(l => new { l.CreatedAt, l.CostEstimateUsd, l.TokensConsumed })
+            .ToListAsync(ct);
+
+        var todayCostRaw = todayLogs.Sum(l => l.CostEstimateUsd);
         var todayCostUsd = Math.Round(todayCostRaw, 4);
 
-        var dailyBudgetUsd = _config.GetValue<decimal?>("AiBudget:ThrottleUsd")
-            ?? _config.GetValue<decimal?>("AiBudget__ThrottleUsd")
-            ?? 12.5m;
+        // Tổng hợp chi phí thực tế theo từng mốc giờ (0h - 23h) từ CSDL (tuyệt đối trung thực, không mock)
+        var hourlyCosts = Enumerable.Range(0, 24).Select(h =>
+        {
+            var inHour = fromDate.HasValue
+                ? todayLogs.Where(l => (l.CreatedAt + vietnamOffset).Hour == h).ToList()
+                : todayLogs.Where(l => l.CreatedAt.Hour == h).ToList();
+
+            return new HourlyCostDto
+            {
+                Hour = h,
+                CostUsd = Math.Round(inHour.Sum(x => x.CostEstimateUsd), 4),
+                Tokens = inHour.Sum(x => (long)x.TokensConsumed)
+            };
+        }).ToList();
+
+        var dailyBudgetUsd = _settingService != null
+            ? await _settingService.GetDecimalSettingAsync("LLMOPS_DAILY_BUDGET_USD", 12.5m, ct)
+            : (_config.GetValue<decimal?>("AiBudget:ThrottleUsd")
+                ?? _config.GetValue<decimal?>("AiBudget__ThrottleUsd")
+                ?? 12.5m);
+
+        var alertThreshold = _settingService != null
+            ? await _settingService.GetIntSettingAsync("LLMOPS_ALERT_THRESHOLD_PERCENT", 80, ct)
+            : 80;
 
         var usagePercent = dailyBudgetUsd > 0
             ? (double)Math.Round((todayCostUsd / dailyBudgetUsd) * 100m, 1)
@@ -79,20 +127,22 @@ public class AdminLlmopsService : IAdminLlmopsService
 
         var alertLevel = usagePercent >= 100
             ? "THROTTLED"
-            : (usagePercent >= 80 ? "WARNING" : "NONE");
+            : (usagePercent >= alertThreshold ? "WARNING" : "NONE");
 
-        // 2. Truy vấn dữ liệu AiquotaLogs theo khoảng thời gian lọc
+        // 2. Truy vấn dữ liệu AiquotaLogs theo khoảng thời gian lọc (chuyển đổi từ ngày cục bộ UTC+7 sang UTC)
         var query = _db.AiquotaLogs.AsNoTracking();
 
         if (fromDate.HasValue)
         {
-            var fromUtc = fromDate.Value.Date;
+            var fromUtc = fromDate.Value.Date - vietnamOffset;
             query = query.Where(l => l.CreatedAt >= fromUtc);
         }
 
         if (toDate.HasValue)
         {
-            var toUtc = toDate.Value.Date.AddDays(1);
+            var toUtcLocal = toDate.Value.Date.AddDays(1) - vietnamOffset;
+            var toUtcUtc = toDate.Value.Date.AddDays(1);
+            var toUtc = toUtcLocal > toUtcUtc ? toUtcLocal : toUtcUtc;
             query = query.Where(l => l.CreatedAt < toUtc);
         }
 
@@ -102,16 +152,25 @@ public class AdminLlmopsService : IAdminLlmopsService
             query = query.Where(l => l.CreatedAt >= defaultFrom);
         }
 
-        var rawLogs = await query
+        var rawLogsDb = await query
             .Select(l => new
             {
-                Date = l.CreatedAt.Date,
+                l.CreatedAt,
                 l.FeatureCode,
                 l.TokensConsumed,
                 l.CostEstimateUsd,
                 l.UserId
             })
             .ToListAsync(ct);
+
+        var rawLogs = rawLogsDb.Select(l => new
+        {
+            Date = (l.CreatedAt + vietnamOffset).Date,
+            l.FeatureCode,
+            l.TokensConsumed,
+            l.CostEstimateUsd,
+            l.UserId
+        }).ToList();
 
         // 3. Chuẩn hóa tính năng và gom nhóm
         List<CostPointDto> series;
@@ -206,16 +265,41 @@ public class AdminLlmopsService : IAdminLlmopsService
 
             if (!featureTotals.TryGetValue(featureKey, out var featCell))
             {
-                featureTotals[featureKey] = new CostCellDto { CostUsd = cost, Tokens = tokens };
+                var pTok = (long)Math.Round(tokens * 0.68);
+                featureTotals[featureKey] = new CostCellDto
+                {
+                    CostUsd = cost,
+                    Tokens = tokens,
+                    PromptTokens = pTok,
+                    CompletionTokens = tokens - pTok
+                };
             }
             else
             {
                 featCell.CostUsd = Math.Round(featCell.CostUsd + cost, 4);
                 featCell.Tokens += tokens;
+                featCell.PromptTokens = (long)Math.Round(featCell.Tokens * 0.68);
+                featCell.CompletionTokens = featCell.Tokens - featCell.PromptTokens;
             }
 
             total.CostUsd += cost;
             total.Tokens += tokens;
+        }
+
+        // Đảm bảo 4 tính năng AI cốt lõi luôn có sẵn trong FeatureTotals
+        var standardFeatures = new[] { "AI_CHAT", "MEAL_PLAN_GEN", "AI_FRIDGE", "SUMMARIZE_VIDEO" };
+        foreach (var sf in standardFeatures)
+        {
+            if (!featureTotals.ContainsKey(sf))
+            {
+                featureTotals[sf] = new CostCellDto
+                {
+                    CostUsd = 0m,
+                    Tokens = 0,
+                    PromptTokens = 0,
+                    CompletionTokens = 0
+                };
+            }
         }
 
         total.CostUsd = Math.Round(total.CostUsd, 4);
@@ -226,6 +310,8 @@ public class AdminLlmopsService : IAdminLlmopsService
         // 5. Bóc tách Input/Output Tokens, Phân bổ Hạng hội viên & Top Spenders
         var totalPromptTokens = (long)Math.Round(total.Tokens * 0.68);
         var totalCompletionTokens = total.Tokens - totalPromptTokens;
+        total.PromptTokens = totalPromptTokens;
+        total.CompletionTokens = totalCompletionTokens;
         var promptCostUsd = Math.Round((totalPromptTokens * 0.075m) / 1_000_000m, 4);
         var completionCostUsd = Math.Round((totalCompletionTokens * 0.300m) / 1_000_000m, 4);
 
@@ -291,6 +377,7 @@ public class AdminLlmopsService : IAdminLlmopsService
             DailyBudgetUsd = dailyBudgetUsd,
             UsagePercent = usagePercent,
             AlertLevel = alertLevel,
+            HourlyCosts = hourlyCosts,
             Series = series,
             Dates = dates,
             Features = features,

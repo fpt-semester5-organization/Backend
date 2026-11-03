@@ -533,6 +533,16 @@ public class PostServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetPost_PendingOrPrivatePost_WhenUserIsAdmin_ReturnsDetails()
+    {
+        // Post 4 is PENDING_REVIEW: Admin viewing succeeds
+        var post = await _service.GetPostByIdAsync(4, isGuest: false, currentUserId: 99, isAdmin: true);
+
+        post.Should().NotBeNull();
+        post.PostId.Should().Be(4);
+    }
+
+    [Fact]
     public async Task GetPost_GuestUser_MemberActionsCannotVoteOrComment()
     {
         // Arrange & Act
@@ -952,6 +962,37 @@ public class PostServiceTests : IDisposable
         audit.Should().NotBeNull();
         audit!.ActorUserId.Should().Be(1024);
         audit.ActorRole.Should().Be("MEMBER");
+    }
+
+    [Fact]
+    public async Task UpdatePost_WhenNewImageContainsMeat_ShouldQuarantine_AndSaveViolationReport()
+    {
+        // Arrange: Giả lập AI phát hiện ảnh thịt mặn VIO_MEAT
+        var mockModService = new Mock<VeggieLife.BLL.Services.Moderation.IContentModerationService>();
+        mockModService.Setup(m => m.ModeratePostAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VeggieLife.BLL.Services.Moderation.ContentModerationResult
+            {
+                IsApproved = false,
+                ViolationScore = 100.0,
+                ViolationType = "VIO_MEAT",
+                ModerationStatus = "QUARANTINED_HIDDEN",
+                Note = "Ảnh chứa thịt động vật"
+            });
+
+        var customService = new PostService(_db, _mockRedis.Object, _mockLogger.Object, mockModService.Object);
+
+        var request = new UpdatePostRequest
+        {
+            ImageUrl = "https://res.cloudinary.com/demo/image/upload/sample_pork.jpg"
+        };
+
+        // Act
+        var result = await customService.UpdatePostAsync(1, request, 1024, "MEMBER");
+
+        // Assert
+        result.ModerationStatus.Should().Be("QUARANTINED_HIDDEN");
+        var report = await _db.ViolationReports.FirstOrDefaultAsync(r => r.PostId == 1 && r.ViolationType == "VIO_MEAT");
+        report.Should().NotBeNull();
     }
 
     [Fact]

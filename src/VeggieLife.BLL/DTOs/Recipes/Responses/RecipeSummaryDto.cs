@@ -64,6 +64,11 @@ public class RecipeSummaryDto
     /// Mã định danh video liên kết nếu loại nội dung là VIDEO (BUG-FL05-10).
     /// </summary>
     public int? VideoId { get; set; }
+
+    /// <summary>
+    /// Đường dẫn phát video đính kèm nếu có.
+    /// </summary>
+    public string? VideoUrl { get; set; }
 }
 
 /// <summary>

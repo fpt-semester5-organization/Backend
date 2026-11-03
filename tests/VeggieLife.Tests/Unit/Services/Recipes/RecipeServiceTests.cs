@@ -534,6 +534,17 @@ public class RecipeServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetRecipeByIdAsync_UnapprovedRecipe_WhenUserIsAdmin_ReturnsDetails()
+    {
+        // Act: Recipe 503 là DRAFT, admin (ID 99, isAdmin = true) xem để thẩm tra
+        var result = await _service.GetRecipeByIdAsync(503, isGuest: false, currentUserId: 99, isAdmin: true);
+
+        // Assert: Admin có thể xem được nội dung chi tiết công thức để thẩm tra
+        result.Should().NotBeNull();
+        result.RecipeId.Should().Be(503);
+    }
+
+    [Fact]
     public async Task GetRecipeByIdAsync_InvalidId_ThrowsBadRequest()
     {
         // Act: ID <= 0
