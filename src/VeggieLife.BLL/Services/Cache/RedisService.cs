@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading;
@@ -11,8 +11,8 @@ using StackExchange.Redis;
 namespace VeggieLife.BLL.Services.Cache;
 
 /// <summary>
-/// Triển khai dịch vụ phân tán Redis thông qua IDistributedCache kết hợp IConnectionMultiplexer và In-Memory fallback
-/// đảm bảo tính nguyên tử tuyệt đối (Atomic Concurrency) cho các bộ đếm hạn mức và Rate Limiting.
+/// Triá»ƒn khai dá»‹ch vá»¥ phÃ¢n tÃ¡n Redis thÃ´ng qua IDistributedCache káº¿t há»£p IConnectionMultiplexer vÃ  In-Memory fallback
+/// Ä‘áº£m báº£o tÃ­nh nguyÃªn tá»­ tuyá»‡t Ä‘á»‘i (Atomic Concurrency) cho cÃ¡c bá»™ Ä‘áº¿m háº¡n má»©c vÃ  Rate Limiting.
 /// </summary>
 public class RedisService : IRedisService
 {
@@ -22,6 +22,7 @@ public class RedisService : IRedisService
     private readonly ILogger<RedisService> _logger;
     private static readonly object _syncLock = new();
     private static readonly ConcurrentDictionary<string, ConcurrentQueue<string>> _memoryQueues = new();
+    private static readonly ConcurrentDictionary<string, byte> _memoryKeys = new();
     private static DateTime _redisCooldownUntil = DateTime.MinValue;
 
     public RedisService(
@@ -43,11 +44,11 @@ public class RedisService : IRedisService
         _redisCooldownUntil = DateTime.UtcNow.AddSeconds(30);
         if (!string.IsNullOrEmpty(operation))
         {
-            _logger.LogWarning("Redis thao tác '{Operation}' thất bại ({Message}). Chuyển sang In-Memory Fallback Cache trong 30 giây.", operation, ex.Message);
+            _logger.LogWarning("Redis thao tÃ¡c '{Operation}' tháº¥t báº¡i ({Message}). Chuyá»ƒn sang In-Memory Fallback Cache trong 30 giÃ¢y.", operation, ex.Message);
         }
         else
         {
-            _logger.LogWarning("Redis tạm thời không phản hồi ({Message}). Tự động chuyển sang In-Memory Fallback Cache trong 30 giây.", ex.Message);
+            _logger.LogWarning("Redis táº¡m thá»i khÃ´ng pháº£n há»“i ({Message}). Tá»± Ä‘á»™ng chuyá»ƒn sang In-Memory Fallback Cache trong 30 giÃ¢y.", ex.Message);
         }
     }
 
@@ -69,7 +70,7 @@ public class RedisService : IRedisService
             }
         }
 
-        // Fallback đọc từ In-Memory Cache cục bộ
+        // Fallback Ä‘á»c tá»« In-Memory Cache cá»¥c bá»™
         if (_memoryCache != null && _memoryCache.TryGetValue(key, out T? memoryValue))
         {
             return memoryValue;
@@ -80,7 +81,7 @@ public class RedisService : IRedisService
 
     public async Task SetAsync<T>(string key, T value, TimeSpan? expiry = null, CancellationToken ct = default)
     {
-        // 1. Luôn ghi vào bộ nhớ đệm cục bộ In-Memory để dự phòng và tăng tốc
+        // 1. LuÃ´n ghi vÃ o bá»™ nhá»› Ä‘á»‡m cá»¥c bá»™ In-Memory Ä‘á»ƒ dá»± phÃ²ng vÃ  tÄƒng tá»‘c
         if (_memoryCache != null)
         {
             var memOptions = new MemoryCacheEntryOptions();
@@ -91,7 +92,7 @@ public class RedisService : IRedisService
             _memoryCache.Set(key, value, memOptions);
         }
 
-        // 2. Ghi vào Redis nếu không trong thời gian cooldown
+        // 2. Ghi vÃ o Redis náº¿u khÃ´ng trong thá»i gian cooldown
         if (!IsInCooldown)
         {
             try
@@ -144,7 +145,7 @@ public class RedisService : IRedisService
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Lỗi khi xóa khóa Redis theo mẫu {Pattern}", key);
+                        _logger.LogWarning(ex, "Lá»—i khi xÃ³a khÃ³a Redis theo máº«u {Pattern}", key);
                     }
                 }
                 await _cache.RemoveAsync(key, ct);
@@ -280,7 +281,7 @@ public class RedisService : IRedisService
             }
         }
 
-        // In-Memory Thread-Safe Fallback: đảm bảo 100% không bị đua lệnh khi chạy test hoặc không có Redis
+        // In-Memory Thread-Safe Fallback: Ä‘áº£m báº£o 100% khÃ´ng bá»‹ Ä‘ua lá»‡nh khi cháº¡y test hoáº·c khÃ´ng cÃ³ Redis
         lock (_syncLock)
         {
             long current = 0;
@@ -370,7 +371,7 @@ public class RedisService : IRedisService
         // In-Memory Thread-Safe Fallback
         lock (_syncLock)
         {
-            // 1. Kiểm tra trạng thái cấm
+            // 1. Kiá»ƒm tra tráº¡ng thÃ¡i cáº¥m
             if (_memoryCache != null && _memoryCache.TryGetValue(banKey, out DateTime banUntil))
             {
                 var remaining = banUntil - DateTime.UtcNow;
@@ -381,7 +382,7 @@ public class RedisService : IRedisService
                 _memoryCache.Remove(banKey);
             }
 
-            // 2. Tăng số đếm request trong cửa sổ 1 phút
+            // 2. TÄƒng sá»‘ Ä‘áº¿m request trong cá»­a sá»• 1 phÃºt
             long count = 0;
             if (_memoryCache != null && _memoryCache.TryGetValue(countKey, out long memCount))
             {
@@ -401,7 +402,7 @@ public class RedisService : IRedisService
                 }
             }
 
-            // 3. Nếu vượt quá giới hạn -> ban 10 phút
+            // 3. Náº¿u vÆ°á»£t quÃ¡ giá»›i háº¡n -> ban 10 phÃºt
             if (count > maxRequestsPerMinute)
             {
                 var banUntilTime = DateTime.UtcNow.Add(banDuration);
@@ -425,20 +426,20 @@ public class RedisService : IRedisService
             {
                 var db = _multiplexer.GetDatabase();
                 await db.ListLeftPushAsync(queueName, json);
-                _logger.LogInformation("Đã đẩy tác vụ vào hàng đợi Redis [{QueueName}]: {Payload}", queueName, json);
+                _logger.LogInformation("ÄÃ£ Ä‘áº©y tÃ¡c vá»¥ vÃ o hÃ ng Ä‘á»£i Redis [{QueueName}]: {Payload}", queueName, json);
                 return;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Lỗi khi đẩy tác vụ vào hàng đợi Redis [{QueueName}], chuyển sang hàng đợi bộ nhớ", queueName);
+                _logger.LogError(ex, "Lá»—i khi Ä‘áº©y tÃ¡c vá»¥ vÃ o hÃ ng Ä‘á»£i Redis [{QueueName}], chuyá»ƒn sang hÃ ng Ä‘á»£i bá»™ nhá»›", queueName);
                 TriggerCooldown(ex, $"EnqueueAsync({queueName})");
             }
         }
 
-        // Fallback In-Memory Queue (khi không có kết nối Redis)
+        // Fallback In-Memory Queue (khi khÃ´ng cÃ³ káº¿t ná»‘i Redis)
         var queue = _memoryQueues.GetOrAdd(queueName, _ => new ConcurrentQueue<string>());
         queue.Enqueue(json);
-        _logger.LogInformation("Đã đẩy tác vụ vào hàng đợi In-Memory [{QueueName}]: {Payload}", queueName, json);
+        _logger.LogInformation("ÄÃ£ Ä‘áº©y tÃ¡c vá»¥ vÃ o hÃ ng Ä‘á»£i In-Memory [{QueueName}]: {Payload}", queueName, json);
     }
 
     public async Task<T?> DequeueAsync<T>(string queueName, CancellationToken ct = default)
@@ -457,7 +458,7 @@ public class RedisService : IRedisService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Lỗi khi lấy tác vụ từ hàng đợi Redis [{QueueName}], thử hàng đợi bộ nhớ", queueName);
+                _logger.LogWarning(ex, "Lá»—i khi láº¥y tÃ¡c vá»¥ tá»« hÃ ng Ä‘á»£i Redis [{QueueName}], thá»­ hÃ ng Ä‘á»£i bá»™ nhá»›", queueName);
                 TriggerCooldown(ex, $"DequeueAsync({queueName})");
             }
         }
