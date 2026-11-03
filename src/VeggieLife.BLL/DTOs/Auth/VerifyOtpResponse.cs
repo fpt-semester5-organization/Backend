@@ -13,6 +13,16 @@ public class AuthUserDto
     public string AccountStatus { get; set; } = string.Empty;
     public bool IsProfileCompleted { get; set; }
     public string? AvatarUrl { get; set; }
+
+    /// <summary>
+    /// Cho biết tài khoản đã có mật khẩu đăng nhập hay chưa (false đối với tài khoản chỉ dùng Google OAuth).
+    /// </summary>
+    public bool HasPassword { get; set; }
+
+    /// <summary>
+    /// Cho biết tài khoản đã liên kết với Google OAuth hay chưa.
+    /// </summary>
+    public bool IsGoogleLinked { get; set; }
 }
 
 /// <summary>
