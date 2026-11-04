@@ -5,10 +5,10 @@
 
 set -e
 
-SERVER="${DB_SERVER:-(localdb)\\MSSQLLocalDB}"
+SERVER="${DB_SERVER:-localhost,1433}"
 DATABASE="${DB_NAME:-VeggieLifeDb}"
-USER="${DB_USER:-}"
-PASSWORD="${DB_PASSWORD:-}"
+USER="${DB_USER:-sa}"
+PASSWORD="${DB_PASSWORD:-VeggieLife@2026StrongPass!}"
 
 echo "============================================================"
 echo " VeggieLife Database Reset Tool"
@@ -34,5 +34,5 @@ CREATE DATABASE [$DATABASE];
 PRINT 'Đã khởi tạo database mới [$DATABASE] thành công.';
 "
 
-sqlcmd -S "$SERVER" "${AUTH_FLAGS[@]}" -Q "$SQL_QUERY" -b
+sqlcmd -S "$SERVER" "${AUTH_FLAGS[@]}" -C -Q "$SQL_QUERY" -b
 echo "==> Reset database $DATABASE thành công!"

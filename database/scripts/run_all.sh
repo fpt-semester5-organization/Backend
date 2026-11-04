@@ -5,10 +5,10 @@
 
 set -e
 
-SERVER="${DB_SERVER:-(localdb)\\MSSQLLocalDB}"
+SERVER="${DB_SERVER:-localhost,1433}"
 DATABASE="${DB_NAME:-VeggieLifeDb}"
-USER="${DB_USER:-}"
-PASSWORD="${DB_PASSWORD:-}"
+USER="${DB_USER:-sa}"
+PASSWORD="${DB_PASSWORD:-VeggieLife@2026StrongPass!}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCHEMA_DIR="$(cd "$SCRIPT_DIR/../schema" && pwd)"
@@ -29,14 +29,14 @@ else
 fi
 
 # 1. Tạo database nếu chưa tồn tại
-sqlcmd -S "$SERVER" "${AUTH_FLAGS[@]}" -Q "IF DB_ID('$DATABASE') IS NULL CREATE DATABASE [$DATABASE];" -b
+sqlcmd -S "$SERVER" "${AUTH_FLAGS[@]}" -C -Q "IF DB_ID('$DATABASE') IS NULL CREATE DATABASE [$DATABASE];" -b
 
 # 2. Chạy toàn bộ file DDL trong schema/
 echo ""
 echo "[1/2] Đang thực thi các file DDL trong schema/..."
 for file in $(ls "$SCHEMA_DIR"/*.sql 2>/dev/null | sort); do
     echo "  -> Running $(basename "$file")..."
-    sqlcmd -S "$SERVER" -d "$DATABASE" "${AUTH_FLAGS[@]}" -I -i "$file" -b
+    sqlcmd -S "$SERVER" -d "$DATABASE" "${AUTH_FLAGS[@]}" -C -I -i "$file" -b
 done
 
 # 3. Chạy seed data nếu có file
@@ -47,13 +47,11 @@ if ls "$SEED_DIR"/*.sql 1> /dev/null 2>&1; then
         filename=$(basename "$file")
         if [ "$filename" = "00_Seed_All.sql" ]; then continue; fi
         echo "  -> Running $filename..."
-        sqlcmd -S "$SERVER" -d "$DATABASE" "${AUTH_FLAGS[@]}" -I -i "$file" -b
+        sqlcmd -S "$SERVER" -d "$DATABASE" "${AUTH_FLAGS[@]}" -C -I -i "$file" -b
     done
-else
-    echo "[2/2] Không có file seed data nào trong thư mục seed/ (bỏ qua)."
 fi
 
 echo ""
 echo "============================================================"
-echo " Hoàn tất thực thi toàn bộ schema thành công!"
+echo " Chạy hoàn tất Schema DDL & Master Seed Data cho VeggieLifeDb!"
 echo "============================================================"

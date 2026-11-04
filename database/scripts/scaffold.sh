@@ -7,10 +7,10 @@
 
 set -e
 
-SERVER="${DB_SERVER:-localhost}"
+SERVER="${DB_SERVER:-localhost,1433}"
 DATABASE="${DB_NAME:-VeggieLifeDb}"
-USER="${DB_USER:-}"
-PASSWORD="${DB_PASSWORD:-}"
+USER="${DB_USER:-sa}"
+PASSWORD="${DB_PASSWORD:-VeggieLife@2026StrongPass!}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
