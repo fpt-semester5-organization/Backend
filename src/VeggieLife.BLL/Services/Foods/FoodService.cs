@@ -61,8 +61,19 @@ public class FoodService : IFoodService
                 FoodName = f.FoodName,
                 CategoryId = f.CategoryId,
                 CategoryName = f.Category != null ? f.Category.CategoryName : null,
-                ImageUrl = f.ImageUrl,
-                RecipeCount = f.Recipes.Count(r => r.Status == "APPROVED_ACTIVE")
+                // Ảnh món: Foods.Image_URL; chưa có thì lấy ảnh công thức (ưu tiên đã duyệt, rồi SYSTEM từ sách, rồi cũ nhất)
+                ImageUrl = f.ImageUrl ?? f.Recipes
+                    .Where(r => r.ImageUrl != null && r.ImageUrl != "")
+                    .OrderBy(r => r.Status == "APPROVED_ACTIVE" ? 0 : 1)
+                    .ThenBy(r => r.Source == "SYSTEM" ? 0 : 1)
+                    .ThenBy(r => r.RecipeId)
+                    .Select(r => r.ImageUrl)
+                    .FirstOrDefault(),
+                RecipeCount = f.Recipes.Count(r => r.Status == "APPROVED_ACTIVE"),
+                HasHighCalorie = f.Recipes.Any(r => r.Status == "APPROVED_ACTIVE" && r.CaloriesKcal >= 550),
+                HasNoSpicy = f.Recipes.Any(r => r.Status == "APPROVED_ACTIVE" && r.Title.Contains("không cay")),
+                HasAlliumFree = f.Recipes.Any(r => r.Status == "APPROVED_ACTIVE"
+                    && (r.DietarySchool.SchoolCode == "BUDDHIST" || r.Title.Contains("không hành tỏi") || r.Title.Contains("ngũ vị tân")))
             })
             .ToListAsync(ct);
 

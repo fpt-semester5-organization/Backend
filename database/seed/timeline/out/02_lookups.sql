@@ -1,0 +1,10 @@
+﻿PRINT N'>> [2/3] Tra cứu dữ liệu master theo tên/mã...';
+SELECT Dietary_School_ID, School_Code INTO #sch FROM dbo.DietarySchools;
+SELECT Category_ID, Category_Name INTO #cat FROM dbo.FoodCategories;
+SELECT Allergen_ID, Code INTO #alg FROM dbo.Allergens;
+SELECT Duration_Days, MIN(Plan_ID) AS Plan_ID, MAX(Price) AS Price INTO #plan FROM dbo.SubscriptionPlans WHERE Duration_Days IN (30, 90, 365) GROUP BY Duration_Days;
+IF (SELECT COUNT(*) FROM #sch) < 7   THROW 50010, N'Thiếu DietarySchools - hãy chạy seed master (01..08) trước.', 1;
+IF (SELECT COUNT(*) FROM #cat) < 14  THROW 50011, N'Thiếu FoodCategories - hãy chạy seed master trước.', 1;
+IF (SELECT COUNT(*) FROM #alg) < 10  THROW 50012, N'Thiếu Allergens - hãy chạy seed master trước.', 1;
+IF (SELECT COUNT(*) FROM #plan) < 3  THROW 50013, N'Thiếu SubscriptionPlans 30/90/365 ngày - hãy chạy 08_Seed_SubscriptionPlans.sql trước.', 1;
+IF (SELECT COUNT(*) FROM dbo.Ingredients WHERE Ingredient_ID < 10001) < 100 THROW 50014, N'Thiếu Ingredients master - hãy chạy 04_Seed_Ingredients.sql trước.', 1;

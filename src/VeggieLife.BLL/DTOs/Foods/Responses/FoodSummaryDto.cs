@@ -22,4 +22,13 @@ public class FoodSummaryDto
 
     /// <summary>Tên danh mục món ăn.</summary>
     public string? CategoryName { get; set; }
+
+    /// <summary>Có công thức đã duyệt giàu calo (≥ 550 kcal/khẩu phần) cho người cần tăng cân.</summary>
+    public bool HasHighCalorie { get; set; }
+
+    /// <summary>Có công thức đã duyệt bản không cay.</summary>
+    public bool HasNoSpicy { get; set; }
+
+    /// <summary>Có công thức đã duyệt kiêng ngũ vị tân (trường phái BUDDHIST hoặc bản không hành tỏi).</summary>
+    public bool HasAlliumFree { get; set; }
 }

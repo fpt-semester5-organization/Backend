@@ -13,6 +13,9 @@ public class AdminUserListItemDto
 
     public string FullName { get; set; } = string.Empty;
 
+    /// <summary>Ảnh đại diện (Users.Avatar_Url); null nếu chưa có.</summary>
+    public string? AvatarUrl { get; set; }
+
     public string Role { get; set; } = string.Empty;
 
     public string AccountStatus { get; set; } = string.Empty;

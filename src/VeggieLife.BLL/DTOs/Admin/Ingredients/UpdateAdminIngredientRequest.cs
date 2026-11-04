@@ -11,4 +11,6 @@ public class UpdateAdminIngredientRequest
     public string? FoodGroup { get; set; }
     public decimal? CaloriesPer100g { get; set; }
     public bool? IsAllium { get; set; }
+    public string? ImageUrl { get; set; }
+    public bool? IsLocked { get; set; }
 }

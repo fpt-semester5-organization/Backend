@@ -19,7 +19,7 @@ public static class DevCommunityDataSeeder
     public static void Seed(AppDbContext db)
     {
         // Tránh nạp trùng lặp nếu đã nạp trước đó
-        if (db.Posts.Any(p => p.PostId == 1011))
+        if (db.Posts.Any())
         {
             return;
         }
@@ -307,11 +307,18 @@ public static class DevCommunityDataSeeder
             CreatedAt = now
         };
 
-        ExecuteWithIdentityInsert("Posts", () =>
+        var allPosts = new List<Post> { p1011, p1012, p1013, p1014, p1015, p1016, p1021, p1022, p1023, p1024, p1025, p1026, p1027, p1028, p1029, p1030 };
+        var existingPostIds = db.Posts.Select(p => p.PostId).ToHashSet();
+        var newPosts = allPosts.Where(p => !existingPostIds.Contains(p.PostId)).ToList();
+
+        if (newPosts.Any())
         {
-            db.Posts.AddRange(p1011, p1012, p1013, p1014, p1015, p1016, p1021, p1022, p1023, p1024, p1025, p1026, p1027, p1028, p1029, p1030);
-            db.SaveChanges();
-        });
+            ExecuteWithIdentityInsert("Posts", () =>
+            {
+                db.Posts.AddRange(newPosts);
+                db.SaveChanges();
+            });
+        }
 
         // 3. Nạp 6 Video nấu ăn & VideoTranscripts
         var v1 = new Video
@@ -392,11 +399,17 @@ public static class DevCommunityDataSeeder
             CreatedAt = now.AddDays(-4)
         };
 
-        ExecuteWithIdentityInsert("Videos", () =>
+        var allVideos = new List<Video> { v1, v2, v3, v4, v5, v6 };
+        var existingVideoIds = db.Videos.Select(v => v.VideoId).ToHashSet();
+        var newVideos = allVideos.Where(v => !existingVideoIds.Contains(v.VideoId)).ToList();
+        if (newVideos.Any())
         {
-            db.Videos.AddRange(v1, v2, v3, v4, v5, v6);
-            db.SaveChanges();
-        });
+            ExecuteWithIdentityInsert("Videos", () =>
+            {
+                db.Videos.AddRange(newVideos);
+                db.SaveChanges();
+            });
+        }
 
         // 4. Nạp VideoTranscripts kèm mốc thời gian Segments & JSON Công thức
         var vt1 = new VideoTranscript
@@ -477,11 +490,17 @@ public static class DevCommunityDataSeeder
             CompletedAt = now.AddDays(-4)
         };
 
-        ExecuteWithIdentityInsert("VideoTranscripts", () =>
+        var allTranscripts = new List<VideoTranscript> { vt1, vt2, vt3, vt4, vt5, vt6 };
+        var existingTranscriptIds = db.VideoTranscripts.Select(vt => vt.TranscriptId).ToHashSet();
+        var newTranscripts = allTranscripts.Where(vt => !existingTranscriptIds.Contains(vt.TranscriptId)).ToList();
+        if (newTranscripts.Any())
         {
-            db.VideoTranscripts.AddRange(vt1, vt2, vt3, vt4, vt5, vt6);
-            db.SaveChanges();
-        });
+            ExecuteWithIdentityInsert("VideoTranscripts", () =>
+            {
+                db.VideoTranscripts.AddRange(newTranscripts);
+                db.SaveChanges();
+            });
+        }
 
         // 5. Nạp 25 Bình luận (Comments) tương tác đa tầng
         var comments = new List<Comment>
@@ -523,17 +542,27 @@ public static class DevCommunityDataSeeder
             new() { CommentId = 4025, UserId = 14, PostId = 1011, Content = "Vừa nấu thử nồi canh chua theo đúng video hướng dẫn trưa nay, cả nhà ăn khen nức nở! Nước canh trong veo ngọt lịm. Cảm ơn Chef Thanh Hòa rất nhiều!", Status = "ACTIVE", CreatedAt = now.AddHours(-2) }
         };
 
-        ExecuteWithIdentityInsert("Comments", () =>
+        var existingCommentIds = db.Comments.Select(c => c.CommentId).ToHashSet();
+        var validExistingPostIds = db.Posts.Select(p => p.PostId).ToHashSet();
+        var newComments = comments
+            .Where(c => !existingCommentIds.Contains(c.CommentId) && c.PostId.HasValue && validExistingPostIds.Contains(c.PostId.Value))
+            .ToList();
+
+        if (newComments.Any())
         {
-            db.Comments.AddRange(comments);
-            db.SaveChanges();
-        });
+            ExecuteWithIdentityInsert("Comments", () =>
+            {
+                db.Comments.AddRange(newComments);
+                db.SaveChanges();
+            });
+        }
 
         // 6. Nạp lượt Vote tích cực từ các User (mỗi User 1 vote / bài viết)
         var postIds = new[] { 1011, 1012, 1013, 1014, 1015, 1016, 1021, 1022, 1023, 1024, 1025, 1026, 1027, 1028, 1029, 1030 };
         var voterIds = Enumerable.Range(1, 15).ToList();
+        var availablePostIds = postIds.Where(id => validExistingPostIds.Contains(id)).ToList();
 
-        foreach (var postId in postIds)
+        foreach (var postId in availablePostIds)
         {
             foreach (var userId in voterIds)
             {

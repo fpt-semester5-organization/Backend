@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
+using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Responses;
 
 namespace VeggieLife.API.Controllers;
@@ -79,8 +80,39 @@ public abstract class BaseApiController : ControllerBase
 
     /// <summary>
     /// Lấy Role của người dùng hiện tại từ Claims (GUEST, MEMBER, VIP, ADMIN).
+    /// Tự động nâng cấp thành VIP nếu Token mang claim isVip = true (D104).
     /// </summary>
-    protected string? CurrentUserRole => User.FindFirstValue(ClaimTypes.Role);
+    protected string? CurrentUserRole
+    {
+        get
+        {
+            var role = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role");
+            var isVipClaim = User.FindFirstValue("isVip") ?? User.FindFirstValue("is_vip");
+            if (string.Equals(role, UserRoles.Member, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(isVipClaim, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                return UserRoles.Vip;
+            }
+            return role;
+        }
+    }
+
+    /// <summary>
+    /// Kiểm tra người dùng hiện tại có phải là VIP (role VIP hoặc claim isVip = true).
+    /// </summary>
+    protected bool CurrentUserIsVip
+    {
+        get
+        {
+            var isVipClaim = User.FindFirstValue("isVip") ?? User.FindFirstValue("is_vip");
+            if (bool.TryParse(isVipClaim, out var isVip) && isVip)
+            {
+                return true;
+            }
+            var role = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role");
+            return string.Equals(role, UserRoles.Vip, StringComparison.OrdinalIgnoreCase);
+        }
+    }
 
     /// <summary>
     /// Lấy mã định danh vô danh (Guest UUID) từ Claims nếu người dùng là khách vãng lai.
