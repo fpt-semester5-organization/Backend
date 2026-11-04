@@ -45,6 +45,25 @@ public class SubscriptionsController : BaseApiController
         CancellationToken ct)
     {
         EnsureAuthorizedMember();
+
+        // Tự động nhận diện domain của client (frontend) từ Origin / Referer header nếu request chưa có URL tường minh
+        var clientOrigin = Request.Headers["Origin"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(clientOrigin))
+        {
+            var referer = Request.Headers["Referer"].FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(referer) && System.Uri.TryCreate(referer, System.UriKind.Absolute, out var refUri))
+            {
+                clientOrigin = $"{refUri.Scheme}://{refUri.Authority}";
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(clientOrigin))
+        {
+            var origin = clientOrigin.TrimEnd('/');
+            request.ReturnUrl ??= $"{origin}/payment/success";
+            request.CancelUrl ??= $"{origin}/payment/cancel";
+        }
+
         var result = await _subscriptionService.CheckoutSubscriptionAsync(
             (int)CurrentUserId!.Value,
             CurrentUserRole ?? UserRoles.Member,
