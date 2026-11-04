@@ -1322,7 +1322,16 @@ public class FridgeService : IFridgeService
                 requiredIngredients = recipeIngredients;
             }
 
-            var hasInsufficientQuantity = false;
+            // Gia vị/đồ khô quầy CONDIMENTS (muối, đường, dầu, nước tương...) coi là có sẵn trong bếp,
+            // không tính vào mẫu số; nếu món chỉ toàn gia vị thì giữ nguyên danh sách.
+            var mainIngredients = requiredIngredients
+                .Where(ri => !string.Equals(ri.Ingredient?.DefaultStallType, "CONDIMENTS", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (mainIngredients.Count > 0)
+            {
+                requiredIngredients = mainIngredients;
+            }
+
             var matchedCount = 0;
             var missing = new List<MissingIngredientDto>();
 
@@ -1332,14 +1341,11 @@ public class FridgeService : IFridgeService
                 {
                     // Tủ lạnh CÓ nguyên liệu này -> Kiểm tra định lượng:
                     // Công thức cần (ri.QuantityNeeded) phải <= Tủ lạnh đang có (avail.TotalQty)
-                    if (IsQuantitySufficient(ri.QuantityNeeded, ri.Unit, avail.TotalQty, avail.Unit))
+                    // Tủ có nguyên liệu là tính khớp; định lượng từ ảnh quét thường chỉ ước lượng ("1 hộp", "1 bó")
+                    // nên thiếu định lượng không loại món mà chỉ ghi vào danh sách cần mua thêm.
+                    matchedCount++;
+                    if (!IsQuantitySufficient(ri.QuantityNeeded, ri.Unit, avail.TotalQty, avail.Unit))
                     {
-                        matchedCount++;
-                    }
-                    else
-                    {
-                        // Định lượng công thức cần LỚN HƠN định lượng trong tủ đang có (ví dụ: cần 500g > có 300g)
-                        hasInsufficientQuantity = true;
                         missing.Add(new MissingIngredientDto
                         {
                             IngredientId = ri.IngredientId,
@@ -1356,13 +1362,6 @@ public class FridgeService : IFridgeService
                         Name = ri.Ingredient?.IngredientName ?? $"Nguyên liệu #{ri.IngredientId}"
                     });
                 }
-            }
-
-            // Yêu cầu người dùng: Món ăn được gợi ý phải khớp với số lượng:
-            // Nếu nguyên liệu trong tủ KHÔNG ĐỦ định lượng yêu cầu (ri.QuantityNeeded > availableQty) -> LOẠI BỎ MÓN NÀY!
-            if (hasInsufficientQuantity)
-            {
-                continue;
             }
 
             var similarity = (double)matchedCount / requiredIngredients.Count;
