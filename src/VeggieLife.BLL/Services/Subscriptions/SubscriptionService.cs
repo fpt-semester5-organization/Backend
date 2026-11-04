@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -260,7 +260,7 @@ public class SubscriptionService : ISubscriptionService
                     0,
                     plan.Price,
                     $"Nâng cấp {plan.PlanName} ({orderCode})",
-                    "/payment/callback",
+                    request.ReturnUrl ?? "/payment/callback",
                     ct);
             }
             else
@@ -269,6 +269,8 @@ public class SubscriptionService : ISubscriptionService
                     0,
                     plan.Price,
                     orderCode,
+                    request.ReturnUrl,
+                    request.CancelUrl,
                     ct);
             }
         }
