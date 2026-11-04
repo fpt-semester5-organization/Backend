@@ -1,6 +1,6 @@
 # Hướng dẫn Cơ sở dữ liệu VeggieLife (Database-First)
 
-Tài liệu hướng dẫn khởi tạo, đồng bộ và kiểm tra nghiệm thu tự động cơ sở dữ liệu **VeggieLife** (38 bảng thực thể chuẩn 3NF, 312 thuộc tính) dành cho tất cả các thành viên trong nhóm phát triển.
+Tài liệu hướng dẫn khởi tạo, đồng bộ và kiểm tra nghiệm thu tự động cơ sở dữ liệu **VeggieLife** (41 bảng thực thể chuẩn 3NF, 343 thuộc tính) dành cho tất cả các thành viên trong nhóm phát triển.
 
 ---
 
@@ -9,23 +9,23 @@ Tài liệu hướng dẫn khởi tạo, đồng bộ và kiểm tra nghiệm th
 ```text
 database/
 ├── README.md                 # Tài liệu hướng dẫn này
-├── schema/                   # 38 file DDL SQL (mỗi bảng 1 file, sắp xếp theo thứ tự khóa ngoại)
+├── schema/                   # 45 file DDL SQL (41 bảng thực thể chuẩn 3NF và 4 file migration patches)
 │   ├── 01_DietarySchools.sql
 │   ├── 02_Allergens.sql
 │   ├── ...
 │   ├── 34_VenueMenuItems.sql # Đủ 7 cột logic theo D100 (bỏ tính năng trong MVP)
-│   └── 38_Surveys.sql
+│   └── 45_MealPlans_Allow_Cancelled_Status.sql
 ├── seed/                     # Dữ liệu mẫu khởi tạo ban đầu (Master Data, Admin User, VIP Plans...)
 │   ├── 00_Seed_All.sql
 │   ├── 01_Seed_DietarySchools.sql
 │   └── ...
 └── scripts/                  # Toàn bộ công cụ và script tự động hóa (PowerShell, Shell, Python, SQL)
-    ├── generate_schema.py    # Tool tự động parse Word docx sinh 38 bảng & kiểm tra đếm
+    ├── generate_schema.py    # Tool tự động parse Word docx sinh bảng & kiểm tra đếm
     ├── generate_schema.ps1   # Wrapper 1-click chạy tool trên Windows
-    ├── verify_schema.sql     # Script SQL đếm tự động: đúng 38 bảng, 312 cột
+    ├── verify_schema.sql     # Script SQL đếm tự động: đúng 41 bảng, 343 cột
     ├── verify_schema.ps1     # Wrapper 1-click chạy kiểm tra SQL Server
     ├── rebuild_all.ps1 / .sh # Pipeline 1-click: Reset DB -> Chạy DDL -> Nạp Seed -> Scaffold EF Core
-    ├── run_all.ps1 / .sh     # Chạy toàn bộ 38 file schema và seed data
+    ├── run_all.ps1 / .sh     # Chạy toàn bộ 45 file schema và seed data
     ├── reset_db.ps1 / .sh    # Xóa sạch và tạo mới database trống
     └── scaffold.ps1 / .sh    # Scaffold Entities C# từ database vào VeggieLife.DAL
 ```
@@ -43,12 +43,12 @@ powershell -ExecutionPolicy Bypass -File "./database/scripts/rebuild_all.ps1"
 
 *Lệnh trên sẽ tự động thực hiện 3 bước:*
 1. Xóa và tạo mới database `VeggieLifeDb` trên SQL Server local.
-2. Chạy lần lượt 38 file DDL theo đúng thứ tự phụ thuộc khóa ngoại và nạp dữ liệu mẫu (Seed Data).
+2. Chạy lần lượt 45 file DDL theo đúng thứ tự phụ thuộc khóa ngoại và nạp dữ liệu mẫu (Seed Data).
 3. Tự động sinh (scaffold) lại toàn bộ Entity C# trong `src/VeggieLife.DAL/Entities/`.
 
 ---
 
-### Bước 2: Kiểm tra nghiệm thu tính toàn vẹn (Verify 38 bảng & 312 cột)
+### Bước 2: Kiểm tra nghiệm thu tính toàn vẹn (Verify 41 bảng & 343 cột)
 Để xác nhận cơ sở dữ liệu trên máy bạn đã khớp 100% với tài liệu đặc tả của BA/Lead:
 
 ```powershell
@@ -58,7 +58,7 @@ powershell -ExecutionPolicy Bypass -File "./database/scripts/generate_schema.ps1
 
 👉 Khi kết quả trả về:
 ```text
->>> KẾT QUẢ DATABASE TRỰC TIẾP: [PASS] ĐẠT 100% (38 BẢNG, 312 CỘT)!
+>>> KẾT QUẢ DATABASE TRỰC TIẾP: [PASS] ĐẠT 100% (41 BẢNG, 343 CỘT)!
 ```
 Nghĩa là cơ sở dữ liệu trên máy bạn đã hoàn toàn hợp lệ, bạn có thể bắt đầu code tính năng ngay!
 

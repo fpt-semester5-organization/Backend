@@ -74,6 +74,7 @@ TABLE_ORDER = [
     "Surveys",              # 38 (7 cols)
     "SystemSettings",       # 39 (8 cols)
     "MealSlotSwapHistories",# 40 (7 cols)
+    "Foods",                # 41 (6 cols)
 ]
 
 # Thông tin cụm phân hệ nghiệp vụ cho từng bảng
@@ -118,6 +119,7 @@ TABLE_CLUSTERS = {
     "Surveys": "Trợ lý Tư vấn AI, Tủ lạnh Ảo & Địa điểm",
     "SystemSettings": "Quản trị Tài khoản, Sức khỏe & Hội viên",
     "MealSlotSwapHistories": "Kho Công thức Chay, Thực đơn & Đi chợ",
+    "Foods": "Kho Công thức Chay, Thực đơn & Đi chợ / Master Data",
 }
 
 def find_project_root():
