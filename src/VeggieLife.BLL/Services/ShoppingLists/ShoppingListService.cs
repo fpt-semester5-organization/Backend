@@ -90,12 +90,17 @@ public class ShoppingListService : IShoppingListService
             ? sortedSlots.Take(request.DaysCount.Value * 3).ToList()
             : sortedSlots;
 
-        foreach (var slot in effectiveSlots)
+        for (int i = 0; i < effectiveSlots.Count; i++)
         {
+            var slot = effectiveSlots[i];
             if (slot.Recipe == null)
             {
                 continue;
             }
+
+            int dayIndex = i / 3;
+            var dayKey = dayIndex.ToString();
+            var recipeServings = slot.Recipe.Servings > 0 ? (decimal)slot.Recipe.Servings : 2m;
 
             foreach (var ri in slot.Recipe.RecipeIngredients)
             {
@@ -104,7 +109,9 @@ public class ShoppingListService : IShoppingListService
                     continue;
                 }
 
-                var (normQty, normUnit) = NormalizeUnit(ri.QuantityNeeded * request.ServingsMultiplier, ri.Unit, ri.Ingredient.StandardUnit);
+                // Định lượng tổng hợp (cho số người = request.ServingsMultiplier, công thức chuẩn DB dành cho recipeServings người)
+                var perPersonQty = (ri.QuantityNeeded / recipeServings) * request.ServingsMultiplier;
+                var (normQty, normUnit) = NormalizeUnit(perPersonQty, ri.Unit, ri.Ingredient.StandardUnit);
 
                 if (!aggregatedDict.TryGetValue(ri.IngredientId, out var collector))
                 {
@@ -124,6 +131,12 @@ public class ShoppingListService : IShoppingListService
                 {
                     collector.RecipeSources.Add(slot.Recipe.Food.FoodName);
                 }
+
+                // Định lượng cơ sở cho 1 người trong ngày
+                var baseSingleQty = ri.QuantityNeeded / recipeServings;
+                var (singleNormQty, _) = NormalizeUnit(baseSingleQty, ri.Unit, ri.Ingredient.StandardUnit);
+                collector.DayQuantities.TryGetValue(dayKey, out var curDayQty);
+                collector.DayQuantities[dayKey] = Math.Round(curDayQty + singleNormQty, 2);
             }
         }
 
@@ -208,17 +221,30 @@ public class ShoppingListService : IShoppingListService
         var purchasedCount = list.ShoppingListItems.Count(i => i.IsPurchased);
         var totalCount = list.ShoppingListItems.Count;
 
-        // Tập hợp nguồn công thức cho từng nguyên liệu trong thực đơn
+        // Tập hợp nguồn công thức và định lượng chính xác theo từng ngày (chia cho Servings của công thức gốc)
+        var sortedSlots = list.Plan.MealSlots.OrderBy(s => s.SlotId).ToList();
+        var dayQuantitiesMap = new Dictionary<int, Dictionary<string, decimal>>();
         var recipeSourceMap = new Dictionary<int, HashSet<string>>();
-        foreach (var slot in list.Plan.MealSlots)
+
+        for (int i = 0; i < sortedSlots.Count; i++)
         {
+            var slot = sortedSlots[i];
             if (slot.Recipe == null)
             {
                 continue;
             }
 
+            int dayIndex = i / 3;
+            var dayKey = dayIndex.ToString();
+            var recipeServings = slot.Recipe.Servings > 0 ? (decimal)slot.Recipe.Servings : 2m;
+
             foreach (var ri in slot.Recipe.RecipeIngredients)
             {
+                if (ri.Ingredient == null)
+                {
+                    continue;
+                }
+
                 if (!recipeSourceMap.TryGetValue(ri.IngredientId, out var sources))
                 {
                     sources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -229,6 +255,19 @@ public class ShoppingListService : IShoppingListService
                 {
                     sources.Add(slot.Recipe.Food.FoodName);
                 }
+
+                // Công thức chuẩn cho 2 người (Servings = 2), định lượng cho 1 người = QuantityNeeded / Servings
+                var perPersonQty = ri.QuantityNeeded / recipeServings;
+                var (normQty, _) = NormalizeUnit(perPersonQty, ri.Unit, ri.Ingredient.StandardUnit);
+
+                if (!dayQuantitiesMap.TryGetValue(ri.IngredientId, out var dayDict))
+                {
+                    dayDict = new Dictionary<string, decimal>();
+                    dayQuantitiesMap[ri.IngredientId] = dayDict;
+                }
+
+                dayDict.TryGetValue(dayKey, out var curDayQty);
+                dayDict[dayKey] = Math.Round(curDayQty + normQty, 2);
             }
         }
 
@@ -242,16 +281,25 @@ public class ShoppingListService : IShoppingListService
         {
             var aisle = NormalizeAisle(item.Ingredient?.DefaultStallType);
             recipeSourceMap.TryGetValue(item.IngredientId, out var sources);
+            dayQuantitiesMap.TryGetValue(item.IngredientId, out var dayDict);
+
+            // Tự động chuẩn hóa tổng số lượng theo định lượng chuẩn 1 người từ các bữa ăn
+            decimal totalQuantity = item.AggregatedQuantity;
+            if (dayDict != null && dayDict.Count > 0)
+            {
+                totalQuantity = dayDict.Values.Sum();
+            }
 
             var itemDto = new ShoppingListItemDto
             {
                 ItemId = item.ItemId,
                 IngredientId = item.IngredientId,
                 Name = item.Ingredient?.IngredientName ?? "Nguyên liệu",
-                Quantity = item.AggregatedQuantity,
+                Quantity = totalQuantity,
                 Unit = item.Unit,
                 IsPurchased = item.IsPurchased,
-                RecipeSources = sources != null ? sources.OrderBy(s => s).ToList() : new List<string>()
+                RecipeSources = sources != null ? sources.OrderBy(s => s).ToList() : new List<string>(),
+                DayQuantities = dayDict ?? new Dictionary<string, decimal>()
             };
 
             if (!aislesDict.TryGetValue(aisle, out var listInAisle))
@@ -452,7 +500,8 @@ public class ShoppingListService : IShoppingListService
                 Quantity = item.AggregatedQuantity,
                 Unit = item.Unit,
                 IsPurchased = item.IsPurchased,
-                RecipeSources = collector?.RecipeSources.OrderBy(s => s).ToList() ?? new List<string>()
+                RecipeSources = collector?.RecipeSources.OrderBy(s => s).ToList() ?? new List<string>(),
+                DayQuantities = collector?.DayQuantities ?? new Dictionary<string, decimal>()
             };
 
             if (!aislesDict.TryGetValue(aisle, out var listInAisle))
@@ -487,5 +536,6 @@ public class ShoppingListService : IShoppingListService
         public decimal TotalQuantity { get; set; }
         public string Unit { get; set; } = "g";
         public HashSet<string> RecipeSources { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, decimal> DayQuantities { get; } = new();
     }
 }
