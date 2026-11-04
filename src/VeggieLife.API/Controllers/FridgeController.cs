@@ -232,6 +232,7 @@ public class FridgeController : BaseApiController
     /// loại món vi phạm trường phái hoặc dị ứng.
     /// </summary>
     [HttpGet("recipe-suggestions")]
+    [HttpGet("recipes/suggestions")]
     [Authorize]
     [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<FridgeRecipeSuggestionDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]

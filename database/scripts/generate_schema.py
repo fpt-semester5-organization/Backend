@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 ================================================================================
@@ -31,6 +31,8 @@ from datetime import datetime
 # Thiết lập encoding UTF-8 cho console
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
 
 # Thứ tự chuẩn 38 bảng theo thứ tự khóa ngoại (Referenced First)
 TABLE_ORDER = [
@@ -308,10 +310,13 @@ def run_verification(repo_root, extracted_tables):
 
     return is_pass
 
-def verify_live_db(server="localhost", database="VeggieLifeDb"):
+def verify_live_db(server=None, database="VeggieLifeDb"):
     """
     Kiểm tra đếm trực tiếp trên SQL Server database.
     """
+    server = server or os.environ.get("DB_SERVER", "localhost,1433")
+    user = os.environ.get("DB_USER", "sa")
+    password = os.environ.get("DB_PASSWORD", "12345")
     print(f"\n>>> Đang kết nối SQL Server [{server}] - Database [{database}] để kiểm tra...")
     query = """
     SET NOCOUNT ON;
@@ -322,22 +327,22 @@ def verify_live_db(server="localhost", database="VeggieLifeDb"):
     WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME <> 'sysdiagrams';
     """
     try:
-        cmd = ["sqlcmd", "-S", server, "-d", database, "-E", "-Q", query, "-b"]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        auth_args = ["-U", user, "-P", password] if user and password else ["-E"]
+        cmd = ["sqlcmd", "-S", server, "-d", database] + auth_args + ["-C", "-f", "65001", "-Q", query, "-b"]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding="utf-8")
         lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-        # Dòng cuối thường là kết quả
         for line in lines:
             parts = line.split()
             if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
                 t_count = int(parts[0])
                 c_count = int(parts[1])
-                print(f"   - Số bảng trong CSDL thực tế: {t_count} / 38")
-                print(f"   - Số cột trong CSDL thực tế:  {c_count} / 312")
-                if t_count == 38 and c_count == 312:
-                    print("   >>> KẾT QUẢ DATABASE TRỰC TIẾP: [PASS] ĐẠT 100% (38 BẢNG, 312 CỘT)!\n")
+                print(f"   - Số bảng trong CSDL thực tế: {t_count} / 41")
+                print(f"   - Số cột trong CSDL thực tế:  {c_count} / 343")
+                if t_count == 41 and c_count == 343:
+                    print("   >>> KẾT QUẢ DATABASE TRỰC TIẾP: [PASS] ĐẠT 100% (41 BẢNG, 343 CỘT)!\n")
                     return True
                 else:
-                    print("   >>> KẾT QUẢ DATABASE TRỰC TIẾP: [FAIL] KHÔNG KHỚP TIÊU CHUẨN!\n")
+                    print(f"   >>> KẾT QUẢ DATABASE TRỰC TIẾP: [FAIL] KHÔNG KHỚP TIÊU CHUẨN (Thực tế: {t_count} bảng, {c_count} cột)!\n")
                     return False
         print(result.stdout)
     except Exception as e:
@@ -354,13 +359,11 @@ def main():
     repo_root = find_project_root()
     doc_path = args.doc_path
     if not doc_path:
-        doc_path = os.path.join(
-            repo_root, 
-            "project-docs", 
-            "1. Context Implement Code-20261008T151153Z-1-001", 
-            "1. Context Implement Code", 
-            "06. Logical Data Model Specification.docx"
-        )
+        candidates = [
+            os.path.join(repo_root, "docs", "06. Logical Data Model Specification.docx"),
+            os.path.join(repo_root, "project-docs", "1. Context Implement Code-20261008T151153Z-1-001", "1. Context Implement Code", "06. Logical Data Model Specification.docx")
+        ]
+        doc_path = next((p for p in candidates if os.path.exists(p)), candidates[0])
 
     print("=" * 70)
     print(" VeggieLife Database Auto-Generator Tool (Sprint 5: D1-D2)")
