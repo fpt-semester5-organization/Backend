@@ -105,6 +105,7 @@ public class AdminUserService : IAdminUserService
                 UserId = u.UserId,
                 Email = u.Email,
                 FullName = u.FullName,
+                AvatarUrl = u.AvatarUrl,
                 Role = u.Role,
                 AccountStatus = u.AccountStatus,
                 CreatedAt = u.CreatedAt,
