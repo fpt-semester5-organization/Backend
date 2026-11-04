@@ -62,15 +62,17 @@ public class AdminAuditLogService : IAdminAuditLogService
             query = query.Where(a => a.TargetId == targetIdTrimmed);
         }
 
+        var vietnamOffset = TimeSpan.FromHours(7);
+
         if (fromDate.HasValue)
         {
-            var fromUtc = fromDate.Value.Date;
+            var fromUtc = fromDate.Value.Date - vietnamOffset;
             query = query.Where(a => a.CreatedAt >= fromUtc);
         }
 
         if (toDate.HasValue)
         {
-            var toUtc = toDate.Value.Date.AddDays(1);
+            var toUtc = toDate.Value.Date.AddDays(1) - vietnamOffset;
             query = query.Where(a => a.CreatedAt < toUtc);
         }
 

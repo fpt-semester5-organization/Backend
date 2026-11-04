@@ -65,8 +65,11 @@ public class AdminLlmopsService : IAdminLlmopsService
 
         // Múi giờ Việt Nam (UTC+7) chuẩn cho toàn bộ người dùng và hệ thống VeggieLife
         var vietnamOffset = TimeSpan.FromHours(7);
+        var nowUtc = DateTime.UtcNow;
+        var nowVn = nowUtc + vietnamOffset;
+        var todayVnDate = nowVn.Date;
 
-        // 1. Tính toán chi phí ngày hôm nay (hoặc ngày được chọn) và hạn mức ngân sách
+        // 1. Tính toán chi phí ngày hôm nay (theo múi giờ Việt Nam UTC+7) và hạn mức ngân sách
         DateTime targetDayStartUtc;
         DateTime targetDayEndUtc;
 
@@ -76,15 +79,10 @@ public class AdminLlmopsService : IAdminLlmopsService
             targetDayStartUtc = targetDayLocal - vietnamOffset;
             targetDayEndUtc = targetDayLocal.AddDays(1) - vietnamOffset;
         }
-        else if (fromDate.HasValue)
-        {
-            targetDayStartUtc = fromDate.Value.Date - vietnamOffset;
-            targetDayEndUtc = (toDate?.Date.AddDays(1) ?? fromDate.Value.Date.AddDays(1));
-        }
         else
         {
-            targetDayStartUtc = DateTime.UtcNow.Date;
-            targetDayEndUtc = DateTime.UtcNow.Date.AddDays(1);
+            targetDayStartUtc = todayVnDate - vietnamOffset;
+            targetDayEndUtc = targetDayStartUtc.AddDays(1);
         }
 
         var todayLogs = await _db.AiquotaLogs
@@ -96,12 +94,10 @@ public class AdminLlmopsService : IAdminLlmopsService
         var todayCostRaw = todayLogs.Sum(l => l.CostEstimateUsd);
         var todayCostUsd = Math.Round(todayCostRaw, 4);
 
-        // Tổng hợp chi phí thực tế theo từng mốc giờ (0h - 23h) từ CSDL (tuyệt đối trung thực, không mock)
+        // Tổng hợp chi phí thực tế theo từng mốc giờ (0h - 23h theo múi giờ Việt Nam UTC+7) từ CSDL
         var hourlyCosts = Enumerable.Range(0, 24).Select(h =>
         {
-            var inHour = fromDate.HasValue
-                ? todayLogs.Where(l => (l.CreatedAt + vietnamOffset).Hour == h).ToList()
-                : todayLogs.Where(l => l.CreatedAt.Hour == h).ToList();
+            var inHour = todayLogs.Where(l => (l.CreatedAt + vietnamOffset).Hour == h).ToList();
 
             return new HourlyCostDto
             {
@@ -140,9 +136,7 @@ public class AdminLlmopsService : IAdminLlmopsService
 
         if (toDate.HasValue)
         {
-            var toUtcLocal = toDate.Value.Date.AddDays(1) - vietnamOffset;
-            var toUtcUtc = toDate.Value.Date.AddDays(1);
-            var toUtc = toUtcLocal > toUtcUtc ? toUtcLocal : toUtcUtc;
+            var toUtc = toDate.Value.Date.AddDays(1) - vietnamOffset;
             query = query.Where(l => l.CreatedAt < toUtc);
         }
 
@@ -415,15 +409,17 @@ public class AdminLlmopsService : IAdminLlmopsService
     {
         var query = _db.AiquotaLogs.AsNoTracking();
 
+        var vietnamOffset = TimeSpan.FromHours(7);
+
         if (DateTime.TryParse(filter.From, out var fromDate))
         {
-            var fromUtc = fromDate.Date;
+            var fromUtc = fromDate.Date - vietnamOffset;
             query = query.Where(l => l.CreatedAt >= fromUtc);
         }
 
         if (DateTime.TryParse(filter.To, out var toDate))
         {
-            var toUtc = toDate.Date.AddDays(1);
+            var toUtc = toDate.Date.AddDays(1) - vietnamOffset;
             query = query.Where(l => l.CreatedAt < toUtc);
         }
 
