@@ -104,10 +104,10 @@ public class FoodsControllerTests
     public async Task CreateOrGetFood_WhenValid_ShouldReturnCreatedResponse()
     {
         // Arrange
-        var request = new CreateFoodRequest { FoodName = "Cơm tấm chay", CategoryId = 2 };
-        var entity = new Food { FoodId = 10, FoodName = "Cơm tấm chay", CategoryId = 2 };
+        var request = new CreateFoodRequest { FoodName = "Cơm tấm chay", CategoryId = 2, ImageUrl = "https://example.com/com-tam.jpg" };
+        var entity = new Food { FoodId = 10, FoodName = "Cơm tấm chay", CategoryId = 2, ImageUrl = "https://example.com/com-tam.jpg" };
 
-        _mockFoodService.Setup(s => s.GetOrCreateFoodAsync("Cơm tấm chay", 2, It.IsAny<CancellationToken>()))
+        _mockFoodService.Setup(s => s.GetOrCreateFoodAsync("Cơm tấm chay", 2, "https://example.com/com-tam.jpg", It.IsAny<CancellationToken>()))
             .ReturnsAsync(entity);
 
         // Act
@@ -121,6 +121,7 @@ public class FoodsControllerTests
         envelope.Should().NotBeNull();
         envelope!.Data!.FoodId.Should().Be(10);
         envelope.Data.FoodName.Should().Be("Cơm tấm chay");
+        envelope.Data.ImageUrl.Should().Be("https://example.com/com-tam.jpg");
     }
 
     [Fact]

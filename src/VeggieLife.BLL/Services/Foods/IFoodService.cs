@@ -35,6 +35,16 @@ public interface IFoodService
     Task<Food> GetOrCreateFoodAsync(string foodName, int categoryId, CancellationToken ct = default);
 
     /// <summary>
+    /// Tìm Food theo tên. Nếu chưa tồn tại → tự động tạo mới kèm ảnh đại diện rồi trả về.
+    /// </summary>
+    /// <param name="foodName">Tên món ăn cần lấy hoặc tạo.</param>
+    /// <param name="categoryId">Danh mục sẽ gán khi tạo mới.</param>
+    /// <param name="imageUrl">URL ảnh đại diện của món ăn (tùy chọn).</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>Entity Food đã tồn tại hoặc vừa được tạo mới.</returns>
+    Task<Food> GetOrCreateFoodAsync(string foodName, int categoryId, string? imageUrl, CancellationToken ct = default);
+
+    /// <summary>
     /// Lấy thông tin chi tiết món ăn theo mã định danh (FoodId).
     /// </summary>
     /// <param name="foodId">Mã định danh món ăn.</param>

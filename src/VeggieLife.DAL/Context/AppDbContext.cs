@@ -363,6 +363,10 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.FoodName)
                 .HasMaxLength(150)
                 .HasColumnName("Food_Name");
+            entity.Property(e => e.ImageUrl)
+                .HasMaxLength(1000)
+                .IsUnicode(false)
+                .HasColumnName("Image_Url");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysdatetime())")
                 .HasColumnName("Created_At");

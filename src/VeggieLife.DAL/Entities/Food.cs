@@ -17,6 +17,9 @@ public partial class Food
     /// <summary>Tên món ăn (duy nhất trong toàn hệ thống).</summary>
     public string FoodName { get; set; } = null!;
 
+    /// <summary>URL hình ảnh đại diện của món ăn.</summary>
+    public string? ImageUrl { get; set; }
+
     /// <summary>Thời điểm tạo bản ghi.</summary>
     public DateTime CreatedAt { get; set; }
 
@@ -29,4 +32,3 @@ public partial class Food
     /// <summary>Danh sách công thức nấu ăn cụ thể gắn với món ăn này.</summary>
     public virtual ICollection<Recipe> Recipes { get; set; } = new List<Recipe>();
 }
-

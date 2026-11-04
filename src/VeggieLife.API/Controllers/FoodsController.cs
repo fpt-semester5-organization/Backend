@@ -156,13 +156,14 @@ public class FoodsController : BaseApiController
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã danh mục không hợp lệ.");
         }
 
-        var food = await _foodService.GetOrCreateFoodAsync(request.FoodName, request.CategoryId, ct);
+        var food = await _foodService.GetOrCreateFoodAsync(request.FoodName, request.CategoryId, request.ImageUrl, ct);
 
         var dto = new FoodSummaryDto
         {
             FoodId = food.FoodId,
             FoodName = food.FoodName,
-            CategoryId = food.CategoryId
+            CategoryId = food.CategoryId,
+            ImageUrl = food.ImageUrl
         };
 
         return CreatedResponse(dto, "Xử lý thông tin món ăn thành công.");

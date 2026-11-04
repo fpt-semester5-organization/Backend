@@ -17,6 +17,7 @@ BEGIN
         [Food_ID]       INT IDENTITY(1,1) NOT NULL,
         [Category_ID]   INT NOT NULL,
         [Food_Name]     NVARCHAR(150) NOT NULL,
+        [Image_Url]     VARCHAR(1000) NULL,
         [Created_At]    DATETIME2(7) NOT NULL CONSTRAINT [DF_Foods_Created_At] DEFAULT (SYSDATETIME()),
         [Updated_At]    DATETIME2(7) NULL,
 
@@ -25,6 +26,16 @@ BEGIN
     );
 
     CREATE NONCLUSTERED INDEX [IX_Foods_Category_ID] ON [dbo].[Foods]([Category_ID] ASC);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[Foods]')
+      AND name = 'Image_Url'
+)
+BEGIN
+    ALTER TABLE [dbo].[Foods] ADD [Image_Url] VARCHAR(1000) NULL;
 END;
 GO
 

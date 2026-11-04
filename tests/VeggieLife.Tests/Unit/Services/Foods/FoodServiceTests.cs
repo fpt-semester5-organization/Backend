@@ -52,7 +52,7 @@ public class FoodServiceTests : IDisposable
         _db.FoodCategories.Add(category);
 
         _db.Foods.AddRange(
-            new Food { FoodId = 1, CategoryId = 1, FoodName = "Bún bò Huế chay", CreatedAt = DateTime.UtcNow },
+            new Food { FoodId = 1, CategoryId = 1, FoodName = "Bún bò Huế chay", ImageUrl = "https://example.com/bun-hue.jpg", CreatedAt = DateTime.UtcNow },
             new Food { FoodId = 2, CategoryId = 1, FoodName = "Bún riêu chay", CreatedAt = DateTime.UtcNow },
             new Food { FoodId = 3, CategoryId = 1, FoodName = "Phở chay Hà Nội", CreatedAt = DateTime.UtcNow }
         );
@@ -137,6 +137,32 @@ public class FoodServiceTests : IDisposable
         result!.FoodId.Should().Be(1);
         result.FoodName.Should().Be("Bún bò Huế chay");
         result.CategoryId.Should().Be(1);
+        result.ImageUrl.Should().Be("https://example.com/bun-hue.jpg");
+    }
+
+    [Fact]
+    public async Task GetOrCreateFoodAsync_WithImageUrl_InsertsNewWithImageUrl()
+    {
+        // Act
+        var food = await _service.GetOrCreateFoodAsync("Mì Quảng chay", 1, "https://example.com/mi-quang.jpg");
+
+        // Assert
+        food.Should().NotBeNull();
+        food.FoodName.Should().Be("Mì Quảng chay");
+        food.ImageUrl.Should().Be("https://example.com/mi-quang.jpg");
+        _db.Foods.Count().Should().Be(4);
+    }
+
+    [Fact]
+    public async Task GetOrCreateFoodAsync_WhenFoodExistsWithoutImageUrl_UpdatesImageUrl()
+    {
+        // Act
+        var food = await _service.GetOrCreateFoodAsync("Bún riêu chay", 1, "https://example.com/bun-rieu.jpg");
+
+        // Assert
+        food.Should().NotBeNull();
+        food.FoodId.Should().Be(2);
+        food.ImageUrl.Should().Be("https://example.com/bun-rieu.jpg");
     }
 
     [Fact]

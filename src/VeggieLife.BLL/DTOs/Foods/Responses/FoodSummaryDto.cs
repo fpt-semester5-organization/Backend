@@ -13,5 +13,7 @@ public class FoodSummaryDto
 
     /// <summary>Định danh danh mục mà món ăn thuộc về.</summary>
     public int CategoryId { get; set; }
-}
 
+    /// <summary>URL ảnh minh họa của món ăn.</summary>
+    public string? ImageUrl { get; set; }
+}

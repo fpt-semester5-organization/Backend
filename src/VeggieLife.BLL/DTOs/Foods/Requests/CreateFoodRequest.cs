@@ -14,5 +14,9 @@ public class CreateFoodRequest
     /// Mã danh mục món ăn (Category_ID).
     /// </summary>
     public int CategoryId { get; set; }
-}
 
+    /// <summary>
+    /// URL ảnh đại diện của món ăn (tùy chọn).
+    /// </summary>
+    public string? ImageUrl { get; set; }
+}

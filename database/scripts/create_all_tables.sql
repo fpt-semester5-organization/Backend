@@ -1542,6 +1542,7 @@ BEGIN
         [Food_ID]       INT IDENTITY(1,1) NOT NULL,
         [Category_ID]   INT NOT NULL,
         [Food_Name]     NVARCHAR(150) NOT NULL,
+        [Image_Url]     VARCHAR(1000) NULL,
         [Created_At]    DATETIME2(7) NOT NULL CONSTRAINT [DF_Foods_Created_At] DEFAULT (SYSDATETIME()),
         [Updated_At]    DATETIME2(7) NULL,
 
@@ -1601,5 +1602,30 @@ IF NOT EXISTS (
 )
 BEGIN
     CREATE NONCLUSTERED INDEX [IX_Recipes_Food_ID] ON [dbo].[Recipes]([Food_ID] ASC);
+END;
+GO
+
+-- ============================================================================
+-- START: 43_Foods_Add_ImageUrl.sql
+-- ============================================================================
+-- ============================================================================
+-- File: 43_Foods_Add_ImageUrl.sql
+-- Table: Foods (Alteration)
+-- Cluster: Kho Công thức Chay, Thực đơn & Đi chợ
+-- Description: Thêm thuộc tính Image_Url vào bảng Foods để lưu trữ ảnh đại diện của món ăn khái niệm.
+-- ============================================================================
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[Foods]')
+      AND name = 'Image_Url'
+)
+BEGIN
+    ALTER TABLE [dbo].[Foods] ADD [Image_Url] VARCHAR(1000) NULL;
 END;
 GO

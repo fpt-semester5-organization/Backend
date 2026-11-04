@@ -59,7 +59,8 @@ public class FoodService : IFoodService
             {
                 FoodId = f.FoodId,
                 FoodName = f.FoodName,
-                CategoryId = f.CategoryId
+                CategoryId = f.CategoryId,
+                ImageUrl = f.ImageUrl
             })
             .ToListAsync(ct);
 
@@ -92,6 +93,7 @@ public class FoodService : IFoodService
                 FoodId = f.FoodId,
                 FoodName = f.FoodName,
                 CategoryId = f.CategoryId,
+                ImageUrl = f.ImageUrl
             })
             .ToListAsync(ct);
 
@@ -105,7 +107,18 @@ public class FoodService : IFoodService
     /// <param name="categoryId">Danh mục sẽ gán khi tạo mới.</param>
     /// <param name="ct">CancellationToken.</param>
     /// <returns>Entity Food đã tồn tại hoặc vừa được tạo mới.</returns>
-    public async Task<Food> GetOrCreateFoodAsync(string foodName, int categoryId, CancellationToken ct = default)
+    public Task<Food> GetOrCreateFoodAsync(string foodName, int categoryId, CancellationToken ct = default)
+        => GetOrCreateFoodAsync(foodName, categoryId, null, ct);
+
+    /// <summary>
+    /// Tìm Food theo tên (case-insensitive). Nếu chưa có → INSERT mới kèm ảnh đại diện rồi trả về entity.
+    /// </summary>
+    /// <param name="foodName">Tên món ăn cần lấy hoặc tạo.</param>
+    /// <param name="categoryId">Danh mục sẽ gán khi tạo mới.</param>
+    /// <param name="imageUrl">URL ảnh đại diện của món ăn (tùy chọn).</param>
+    /// <param name="ct">CancellationToken.</param>
+    /// <returns>Entity Food đã tồn tại hoặc vừa được tạo mới.</returns>
+    public async Task<Food> GetOrCreateFoodAsync(string foodName, int categoryId, string? imageUrl, CancellationToken ct = default)
     {
         var normalizedName = (foodName ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(normalizedName))
@@ -113,11 +126,19 @@ public class FoodService : IFoodService
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Tên món ăn không được để trống.");
         }
 
+        var cleanImageUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl.Trim();
+
         var existing = await _db.Foods
             .FirstOrDefaultAsync(f => f.FoodName.ToLower() == normalizedName.ToLower(), ct);
 
         if (existing is not null)
         {
+            if (string.IsNullOrWhiteSpace(existing.ImageUrl) && !string.IsNullOrWhiteSpace(cleanImageUrl))
+            {
+                existing.ImageUrl = cleanImageUrl;
+                existing.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync(ct);
+            }
             return existing;
         }
 
@@ -125,14 +146,15 @@ public class FoodService : IFoodService
         {
             FoodName = normalizedName,
             CategoryId = categoryId > 0 ? categoryId : 1,
+            ImageUrl = cleanImageUrl,
             CreatedAt = DateTime.UtcNow,
         };
 
         _db.Foods.Add(newFood);
         await _db.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Created new Food: Id={FoodId}, Name={FoodName}, CategoryId={CategoryId}",
-            newFood.FoodId, newFood.FoodName, newFood.CategoryId);
+        _logger.LogInformation("Created new Food: Id={FoodId}, Name={FoodName}, CategoryId={CategoryId}, ImageUrl={ImageUrl}",
+            newFood.FoodId, newFood.FoodName, newFood.CategoryId, newFood.ImageUrl);
 
         return newFood;
     }
@@ -157,6 +179,7 @@ public class FoodService : IFoodService
                 FoodId = f.FoodId,
                 FoodName = f.FoodName,
                 CategoryId = f.CategoryId,
+                ImageUrl = f.ImageUrl
             })
             .FirstOrDefaultAsync(ct);
     }
