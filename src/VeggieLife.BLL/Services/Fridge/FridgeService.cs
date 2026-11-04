@@ -80,7 +80,21 @@ public class FridgeService : IFridgeService
         }
 
         var isGuest = string.Equals(userRole, UserRoles.Guest, StringComparison.OrdinalIgnoreCase) || userId == null;
-        var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase);
+        var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(userRole, UserRoles.Admin, StringComparison.OrdinalIgnoreCase);
+
+        if (!isVip && !isGuest && userId.HasValue)
+        {
+            var targetUserId = userId.Value;
+            var now = DateTime.UtcNow;
+            isVip = await _db.Users.AnyAsync(u =>
+                u.UserId == targetUserId && (
+                    u.Role == UserRoles.Vip ||
+                    u.PaymentTransactions.Any(pt =>
+                        pt.TransactionStatus == "SUCCESS" &&
+                        pt.StartsAt <= now && now < pt.EndsAt)
+                ), ct);
+        }
 
         // =========================================================================
         // BƯỚC 1: KIỂM TRA HẠN MỨC (QUOTA CHECK) - Ưu tiên kiểm tra trước khi xử lý ảnh
@@ -477,6 +491,40 @@ public class FridgeService : IFridgeService
 
             // Lưu các thay đổi trong FridgeInventory
             await _db.SaveChangesAsync(ct);
+
+            // 6.3b Tận dụng ảnh bóc tách từ ảnh tủ lạnh làm avatar cho nguyên liệu nếu nguyên liệu CHƯA có ảnh
+            // Tuyệt đối không tự động gán đè nếu nguyên liệu đã có ảnh hoặc đang bị Khóa (IsLocked)
+            try
+            {
+                var hasIngChanges = false;
+                foreach (var (dto, matchedIng) in matchedItemsForSave)
+                {
+                    // Nếu nguyên liệu đã bị Khóa hoặc đã có ảnh đại diện, tuyệt đối KHÔNG đè
+                    if (matchedIng.IsLocked || !string.IsNullOrWhiteSpace(matchedIng.ImageUrl))
+                    {
+                        continue;
+                    }
+
+                    if (dto.Box2D != null && dto.Box2D.Count == 4 && dto.Confidence.HasValue && dto.Confidence.Value >= 0.80)
+                    {
+                        var croppedUrl = !string.IsNullOrWhiteSpace(dto.ThumbnailUrl)
+                            ? dto.ThumbnailUrl
+                            : BuildCloudinaryCropUrl(fridgeSession.ImageCdnUrl, dto.Box2D);
+
+                        matchedIng.ImageUrl = croppedUrl;
+                        hasIngChanges = true;
+                    }
+                }
+
+                if (hasIngChanges)
+                {
+                    await _db.SaveChangesAsync(ct);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Lỗi khi cập nhật ảnh nguyên liệu từ phiên quét tủ lạnh {SessionId}", fridgeSession.SessionId);
+            }
 
             // Gán lại InventoryId cho các mục vừa thêm mới
             foreach (var (dto, matchedIng) in matchedItemsForSave)
@@ -1274,7 +1322,16 @@ public class FridgeService : IFridgeService
                 requiredIngredients = recipeIngredients;
             }
 
-            var hasInsufficientQuantity = false;
+            // Gia vị/đồ khô quầy CONDIMENTS (muối, đường, dầu, nước tương...) coi là có sẵn trong bếp,
+            // không tính vào mẫu số; nếu món chỉ toàn gia vị thì giữ nguyên danh sách.
+            var mainIngredients = requiredIngredients
+                .Where(ri => !string.Equals(ri.Ingredient?.DefaultStallType, "CONDIMENTS", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (mainIngredients.Count > 0)
+            {
+                requiredIngredients = mainIngredients;
+            }
+
             var matchedCount = 0;
             var missing = new List<MissingIngredientDto>();
 
@@ -1284,14 +1341,11 @@ public class FridgeService : IFridgeService
                 {
                     // Tủ lạnh CÓ nguyên liệu này -> Kiểm tra định lượng:
                     // Công thức cần (ri.QuantityNeeded) phải <= Tủ lạnh đang có (avail.TotalQty)
-                    if (IsQuantitySufficient(ri.QuantityNeeded, ri.Unit, avail.TotalQty, avail.Unit))
+                    // Tủ có nguyên liệu là tính khớp; định lượng từ ảnh quét thường chỉ ước lượng ("1 hộp", "1 bó")
+                    // nên thiếu định lượng không loại món mà chỉ ghi vào danh sách cần mua thêm.
+                    matchedCount++;
+                    if (!IsQuantitySufficient(ri.QuantityNeeded, ri.Unit, avail.TotalQty, avail.Unit))
                     {
-                        matchedCount++;
-                    }
-                    else
-                    {
-                        // Định lượng công thức cần LỚN HƠN định lượng trong tủ đang có (ví dụ: cần 500g > có 300g)
-                        hasInsufficientQuantity = true;
                         missing.Add(new MissingIngredientDto
                         {
                             IngredientId = ri.IngredientId,
@@ -1308,13 +1362,6 @@ public class FridgeService : IFridgeService
                         Name = ri.Ingredient?.IngredientName ?? $"Nguyên liệu #{ri.IngredientId}"
                     });
                 }
-            }
-
-            // Yêu cầu người dùng: Món ăn được gợi ý phải khớp với số lượng:
-            // Nếu nguyên liệu trong tủ KHÔNG ĐỦ định lượng yêu cầu (ri.QuantityNeeded > availableQty) -> LOẠI BỎ MÓN NÀY!
-            if (hasInsufficientQuantity)
-            {
-                continue;
             }
 
             var similarity = (double)matchedCount / requiredIngredients.Count;
@@ -1449,7 +1496,21 @@ public class FridgeService : IFridgeService
         CancellationToken ct = default)
     {
         var isGuest = string.Equals(userRole, UserRoles.Guest, StringComparison.OrdinalIgnoreCase) || userId == null;
-        var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase);
+        var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(userRole, UserRoles.Admin, StringComparison.OrdinalIgnoreCase);
+
+        if (!isVip && !isGuest && userId.HasValue)
+        {
+            var targetUserId = userId.Value;
+            var now = DateTime.UtcNow;
+            isVip = await _db.Users.AnyAsync(u =>
+                u.UserId == targetUserId && (
+                    u.Role == UserRoles.Vip ||
+                    u.PaymentTransactions.Any(pt =>
+                        pt.TransactionStatus == "SUCCESS" &&
+                        pt.StartsAt <= now && now < pt.EndsAt)
+                ), ct);
+        }
 
         if (isGuest)
         {
@@ -1529,5 +1590,32 @@ public class FridgeService : IFridgeService
             CreatedAt = session.CreatedAt,
             Detected = detected
         };
+    }
+
+    private static string BuildCloudinaryCropUrl(string originalUrl, List<int> box2d)
+    {
+        if (box2d == null || box2d.Count != 4) return originalUrl;
+        var ymin = box2d[0];
+        var xmin = box2d[1];
+        var ymax = box2d[2];
+        var xmax = box2d[3];
+        var width = xmax - xmin;
+        var height = ymax - ymin;
+        if (width <= 0 || height <= 0) return originalUrl;
+
+        var xRatio = Math.Round((double)xmin / 1000.0, 3);
+        var yRatio = Math.Round((double)ymin / 1000.0, 3);
+        var wRatio = Math.Round((double)width / 1000.0, 3);
+        var hRatio = Math.Round((double)height / 1000.0, 3);
+
+        var uploadSegment = "/upload/";
+        var uploadIdx = originalUrl.IndexOf(uploadSegment, StringComparison.OrdinalIgnoreCase);
+        if (uploadIdx >= 0)
+        {
+            var transform = $"c_crop,x_{xRatio:0.000},y_{yRatio:0.000},w_{wRatio:0.000},h_{hRatio:0.000}/";
+            return originalUrl.Insert(uploadIdx + uploadSegment.Length, transform);
+        }
+
+        return originalUrl;
     }
 }
