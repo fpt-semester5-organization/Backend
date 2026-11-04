@@ -320,7 +320,9 @@ public class RecipeService : IRecipeService
         // 7. Xác định Video liên kết: tác giả hoặc Admin xem được mọi video chưa xóa (kể cả BANNED/PROCESSING), người khác chỉ xem READY
         var activeVideo = recipe.Posts
             .SelectMany(p => p.Videos)
-            .FirstOrDefault(v => (isAuthor || isAdmin) ? v.Status != "DELETED" : v.Status == "READY");
+            .Where(v => (isAuthor || isAdmin) ? v.Status != "DELETED" : v.Status == "READY")
+            .OrderByDescending(v => v.VideoId)
+            .FirstOrDefault();
 
         var hasVideo = activeVideo != null;
         var contentType = hasVideo ? "VIDEO" : "RECIPE";
@@ -330,7 +332,7 @@ public class RecipeService : IRecipeService
         var videos = recipe.Posts
             .SelectMany(p => p.Videos)
             .Where(v => (isAuthor || isAdmin) ? v.Status != "DELETED" : v.Status == "READY")
-            .OrderBy(v => v.VideoId)
+            .OrderByDescending(v => v.VideoId)
             .Select(v => new RecipeVideoDto
             {
                 VideoId = v.VideoId,
