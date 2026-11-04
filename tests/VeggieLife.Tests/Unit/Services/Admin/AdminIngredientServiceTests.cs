@@ -13,6 +13,7 @@ using VeggieLife.BLL.DTOs.Admin.Ingredients;
 using VeggieLife.BLL.Services.Admin;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.Knowledge;
+using VeggieLife.BLL.Services.Media;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
 using Xunit;
@@ -32,6 +33,7 @@ public class AdminIngredientServiceTests : IDisposable
 {
     private readonly AppDbContext _db;
     private readonly Mock<IRedisService> _mockRedis = new();
+    private readonly Mock<IMediaService> _mockMediaService = new();
     private readonly Mock<IKnowledgeSyncQueue> _mockKnowledgeSyncQueue = new();
     private readonly AdminIngredientService _service;
     private const int AdminId = 999;
@@ -47,6 +49,7 @@ public class AdminIngredientServiceTests : IDisposable
         _service = new AdminIngredientService(
             _db,
             _mockRedis.Object,
+            _mockMediaService.Object,
             _mockKnowledgeSyncQueue.Object,
             NullLogger<AdminIngredientService>.Instance);
 
@@ -364,6 +367,82 @@ public class AdminIngredientServiceTests : IDisposable
         _mockKnowledgeSyncQueue.Verify(
             q => q.EnqueueUpsertAsync("ALLERGEN", response.AllergenId, It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    #endregion
+
+    #region Khóa Nguyên Liệu & Tải Ảnh Cloudinary (BR-ADM-ING-01)
+
+    [Fact]
+    public async Task ToggleLockAsync_ValidIngredient_TogglesStatus()
+    {
+        var result = await _service.ToggleLockAsync(1, true, AdminId);
+        result.Should().BeTrue();
+
+        var entity = await _db.Ingredients.FindAsync(1);
+        entity!.IsLocked.Should().BeTrue();
+
+        // Mở khóa lại
+        var unlocked = await _service.ToggleLockAsync(1, false, AdminId);
+        unlocked.Should().BeFalse();
+        entity.IsLocked.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UpdateIngredientAsync_WhenLocked_ThrowsForbidden()
+    {
+        // Khóa nguyên liệu ID 1
+        await _service.ToggleLockAsync(1, true, AdminId);
+
+        var request = new UpdateAdminIngredientRequest
+        {
+            Name = "Tên Mới Khi Đã Khóa"
+        };
+
+        var act = () => _service.UpdateIngredientAsync(1, request, AdminId);
+
+        await act.Should().ThrowAsync<AppException>()
+            .Where(e => e.StatusCode == 403 && e.ErrorCode == ErrorCodes.ErrAdmForbidden);
+    }
+
+    [Fact]
+    public async Task UploadImageAsync_WhenLocked_ThrowsForbidden()
+    {
+        await _service.ToggleLockAsync(1, true, AdminId);
+
+        using var stream = new System.IO.MemoryStream(new byte[] { 1, 2, 3 });
+        var act = () => _service.UploadImageAsync(1, stream, "test.png", AdminId);
+
+        await act.Should().ThrowAsync<AppException>()
+            .Where(e => e.StatusCode == 403 && e.ErrorCode == ErrorCodes.ErrAdmForbidden);
+    }
+
+    [Fact]
+    public async Task UploadImageAsync_WhenNotLocked_UploadsToCloudinary_AndUpdatesDb()
+    {
+        await _service.ToggleLockAsync(1, false, AdminId);
+
+        var dummyUploadResponse = new VeggieLife.BLL.DTOs.Media.Responses.MediaUploadResponse
+        {
+            PublicId = "veggielife/ingredients/test_ing_1",
+            SecureUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1/veggielife/ingredients/test_ing_1.webp"
+        };
+
+        _mockMediaService
+            .Setup(m => m.UploadImageAsync(It.IsAny<System.IO.Stream>(), "test.png", "veggielife/ingredients", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(dummyUploadResponse);
+
+        _mockMediaService
+            .Setup(m => m.GetImageUrl(dummyUploadResponse.PublicId, 400, 400, "fill", "webp"))
+            .Returns("https://res.cloudinary.com/swrsuenp/image/upload/c_fill,w_400,h_400/v1/veggielife/ingredients/test_ing_1.webp");
+
+        using var stream = new System.IO.MemoryStream(new byte[] { 1, 2, 3 });
+        var url = await _service.UploadImageAsync(1, stream, "test.png", AdminId);
+
+        url.Should().Contain("test_ing_1");
+
+        var entity = await _db.Ingredients.FindAsync(1);
+        entity!.ImageUrl.Should().Be(url);
     }
 
     #endregion

@@ -51,4 +51,23 @@ public interface IAdminIngredientService
         CreateAdminAllergenRequest request,
         int adminId,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Chuyển đổi trạng thái Khóa / Mở khóa nguyên liệu để bảo vệ dữ liệu chuẩn (BR-ADM-ING-01).
+    /// </summary>
+    Task<bool> ToggleLockAsync(
+        int id,
+        bool isLocked,
+        int adminId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Tải tệp hình ảnh lên Cloudinary CDN và lưu URL làm ảnh đại diện duy nhất cho nguyên liệu.
+    /// </summary>
+    Task<string> UploadImageAsync(
+        int id,
+        System.IO.Stream fileStream,
+        string fileName,
+        int adminId,
+        CancellationToken ct = default);
 }

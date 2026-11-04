@@ -13,6 +13,8 @@ public class AdminIngredientListItemDto
     public bool IsAllium { get; set; }
     public string DefaultStallType { get; set; } = string.Empty;
     public string FoodGroup { get; set; } = string.Empty;
+    public string? ImageUrl { get; set; }
+    public bool IsLocked { get; set; }
     public List<AdminIngredientAllergenItemDto> Allergens { get; set; } = new();
 }
 

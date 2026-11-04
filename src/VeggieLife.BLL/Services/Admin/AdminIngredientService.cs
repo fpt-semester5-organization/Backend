@@ -12,6 +12,7 @@ using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.Admin.Ingredients;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.Knowledge;
+using VeggieLife.BLL.Services.Media;
 using VeggieLife.BLL.Validators.Admin;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
@@ -25,17 +26,20 @@ public class AdminIngredientService : IAdminIngredientService
 {
     private readonly AppDbContext _db;
     private readonly IRedisService _redis;
+    private readonly IMediaService _mediaService;
     private readonly IKnowledgeSyncQueue _knowledgeSyncQueue;
     private readonly ILogger<AdminIngredientService> _logger;
 
     public AdminIngredientService(
         AppDbContext db,
         IRedisService redis,
+        IMediaService mediaService,
         IKnowledgeSyncQueue knowledgeSyncQueue,
         ILogger<AdminIngredientService> logger)
     {
         _db = db;
         _redis = redis;
+        _mediaService = mediaService;
         _knowledgeSyncQueue = knowledgeSyncQueue;
         _logger = logger;
     }
@@ -66,6 +70,35 @@ public class AdminIngredientService : IAdminIngredientService
             query = query.Where(i => i.IngredientAllergens.Any(ia => ia.AllergenId == request.AllergenId.Value));
         }
 
+        if (!string.IsNullOrWhiteSpace(request.FoodGroup))
+        {
+            var foodGroupTrimmed = request.FoodGroup.Trim().ToUpperInvariant();
+            query = query.Where(i => i.FoodGroup == foodGroupTrimmed);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.StallType))
+        {
+            var stallTypeTrimmed = request.StallType.Trim().ToUpperInvariant();
+            query = query.Where(i => i.DefaultStallType == stallTypeTrimmed);
+        }
+
+        if (request.IsLocked.HasValue)
+        {
+            query = query.Where(i => i.IsLocked == request.IsLocked.Value);
+        }
+
+        if (request.HasImage.HasValue)
+        {
+            if (request.HasImage.Value)
+            {
+                query = query.Where(i => i.ImageUrl != null && i.ImageUrl != "");
+            }
+            else
+            {
+                query = query.Where(i => i.ImageUrl == null || i.ImageUrl == "");
+            }
+        }
+
         var total = await query.CountAsync(ct);
 
         var entities = await query
@@ -82,6 +115,8 @@ public class AdminIngredientService : IAdminIngredientService
             IsAllium = i.IsAllium,
             DefaultStallType = i.DefaultStallType,
             FoodGroup = i.FoodGroup,
+            ImageUrl = i.ImageUrl,
+            IsLocked = i.IsLocked,
             Allergens = i.IngredientAllergens
                 .OrderBy(ia => ia.AllergenId)
                 .Select(ia => new AdminIngredientAllergenItemDto
@@ -126,6 +161,8 @@ public class AdminIngredientService : IAdminIngredientService
             FoodGroup = foodGroup,
             CaloriesPer100g = Math.Round(request.CaloriesPer100g, 1),
             IsAllium = request.IsAllium,
+            ImageUrl = string.IsNullOrWhiteSpace(request.ImageUrl) ? null : request.ImageUrl.Trim(),
+            IsLocked = request.IsLocked,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -190,6 +227,11 @@ public class AdminIngredientService : IAdminIngredientService
             throw AppException.NotFound(ErrorCodes.ErrAdmNotFound, "Không tìm thấy nguyên liệu.");
         }
 
+        if (ingredient.IsLocked && request.IsLocked != false)
+        {
+            throw AppException.Forbidden(ErrorCodes.ErrAdmForbidden, "Nguyên liệu đang bị KHÓA bởi Quản trị viên. Hãy mở khóa trước khi chỉnh sửa.");
+        }
+
         var oldSnapshot = JsonSerializer.Serialize(new
         {
             ingredient.IngredientId,
@@ -238,6 +280,16 @@ public class AdminIngredientService : IAdminIngredientService
         if (request.IsAllium.HasValue)
         {
             ingredient.IsAllium = request.IsAllium.Value;
+        }
+
+        if (request.ImageUrl != null)
+        {
+            ingredient.ImageUrl = string.IsNullOrWhiteSpace(request.ImageUrl) ? null : request.ImageUrl.Trim();
+        }
+
+        if (request.IsLocked.HasValue)
+        {
+            ingredient.IsLocked = request.IsLocked.Value;
         }
 
         await _db.SaveChangesAsync(ct);
@@ -305,6 +357,11 @@ public class AdminIngredientService : IAdminIngredientService
         if (ingredient == null)
         {
             throw AppException.NotFound(ErrorCodes.ErrAdmNotFound, "Không tìm thấy nguyên liệu.");
+        }
+
+        if (ingredient.IsLocked)
+        {
+            throw AppException.Forbidden(ErrorCodes.ErrAdmForbidden, "Nguyên liệu đang bị KHÓA bởi Quản trị viên. Hãy mở khóa trước khi chỉnh sửa.");
         }
 
         var distinctAllergenIds = request.AllergenIds.Distinct().ToList();
@@ -452,6 +509,72 @@ public class AdminIngredientService : IAdminIngredientService
         {
             AllergenId = allergen.AllergenId
         };
+    }
+
+    /// <summary>
+    /// Chuyển đổi trạng thái Khóa / Mở khóa nguyên liệu để bảo vệ dữ liệu chuẩn (BR-ADM-ING-01).
+    /// </summary>
+    public async Task<bool> ToggleLockAsync(
+        int id,
+        bool isLocked,
+        int adminId,
+        CancellationToken ct = default)
+    {
+        var ingredient = await _db.Ingredients.FirstOrDefaultAsync(i => i.IngredientId == id, ct);
+        if (ingredient == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrAdmNotFound, "Không tìm thấy nguyên liệu.");
+        }
+
+        ingredient.IsLocked = isLocked;
+        await _db.SaveChangesAsync(ct);
+        await InvalidateIngredientCachesAsync(ct);
+
+        _logger.LogInformation("Admin ID {AdminId} đã {Action} nguyên liệu ID {Id} ({Name})",
+            adminId, isLocked ? "KHÓA" : "MỞ KHÓA", id, ingredient.IngredientName);
+
+        return ingredient.IsLocked;
+    }
+
+    /// <summary>
+    /// Tải tệp hình ảnh lên Cloudinary CDN và lưu URL làm ảnh đại diện duy nhất cho nguyên liệu.
+    /// </summary>
+    public async Task<string> UploadImageAsync(
+        int id,
+        System.IO.Stream fileStream,
+        string fileName,
+        int adminId,
+        CancellationToken ct = default)
+    {
+        var ingredient = await _db.Ingredients.FirstOrDefaultAsync(i => i.IngredientId == id, ct);
+        if (ingredient == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrAdmNotFound, "Không tìm thấy nguyên liệu.");
+        }
+
+        if (ingredient.IsLocked)
+        {
+            throw AppException.Forbidden(ErrorCodes.ErrAdmForbidden, "Nguyên liệu đang bị KHÓA. Hãy mở khóa trước khi tải ảnh mới.");
+        }
+
+        // Tải ảnh lên Cloudinary thư mục veggielife/ingredients
+        var upload = await _mediaService.UploadImageAsync(fileStream, fileName, "veggielife/ingredients", ct);
+
+        // Lấy URL WebP tối ưu tỷ lệ 1:1 (400x400)
+        var cdnUrl = _mediaService.GetImageUrl(upload.PublicId, width: 400, height: 400, crop: "fill", format: "webp");
+        if (string.IsNullOrWhiteSpace(cdnUrl))
+        {
+            cdnUrl = upload.SecureUrl ?? upload.Url;
+        }
+
+        ingredient.ImageUrl = cdnUrl;
+        await _db.SaveChangesAsync(ct);
+        await InvalidateIngredientCachesAsync(ct);
+
+        _logger.LogInformation("Admin ID {AdminId} đã tải ảnh lên Cloudinary thành công cho nguyên liệu {Id} ({Name}): {Url}",
+            adminId, id, ingredient.IngredientName, cdnUrl);
+
+        return cdnUrl;
     }
 
     private async Task InvalidateIngredientCachesAsync(CancellationToken ct)
