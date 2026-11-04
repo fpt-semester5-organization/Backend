@@ -16,7 +16,7 @@ Sinh bằng Python 3 (không cần thư viện ngoài), nạp bằng sqlcmd/SSMS
 Hoặc nạp từng Level theo thứ tự: `00_header, 01_cleanup, 02_lookups, 10..15 (Level 0/1), 20..24 (Level 2), 99_footer` (cần chạy chung 1 batch vì dùng biến `@Now`, bảng tạm `#sch/#cat/#alg/#plan/#ing` và 1 transaction).
 
 ## Tài khoản test (chỉ dùng cho DB local/dev)
-Mọi tài khoản seed và admin hệ thống dùng chung mật khẩu test `Veggie@2026` (bcrypt `$2a$11$GBRaj...` trong `07_Seed_AdminUser.sql` và `HASH` của generator).
+Mọi tài khoản seed và admin hệ thống dùng chung một mật khẩu test (bcrypt `$2a$11$GBRaj...` trong `07_Seed_AdminUser.sql` và `HASH` của generator). Mật khẩu ghi trong `TEST_ACCOUNTS.local.md` cùng thư mục (không commit; xin Leader nếu chưa có).
 
 | Vai trò | Email |
 |---|---|
