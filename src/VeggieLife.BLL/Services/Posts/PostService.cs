@@ -107,7 +107,13 @@ public class PostService : IPostService
         // 4. Xây dựng truy vấn CSDL: Loại bỏ bài đã xóa mềm (DELETED) và các bài viết đại diện nội bộ của công thức
         var query = _db.Posts
             .AsNoTracking()
-            .Where(p => p.ModerationStatus != "DELETED" && (p.RecipeId == null || (p.Recipe != null && p.Title != p.Recipe.Title)));
+            .Where(p => p.ModerationStatus != "DELETED");
+
+        // Khi khong phai truy van theo tac gia cu the (vi du bang tin chung), loai bo bai viet dai dien noi bo cua cong thuc
+        if (!isAuthorQuery && !filter.AuthorId.HasValue)
+        {
+            query = query.Where(p => p.RecipeId == null || (p.Recipe != null && p.Title != p.Recipe.Title));
+        }
 
         // isAuthorQuery đã được tính toán ở đầu hàm để phân biệt truy vấn quản lý cá nhân
 
