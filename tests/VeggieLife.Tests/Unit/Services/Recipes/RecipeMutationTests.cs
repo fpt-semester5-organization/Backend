@@ -94,8 +94,6 @@ public class RecipeMutationTests : IDisposable
 
         // 2. Danh mục món ăn
         _db.FoodCategories.AddRange(
-            new FoodCategory { CategoryId = 1, CategoryName = "Món canh", IsActive = true },
-            new FoodCategory { CategoryId = 2, CategoryName = "Món xào", IsActive = true }
         );
 
         // 3. Nguyên liệu thực phẩm
@@ -148,7 +146,6 @@ public class RecipeMutationTests : IDisposable
         var req = new CreateRecipeRequest
         {
             Title = "Nháp ngắn",
-            CategoryId = 1,
             DietarySchoolId = 7,
             Instructions = new List<string> { "Chỉ 1 bước thử nghiệm" },
             CookTimeMinutes = 10,
@@ -226,7 +223,6 @@ public class RecipeMutationTests : IDisposable
             new Recipe
             {
                 UserId = 201,
-                CategoryId = 1,
                 DietarySchoolId = 7,
                 Title = "Bài viết công thức 1 hôm nay",
                 Instructions = "[]",
@@ -238,7 +234,6 @@ public class RecipeMutationTests : IDisposable
             new Recipe
             {
                 UserId = 201,
-                CategoryId = 1,
                 DietarySchoolId = 7,
                 Title = "Bài viết công thức 2 hôm nay",
                 Instructions = "[]",
@@ -253,7 +248,6 @@ public class RecipeMutationTests : IDisposable
         var req = new CreateRecipeRequest
         {
             Title = "Công thức thứ ba vượt giới hạn trong ngày",
-            CategoryId = 1,
             DietarySchoolId = 7,
             Instructions = new List<string> { "Bước 1: Rửa rau", "Bước 2: Luộc chín" },
             CookTimeMinutes = 15,
@@ -445,7 +439,6 @@ public class RecipeMutationTests : IDisposable
         {
             RecipeId = 501,
             UserId = 101,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức gốc của 101",
             Instructions = "[\"Bước 1\", \"Bước 2\"]",
@@ -478,7 +471,6 @@ public class RecipeMutationTests : IDisposable
         {
             RecipeId = 502,
             UserId = 101,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức đang bị cách ly",
             Instructions = "[\"Bước 1\", \"Bước 2\"]",
@@ -528,7 +520,6 @@ public class RecipeMutationTests : IDisposable
         {
             RecipeId = 503,
             UserId = 101,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức đã duyệt giữ nguyên",
             Instructions = "[\"Bước 1\", \"Bước 2\"]",
@@ -576,7 +567,6 @@ public class RecipeMutationTests : IDisposable
         {
             RecipeId = 504,
             UserId = 101,
-            CategoryId = 1,
             DietarySchoolId = 7, // VEGAN
             Title = originalTitle,
             Instructions = originalInstructions,
@@ -637,7 +627,6 @@ public class RecipeMutationTests : IDisposable
         {
             RecipeId = 505,
             UserId = 101,
-            CategoryId = 2,
             DietarySchoolId = 7,
             Title = originalTitle,
             Instructions = "[\"Bước 1: Sốt cà chua\", \"Bước 2: Cho đậu\"]",
@@ -694,7 +683,6 @@ public class RecipeMutationTests : IDisposable
         {
             RecipeId = 506,
             UserId = 101,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Canh nấm bản gốc",
             Instructions = "[\"Bước 1: Nấu canh\", \"Bước 2: Nêm nếm\"]",
@@ -757,7 +745,6 @@ public class RecipeMutationTests : IDisposable
         {
             RecipeId = 601,
             UserId = 101,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức cần gỡ khỏi trang cá nhân",
             Instructions = "[]",
@@ -805,7 +792,6 @@ public class RecipeMutationTests : IDisposable
         {
             RecipeId = 602,
             UserId = 101,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức cần xóa mềm toàn bộ",
             Instructions = "[]",

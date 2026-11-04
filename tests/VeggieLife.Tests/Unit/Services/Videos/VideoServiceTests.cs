@@ -723,7 +723,6 @@ public class VideoServiceTests : IDisposable
         {
             RecipeId = 70,
             UserId = 1,
-            CategoryId = 1,
             DietarySchoolId = 1,
             Title = "Canh chua chay",
             Instructions = "Bước 1...",

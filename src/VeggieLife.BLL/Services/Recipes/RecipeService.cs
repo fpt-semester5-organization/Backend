@@ -5,6 +5,7 @@ using System.Linq.Expressions;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -119,12 +120,12 @@ public class RecipeService : IRecipeService
         // 4. Xây dựng truy vấn CSDL: Chỉ lấy Status = APPROVED_ACTIVE (BR-ADM-CNT-001) và Category.IsActive (BR-ADM-MAS-001)
         var query = _db.Recipes
             .AsNoTracking()
-            .Where(r => r.Status == "APPROVED_ACTIVE" && r.Category.IsActive);
+            .Where(r => r.Status == "APPROVED_ACTIVE" && (r.Food == null || r.Food.Category.IsActive));
 
         // Lọc theo Danh mục
         if (filter.CategoryId.HasValue)
         {
-            query = query.Where(r => r.CategoryId == filter.CategoryId.Value);
+            query = query.Where(r => r.Food != null && r.Food.CategoryId == filter.CategoryId.Value);
         }
 
         // Lọc theo Trường phái chay
@@ -193,6 +194,9 @@ public class RecipeService : IRecipeService
                 RecipeId = r.RecipeId,
                 FoodId = r.FoodId,
                 FoodName = r.Food != null ? r.Food.FoodName : null,
+                FoodImageUrl = r.Food != null ? r.Food.ImageUrl : null,
+                CategoryId = r.Food != null ? r.Food.CategoryId : null,
+                CategoryName = r.Food != null && r.Food.Category != null ? r.Food.Category.CategoryName : null,
                 Type = r.Posts.Any(p => p.Videos.Any(v => v.Status == "READY" || v.Status == "PROCESSING")) || r.VideoTranscripts.Any() ? "VIDEO" : "RECIPE",
                 VideoId = r.Posts.SelectMany(p => p.Videos)
                     .Where(v => v.Status == "READY" || v.Status == "PROCESSING")
@@ -269,7 +273,7 @@ public class RecipeService : IRecipeService
 
         // 3. Truy vấn CSDL: SELECT Recipes + RecipeIngredients + Ingredients + FoodCategories + DietarySchools
         var recipe = await _db.Recipes
-            .Include(r => r.Category)
+            .Include(r => r.Food).ThenInclude(f => f.Category)
             .Include(r => r.DietarySchool)
             .Include(r => r.RecipeIngredients)
                 .ThenInclude(ri => ri.Ingredient)
@@ -366,9 +370,12 @@ public class RecipeService : IRecipeService
             RecipeId = recipe.RecipeId,
             AuthorId = recipe.UserId,
             Status = (isAuthor || isAdmin) ? recipe.Status : null,
-            CategoryId = recipe.CategoryId,
+            CategoryId = recipe.Food?.CategoryId,
             DietarySchoolId = recipe.DietarySchoolId,
             DifficultyLevel = recipe.DifficultyLevel,
+            FoodId = recipe.FoodId,
+            FoodName = recipe.Food?.FoodName,
+            FoodImageUrl = recipe.Food?.ImageUrl,
             Type = contentType,
             Title = recipe.Title,
             ImageUrl = recipe.ImageUrl,
@@ -451,7 +458,7 @@ public class RecipeService : IRecipeService
         // 3. Truy vấn công thức gốc đang xem: kiểm tra tồn tại và APPROVED_ACTIVE
         var sourceRecipe = await _db.Recipes
             .AsNoTracking()
-            .Include(r => r.Category)
+            .Include(r => r.Food).ThenInclude(f => f.Category)
             .Include(r => r.DietarySchool)
             .Include(r => r.RecipeIngredients)
             .FirstOrDefaultAsync(r => r.RecipeId == recipeId && r.Status == "APPROVED_ACTIVE", ct);
@@ -472,7 +479,7 @@ public class RecipeService : IRecipeService
         // 4. Truy vấn các công thức APPROVED_ACTIVE cùng trường phái, loại trừ chính công thức đang xem
         var candidateRecipes = await _db.Recipes
             .AsNoTracking()
-            .Include(r => r.Category)
+            .Include(r => r.Food).ThenInclude(f => f.Category)
             .Include(r => r.DietarySchool)
             .Include(r => r.RecipeIngredients)
             .Include(r => r.Posts)
@@ -481,7 +488,7 @@ public class RecipeService : IRecipeService
                 .ThenInclude(p => p.Videos)
             .Where(r => r.RecipeId != recipeId &&
                         r.Status == "APPROVED_ACTIVE" &&
-                        r.Category.IsActive &&
+                        (r.Food == null || r.Food.Category.IsActive) &&
                         r.DietarySchoolId == targetDietarySchoolId)
             .ToListAsync(ct);
 
@@ -494,7 +501,7 @@ public class RecipeService : IRecipeService
             .Select(r =>
             {
                 var sharedIngredientsCount = r.RecipeIngredients.Count(ri => sourceIngredientIds.Contains(ri.IngredientId));
-                var isSameCategory = r.CategoryId == sourceRecipe.CategoryId;
+                var isSameCategory = r.Food != null && sourceRecipe.Food != null && r.Food.CategoryId == sourceRecipe.Food.CategoryId;
                 var voteCount = r.Posts.SelectMany(p => p.Votes).Count();
 
                 return new
@@ -672,9 +679,9 @@ public class RecipeService : IRecipeService
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Số trang (page) phải lớn hơn hoặc bằng 1.");
         }
 
-        if (filter.Size < 1 || filter.Size > 20)
+        if (filter.Size < 1 || filter.Size > 100)
         {
-            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Kích thước trang (size) phải từ 1 đến 20.");
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Kích thước trang (size) phải từ 1 đến 100.");
         }
     }
 
@@ -770,7 +777,15 @@ public class RecipeService : IRecipeService
                 var list = JsonSerializer.Deserialize<List<string>>(trimmed);
                 if (list != null && list.Count > 0)
                 {
-                    return list;
+                    return list
+                        .SelectMany(s => (s ?? "")
+                            .Replace("\\r\\n", "\n")
+                            .Replace("\\n", "\n")
+                            .Replace("\r\n", "\n")
+                            .Replace("\r", "\n")
+                            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        .Where(s => !string.IsNullOrWhiteSpace(s))
+                        .ToList();
                 }
             }
             catch
@@ -779,9 +794,27 @@ public class RecipeService : IRecipeService
             }
         }
 
-        return trimmed
-            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        var normalized = trimmed
+            .Replace("\\r\\n", "\n")
+            .Replace("\\n", "\n")
+            .Replace("\r\n", "\n")
+            .Replace("\r", "\n");
+
+        var lines = normalized
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToList();
+
+        var result = new List<string>();
+        foreach (var line in lines)
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            var parts = Regex.Split(line, @"(?=Bước\s+\d+[:.])", RegexOptions.IgnoreCase)
+                .Select(p => p.Trim())
+                .Where(p => !string.IsNullOrWhiteSpace(p));
+            result.AddRange(parts);
+        }
+
+        return result.Count > 0 ? result : new List<string> { trimmed };
     }
 
     /// <summary>
@@ -840,8 +873,7 @@ public class RecipeService : IRecipeService
             var draftRecipe = new Recipe
             {
                 UserId = userId,
-                CategoryId = request.CategoryId > 0 ? request.CategoryId : 1,
-                DietarySchoolId = request.DietarySchoolId > 0 ? request.DietarySchoolId : 1,
+                                DietarySchoolId = request.DietarySchoolId > 0 ? request.DietarySchoolId : 1,
                 FoodId = resolvedFoodId,
                 Title = !string.IsNullOrWhiteSpace(request.Title) ? request.Title.Trim() : "Công thức chưa đặt tên",
                 Description = request.Description?.Trim(),
@@ -899,8 +931,7 @@ public class RecipeService : IRecipeService
             var quarantinedRecipe = new Recipe
             {
                 UserId = userId,
-                CategoryId = request.CategoryId,
-                DietarySchoolId = request.DietarySchoolId,
+                                DietarySchoolId = request.DietarySchoolId,
                 FoodId = resolvedFoodId,
                 Title = request.Title.Trim(),
                 Description = request.Description?.Trim(),
@@ -990,8 +1021,7 @@ public class RecipeService : IRecipeService
         var recipe = new Recipe
         {
             UserId = userId,
-            CategoryId = request.CategoryId,
-            DietarySchoolId = request.DietarySchoolId,
+                        DietarySchoolId = request.DietarySchoolId,
             FoodId = resolvedFoodId,
             Title = request.Title.Trim(),
             Description = request.Description?.Trim(),
@@ -1134,7 +1164,7 @@ public class RecipeService : IRecipeService
 
         var newTitle = !string.IsNullOrWhiteSpace(request.Title) ? request.Title.Trim() : recipe.Title;
         var newDesc = request.Description != null ? request.Description.Trim() : recipe.Description;
-        var newCategoryId = request.CategoryId.HasValue && request.CategoryId.Value > 0 ? request.CategoryId.Value : recipe.CategoryId;
+        
         var newDietarySchoolId = request.DietarySchoolId.HasValue && request.DietarySchoolId.Value > 0 ? request.DietarySchoolId.Value : recipe.DietarySchoolId;
 
         int? updatedFoodId = recipe.FoodId;
@@ -1148,7 +1178,8 @@ public class RecipeService : IRecipeService
         }
         else if (!string.IsNullOrWhiteSpace(request.FoodName))
         {
-            var food = await _foodService.GetOrCreateFoodAsync(request.FoodName, newCategoryId, ct);
+            var targetCatId = request.CategoryId.HasValue && request.CategoryId.Value > 0 ? request.CategoryId.Value : 1;
+            var food = await _foodService.GetOrCreateFoodAsync(request.FoodName, targetCatId, ct);
             updatedFoodId = food.FoodId;
         }
         var newPrepTime = request.PrepTimeMinutes.HasValue ? request.PrepTimeMinutes.Value : recipe.PrepTimeMinutes;
@@ -1185,8 +1216,7 @@ public class RecipeService : IRecipeService
             {
                 recipe.Title = newTitle;
                 recipe.Description = newDesc;
-                recipe.CategoryId = newCategoryId;
-                recipe.DietarySchoolId = newDietarySchoolId;
+                                recipe.DietarySchoolId = newDietarySchoolId;
                 recipe.PrepTimeMinutes = newPrepTime;
                 recipe.CookTimeMinutes = newCookTime;
                 recipe.Servings = newServings;
@@ -1274,8 +1304,7 @@ public class RecipeService : IRecipeService
                 recipe.Status = isQuar ? "QUARANTINED_HIDDEN" : "APPROVED_ACTIVE";
                 recipe.Title = newTitle;
                 recipe.Description = newDesc;
-                recipe.CategoryId = newCategoryId;
-                recipe.DietarySchoolId = newDietarySchoolId;
+                                recipe.DietarySchoolId = newDietarySchoolId;
                 recipe.PrepTimeMinutes = newPrepTime;
                 recipe.CookTimeMinutes = newCookTime;
                 recipe.Servings = newServings;
@@ -1366,8 +1395,7 @@ public class RecipeService : IRecipeService
         // 2. Nhánh Recipe hiện tại là APPROVED_ACTIVE hoặc QUARANTINED_HIDDEN:
         if (!isContentChanged)
         {
-            recipe.CategoryId = newCategoryId;
-            recipe.PrepTimeMinutes = newPrepTime;
+                        recipe.PrepTimeMinutes = newPrepTime;
             recipe.CookTimeMinutes = newCookTime;
             recipe.Servings = newServings;
             recipe.DifficultyLevel = newDifficulty;
@@ -1457,8 +1485,7 @@ public class RecipeService : IRecipeService
 
         recipe.Title = newTitle;
         recipe.Description = newDesc;
-        recipe.CategoryId = newCategoryId;
-        recipe.DietarySchoolId = newDietarySchoolId;
+                recipe.DietarySchoolId = newDietarySchoolId;
         recipe.FoodId = updatedFoodId;
         recipe.PrepTimeMinutes = newPrepTime;
         recipe.CookTimeMinutes = newCookTime;

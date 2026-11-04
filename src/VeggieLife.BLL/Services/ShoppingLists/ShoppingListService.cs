@@ -55,6 +55,9 @@ public class ShoppingListService : IShoppingListService
                 .ThenInclude(s => s.Recipe)
                     .ThenInclude(r => r.RecipeIngredients)
                         .ThenInclude(ri => ri.Ingredient)
+            .Include(p => p.MealSlots)
+                .ThenInclude(s => s.Recipe)
+                    .ThenInclude(r => r.Food)
             .FirstOrDefaultAsync(p => p.PlanId == planId && p.UserId == userId, ct);
 
         if (plan == null)
@@ -117,6 +120,10 @@ public class ShoppingListService : IShoppingListService
 
                 collector.TotalQuantity += normQty;
                 collector.RecipeSources.Add(slot.Recipe.Title);
+                if (slot.Recipe.Food != null && !string.IsNullOrWhiteSpace(slot.Recipe.Food.FoodName))
+                {
+                    collector.RecipeSources.Add(slot.Recipe.Food.FoodName);
+                }
             }
         }
 
@@ -183,6 +190,10 @@ public class ShoppingListService : IShoppingListService
                 .ThenInclude(p => p.MealSlots)
                     .ThenInclude(slot => slot.Recipe)
                         .ThenInclude(r => r.RecipeIngredients)
+            .Include(s => s.Plan)
+                .ThenInclude(p => p.MealSlots)
+                    .ThenInclude(slot => slot.Recipe)
+                        .ThenInclude(r => r.Food)
             .Include(s => s.ShoppingListItems)
                 .ThenInclude(item => item.Ingredient)
             .FirstOrDefaultAsync(s => s.ListId == listId, ct);
@@ -214,6 +225,10 @@ public class ShoppingListService : IShoppingListService
                     recipeSourceMap[ri.IngredientId] = sources;
                 }
                 sources.Add(slot.Recipe.Title);
+                if (slot.Recipe.Food != null && !string.IsNullOrWhiteSpace(slot.Recipe.Food.FoodName))
+                {
+                    sources.Add(slot.Recipe.Food.FoodName);
+                }
             }
         }
 

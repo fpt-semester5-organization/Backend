@@ -163,7 +163,6 @@ public class VideosEndpointIntegrationTests : IClassFixture<WebApplicationFactor
             {
                 RecipeId = 201,
                 UserId = 1,
-                CategoryId = 1,
                 DietarySchoolId = 1,
                 Title = "Nấm đùi gà kho tiêu",
                 Instructions = "Bước 1 kho nấm...",

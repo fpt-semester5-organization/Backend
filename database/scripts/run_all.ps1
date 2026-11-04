@@ -64,7 +64,7 @@ foreach ($file in $schemaFiles) {
 }
 
 # 3. Chạy seed data nếu có file
-$seedFiles = Get-ChildItem -Path $seedDir -Filter "0*.sql" -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "00_Seed_All.sql" } | Sort-Object Name
+$seedFiles = Get-ChildItem -Path $seedDir -Filter "*.sql" -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "00_Seed_All.sql" -and $_.Name -ne "SingleScript_Seed_DevData.sql" } | Sort-Object Name
 if ($seedFiles -and $seedFiles.Count -gt 0) {
     Write-Host "`n[2/2] Đang thực thi $($seedFiles.Count) file Seed Data..." -ForegroundColor Yellow
     foreach ($file in $seedFiles) {

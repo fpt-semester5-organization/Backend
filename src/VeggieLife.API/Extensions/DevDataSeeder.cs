@@ -548,7 +548,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 1,
                     UserId = 1,
-                    CategoryId = 1,
                     DietarySchoolId = 1, // Vegan
                     FoodId = 1,
                     Title = "Canh nấm đậu phụ cà chua",
@@ -569,7 +568,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 2,
                     UserId = 1,
-                    CategoryId = 2,
                     DietarySchoolId = 1, // Vegan
                     FoodId = 2,
                     Title = "Nấm rơm xào đậu hũ",
@@ -590,7 +588,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 3,
                     UserId = 1,
-                    CategoryId = 1,
                     DietarySchoolId = 1, // Vegan
                     FoodId = 3,
                     Title = "Canh chua nấm rau cải",
@@ -611,7 +608,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 4,
                     UserId = 1,
-                    CategoryId = 1,
                     DietarySchoolId = 1,
                     FoodId = 4,
                     Title = "Bún bò Huế chay giàu đạm & hạt sen dinh dưỡng",
@@ -633,7 +629,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 5,
                     UserId = 1,
-                    CategoryId = 1,
                     DietarySchoolId = 1,
                     FoodId = 4,
                     Title = "Bún bò Huế chay thanh ngọt không cay dịu dạ dày",
@@ -655,7 +650,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 6,
                     UserId = 1,
-                    CategoryId = 1,
                     DietarySchoolId = 1,
                     FoodId = 4,
                     Title = "Bún bò Huế chay chuẩn vị cố đô đậm đà",
@@ -677,7 +671,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 7,
                     UserId = 1,
-                    CategoryId = 1,
                     DietarySchoolId = 2,
                     FoodId = 4,
                     Title = "Bún bò Huế chay thanh tịnh kiêng ngũ vị tân",
@@ -699,7 +692,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 8,
                     UserId = 1,
-                    CategoryId = 1,
                     DietarySchoolId = 1,
                     FoodId = 5,
                     Title = "Phở nấm chay nước dùng hồi quế béo bùi hạt óc chó",
@@ -721,7 +713,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 9,
                     UserId = 1,
-                    CategoryId = 1,
                     DietarySchoolId = 1,
                     FoodId = 5,
                     Title = "Phở chay Hà Nội thanh vị không cay",
@@ -743,7 +734,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 10,
                     UserId = 1,
-                    CategoryId = 2,
                     DietarySchoolId = 1,
                     FoodId = 8,
                     Title = "Cơm tấm sườn bì chả chay năng lượng cao hạt điều",
@@ -765,7 +755,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 11,
                     UserId = 1,
-                    CategoryId = 2,
                     DietarySchoolId = 1,
                     FoodId = 8,
                     Title = "Cơm tấm chả hấp chay thanh nhẹ không cay",
@@ -787,7 +776,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 12,
                     UserId = 1,
-                    CategoryId = 2,
                     DietarySchoolId = 1,
                     FoodId = 7,
                     Title = "Đậu hũ kho nấm rơm nước cốt dừa đậm béo",
@@ -809,7 +797,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 13,
                     UserId = 1,
-                    CategoryId = 2,
                     DietarySchoolId = 1,
                     FoodId = 7,
                     Title = "Đậu hũ kho nấm rơm thanh vị không cay",
@@ -831,7 +818,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 14,
                     UserId = 1,
-                    CategoryId = 1,
                     DietarySchoolId = 1,
                     FoodId = 9,
                     Title = "Lẩu Thái chay chua cay chuẩn vị Tomyum",
@@ -853,7 +839,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 15,
                     UserId = 1,
-                    CategoryId = 1,
                     DietarySchoolId = 1,
                     FoodId = 9,
                     Title = "Lẩu nấm dưỡng sinh thảo mộc không cay thanh mát",
@@ -875,7 +860,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 16,
                     UserId = 1,
-                    CategoryId = 6,
                     DietarySchoolId = 1,
                     FoodId = 10,
                     Title = "Gỏi cuốn bơ sáp & sốt bơ đậu phộng dinh dưỡng",
@@ -897,7 +881,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 17,
                     UserId = 1,
-                    CategoryId = 6,
                     DietarySchoolId = 1,
                     FoodId = 10,
                     Title = "Gỏi cuốn nấm tươi sốt mè rang thanh đạm không cay",
@@ -919,7 +902,6 @@ public static class DevDataSeeder
                 {
                     RecipeId = 18,
                     UserId = 1,
-                    CategoryId = 6,
                     DietarySchoolId = 1,
                     FoodId = 10,
                     Title = "Gỏi cuốn chay rau củ chấm tương đậu phộng truyền thống",

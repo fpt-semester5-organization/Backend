@@ -159,7 +159,6 @@ public class AdminModerationEndpointIntegrationTests : IClassFixture<WebApplicat
         {
             RecipeId = 101,
             UserId = author1.UserId,
-            CategoryId = cat.CategoryId,
             DietarySchoolId = school.DietarySchoolId,
             Title = "Canh nấm chay thanh đạm",
             Instructions = "Nấu nấm với nước dừa tươi trong 20 phút",
@@ -177,7 +176,6 @@ public class AdminModerationEndpointIntegrationTests : IClassFixture<WebApplicat
         {
             RecipeId = 102,
             UserId = author2.UserId,
-            CategoryId = cat.CategoryId,
             DietarySchoolId = school.DietarySchoolId,
             Title = "Bún riêu chay có thịt heo",
             Instructions = "Nấu với thịt heo ba chỉ",

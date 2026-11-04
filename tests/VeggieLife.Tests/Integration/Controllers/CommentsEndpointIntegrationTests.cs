@@ -135,7 +135,6 @@ public class CommentsEndpointIntegrationTests : IClassFixture<WebApplicationFact
         {
             RecipeId = 601,
             UserId = 101,
-            CategoryId = 1,
             DietarySchoolId = 1,
             Title = "Công thức canh chua chay",
             Instructions = "Nấu canh chua với dứa và cà chua",

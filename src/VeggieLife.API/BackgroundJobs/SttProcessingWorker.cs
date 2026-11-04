@@ -195,7 +195,6 @@ public class SttProcessingWorker : BackgroundService
         video.VideoTranscript.CompletedAt = DateTime.UtcNow;
 
         // 2. Tự động sinh công thức nháp (Draft Recipe: Status = "DRAFT", Source = "AI")
-        var defaultCategory = await db.FoodCategories.FirstOrDefaultAsync(stoppingToken);
         var defaultDietarySchool = await db.DietarySchools.FirstOrDefaultAsync(stoppingToken);
 
         var rawTitle = !string.IsNullOrWhiteSpace(video.Title)
@@ -223,7 +222,6 @@ public class SttProcessingWorker : BackgroundService
         var draftRecipe = new Recipe
         {
             UserId = video.Post?.UserId,
-            CategoryId = defaultCategory?.CategoryId ?? 1,
             DietarySchoolId = defaultDietarySchool?.DietarySchoolId ?? 1,
             Title = recipeTitle,
             Description = description,

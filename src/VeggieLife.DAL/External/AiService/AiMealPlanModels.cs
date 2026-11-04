@@ -47,6 +47,8 @@ public class AiCandidateRecipeDto
     public string? DifficultyLevel { get; set; }
     public decimal CaloriesKcal { get; set; }
     public string? CategoryName { get; set; }
+    public int? FoodId { get; set; }
+    public string? FoodName { get; set; }
     public bool UsesFridgeItem { get; set; }
     public string? MealTypePreference { get; set; }
     public int FavoriteCount { get; set; }

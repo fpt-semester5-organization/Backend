@@ -21,7 +21,5 @@ public partial class FoodCategory
 
     public virtual ICollection<Food> Foods { get; set; } = new List<Food>();
 
-    public virtual ICollection<Recipe> Recipes { get; set; } = new List<Recipe>();
-
     public virtual ICollection<VenueCategory> VenueCategories { get; set; } = new List<VenueCategory>();
 }

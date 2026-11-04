@@ -36,7 +36,7 @@ public class KnowledgeSyncService : IKnowledgeSyncService
     {
         var recipe = await _db.Recipes
             .AsNoTracking()
-            .Include(r => r.Category)
+            .Include(r => r.Food).ThenInclude(f => f!.Category)
             .Include(r => r.DietarySchool)
             .Include(r => r.RecipeIngredients)
                 .ThenInclude(ri => ri.Ingredient)
@@ -55,7 +55,7 @@ public class KnowledgeSyncService : IKnowledgeSyncService
         {
             sb.AppendLine($"Mô tả: {recipe.Description.Trim()}");
         }
-        sb.AppendLine($"Thể loại: {recipe.Category?.CategoryName ?? "Món chay"} | Trường phái: {recipe.DietarySchool?.SchoolName ?? "Thuần chay"}");
+        sb.AppendLine($"Thể loại: {recipe.Food?.Category?.CategoryName ?? "Món chay"} | Trường phái: {recipe.DietarySchool?.SchoolName ?? "Thuần chay"}");
         sb.AppendLine($"Khẩu phần: {recipe.Servings} người | Thời gian chế biến: {recipe.PrepTimeMinutes + recipe.CookTimeMinutes} phút | Năng lượng: {recipe.CaloriesKcal} kcal | Độ khó: {recipe.DifficultyLevel}");
 
         if (recipe.RecipeIngredients != null && recipe.RecipeIngredients.Any())

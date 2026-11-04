@@ -224,7 +224,7 @@ public class AdminCategoryService : IAdminCategoryService
         }
 
         // Bước 2: Đếm Recipes và VenueCategories tham chiếu (BR-ADM-CAT-001)
-        var recipesCount = await _db.Recipes.CountAsync(r => r.CategoryId == id, ct);
+        var recipesCount = await _db.Foods.CountAsync(f => f.CategoryId == id, ct);
         var venuesCount = await _db.VenueCategories.CountAsync(vc => vc.CategoryId == id, ct);
 
         if (recipesCount > 0 || venuesCount > 0)
@@ -256,14 +256,14 @@ public class AdminCategoryService : IAdminCategoryService
         {
             var targetId = targetCategoryId.Value;
 
-            // Di chuyển Recipes
-            var recipesToMigrate = await _db.Recipes.Where(r => r.CategoryId == id).ToListAsync(ct);
-            foreach (var r in recipesToMigrate)
+            // Di chuyển Foods
+            var foodsToMigrate = await _db.Foods.Where(f => f.CategoryId == id).ToListAsync(ct);
+            foreach (var f in foodsToMigrate)
             {
-                r.CategoryId = targetId;
-                r.UpdatedAt = DateTime.UtcNow;
+                f.CategoryId = targetId;
+                f.UpdatedAt = DateTime.UtcNow;
             }
-            migratedRecipes = recipesToMigrate.Count;
+            migratedRecipes = foodsToMigrate.Count;
 
             // Di chuyển VenueCategories loại trùng
             var oldVenueCategories = await _db.VenueCategories.Where(vc => vc.CategoryId == id).ToListAsync(ct);

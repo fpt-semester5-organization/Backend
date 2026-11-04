@@ -70,8 +70,16 @@ GO
 :r "17_Seed_Member4_Venues_Products_Fridge.sql"
 GO
 
--- 12. SEED COMMUNITY VIDEOS, TRANSCRIPTS, POSTS, COMMENTS & VOTES
-:r "21_Seed_Community_Videos_Posts.sql"
+-- 12. SEED FOODS (MÓN ĂN KHÁI NIỆM & ÁNH XẠ CÔNG THỨC)
+:r "16_Seed_Foods.sql"
+GO
+
+-- 13. SEED MEMBER 3 DATA (THUC DON TUAN, DI CHO VA HO SO SUC KHOE - ID RANGE: 301 - 399)
+:r "18_Seed_Member3_MealPlans_Shopping_Health.sql"
+GO
+
+-- 14. SEED COMMUNITY VIDEOS, TRANSCRIPTS, POSTS, COMMENTS & VOTES
+:r "21_Seed_Community_Videos_Posts.sql" 
 GO
 
 PRINT N'============================================================================';

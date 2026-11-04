@@ -1046,7 +1046,6 @@ public class VideoService : IVideoService
                 var draftRecipe = new Recipe
                 {
                     UserId = video.Post.UserId,
-                    CategoryId = defaultCategory?.CategoryId ?? 1,
                     DietarySchoolId = defaultDietarySchool?.DietarySchoolId ?? 1,
                     Title = recipeTitle,
                     Description = dto.Recipe.Title ?? video.Title,

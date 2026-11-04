@@ -1377,7 +1377,6 @@ public class MealPlanServiceTests : IDisposable
             Title = title,
             CaloriesKcal = kcal,
             DietarySchoolId = schoolId,
-            CategoryId = 1,
             Status = "APPROVED_ACTIVE",
             Instructions = "Hướng dẫn chi tiết nấu món ăn...",
             PrepTimeMinutes = 15,

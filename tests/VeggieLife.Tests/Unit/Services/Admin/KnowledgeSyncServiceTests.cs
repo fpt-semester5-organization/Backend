@@ -46,7 +46,7 @@ public class KnowledgeSyncServiceTests
             Servings = 4,
             CaloriesKcal = 180,
             DifficultyLevel = "Dễ",
-            Category = category,
+            Food = new Food { FoodName = "Canh chua đậu phụ", Category = category },
             DietarySchool = school,
             Source = "USER",
             CreatedAt = DateTime.UtcNow

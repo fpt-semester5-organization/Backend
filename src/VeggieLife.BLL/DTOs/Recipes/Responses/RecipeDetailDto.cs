@@ -23,6 +23,7 @@ public class RecipeDetailDto
     /// Tên món ăn (Food) mà công thức này thuộc về.
     /// </summary>
     public string? FoodName { get; set; }
+    public string? FoodImageUrl { get; set; }
 
     /// <summary>
     /// Loại nội dung: RECIPE hoặc VIDEO.

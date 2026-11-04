@@ -9,8 +9,6 @@ public partial class Recipe
 
     public int? UserId { get; set; }
 
-    public int CategoryId { get; set; }
-
     public int DietarySchoolId { get; set; }
 
     public string Title { get; set; } = null!;
@@ -45,8 +43,6 @@ public partial class Recipe
 
     /// <summary>Khóa ngoại tới bảng Foods (nullable để tương thích ngược với dữ liệu cũ).</summary>
     public int? FoodId { get; set; }
-
-    public virtual FoodCategory Category { get; set; } = null!;
 
     /// <summary>Món ăn mà công thức này thuộc về (có thể null với công thức cũ).</summary>
     public virtual Food? Food { get; set; }

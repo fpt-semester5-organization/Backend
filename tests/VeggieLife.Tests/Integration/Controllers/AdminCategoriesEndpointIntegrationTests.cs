@@ -106,7 +106,6 @@ public class AdminCategoriesEndpointIntegrationTests : IClassFixture<WebApplicat
             new Recipe
             {
                 RecipeId = 201,
-                CategoryId = 2,
                 Title = "Canh chua chay",
                 Instructions = "[\"B1\", \"B2\"]",
                 CookTimeMinutes = 20,
@@ -118,7 +117,6 @@ public class AdminCategoriesEndpointIntegrationTests : IClassFixture<WebApplicat
             new Recipe
             {
                 RecipeId = 202,
-                CategoryId = 2,
                 Title = "Canh nấm bào ngư",
                 Instructions = "[\"B1\", \"B2\"]",
                 CookTimeMinutes = 15,
@@ -131,7 +129,6 @@ public class AdminCategoriesEndpointIntegrationTests : IClassFixture<WebApplicat
 
         // 4. Venues linked to Category 2
         db.VeganVenues.Add(new VeganVenue { VenueId = 10, ExternalSource = "MANUAL", VenueName = "Quán Chay Thanh Đạm", Address = "123 Đỗ Xuân Hợp", Latitude = 10.8m, Longitude = 106.7m, IsActive = true, CreatedAt = DateTime.UtcNow });
-        db.VenueCategories.Add(new VenueCategory { CategoryId = 2, VenueId = 10, IsPrimary = true, AssignedAt = DateTime.UtcNow });
 
         db.SaveChanges();
     }

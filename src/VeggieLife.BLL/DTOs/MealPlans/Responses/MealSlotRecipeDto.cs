@@ -9,4 +9,9 @@ public class MealSlotRecipeDto
     public string Title { get; set; } = null!;
     public decimal CaloriesKcal { get; set; }
     public string? ImageUrl { get; set; }
+    public int? FoodId { get; set; }
+    public string? FoodName { get; set; }
+    public string? FoodImageUrl { get; set; }
+    public int? CategoryId { get; set; }
+    public string? CategoryName { get; set; }
 }
