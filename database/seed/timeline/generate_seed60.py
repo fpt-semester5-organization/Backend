@@ -123,7 +123,10 @@ def read_enumbers():
     rx = re.compile(r"\('(E[0-9a-z]+)',\s*N'(?:[^']|'')*',\s*N'(?:[^']|'')*',\s*N'(?:[^']|'')*',\s*'(VEGAN|NON_VEGAN|DOUBTFUL)'")
     return {m.group(1): m.group(2) for m in rx.finditer(txt)}
 
-ING_LIST = read_ingredients()
+# Chỉ số K và key ảnh dạng số bám theo thứ tự 119 nguyên liệu gốc của file 04; nguyên liệu nhóm thêm vào sau
+# (chèn giữa danh sách) bị bỏ khỏi bảng chỉ số để không làm lệch, nhưng vẫn có trong DB qua file 04.
+ING_ADDED_LATER = {"Cơm trắng (Cơm nguội)", "Cơm gạo lứt"}
+ING_LIST = [x for x in read_ingredients() if x["name"] not in ING_ADDED_LATER]
 # ảnh nguyên liệu đã upload Cloudinary: Data/nguyên liệu/manifest_with_urls.csv (bỏ ảnh độ tin cậy thấp/nghi ngờ)
 ING_IMG = {}
 _mf = os.path.normpath(os.path.join(HERE, "..", "..", "..", "..", "Data", "nguyên liệu", "manifest_with_urls.csv"))
@@ -1063,21 +1066,30 @@ insert_join(PY, "PaymentTransactions", ["Transaction_ID", "Plan_ID", "User_ID", 
 
 # ---- recipes
 RC = part("14_level1_recipes"); rows = []
-frows = ["(%d, %s, %s, %s)" % (f["id"], q(f["cat"]), q(f["name"]), ts(86000)) for f in foods]
+# Ảnh món (Foods.Image_URL) = ảnh sách của công thức đầu tiên thuộc món đó
+FOOD_IMG = {}
+for r_ in recipes:
+    if r_["image"]: FOOD_IMG.setdefault(r_["food"]["id"], r_["image"])
+frows = ["(%d, %s, %s, %s, %s)" % (f["id"], q(f["cat"]), q(f["name"]), v(FOOD_IMG[f["id"]]) if f["id"] in FOOD_IMG else "CAST(NULL AS NVARCHAR(500))", ts(86000)) for f in foods]
 RC.append("SET IDENTITY_INSERT dbo.Foods ON;")
-RC.append("INSERT INTO dbo.Foods (Food_ID, Category_ID, Food_Name, Created_At)\nSELECT x.id, c.Category_ID, x.nm, x.cr FROM (VALUES\n%s\n) AS x(id, catnm, nm, cr)\nJOIN #cat c ON c.Category_Name = x.catnm\nWHERE NOT EXISTS (SELECT 1 FROM dbo.Foods e WHERE e.Food_Name = x.nm);" % ",\n".join(frows))
+RC.append("SELECT x.id, c.Category_ID, x.nm, x.img, x.cr INTO #foodsrc FROM (VALUES\n%s\n) AS x(id, catnm, nm, img, cr)\nJOIN #cat c ON c.Category_Name = x.catnm;" % ",\n".join(frows))
+RC.append("INSERT INTO dbo.Foods (Food_ID, Category_ID, Food_Name, Image_URL, Created_At)\nSELECT id, Category_ID, nm, img, cr FROM #foodsrc x WHERE NOT EXISTS (SELECT 1 FROM dbo.Foods e WHERE e.Food_Name = x.nm);")
 RC.append("SET IDENTITY_INSERT dbo.Foods OFF;")
+# Món cùng tên đã có sẵn trong DB mà chưa có ảnh thì gắn ảnh sách
+RC.append("UPDATE e SET e.Image_URL = x.img FROM dbo.Foods e JOIN #foodsrc x ON x.nm = e.Food_Name WHERE e.Image_URL IS NULL AND x.img IS NOT NULL;")
+RC.append("DROP TABLE #foodsrc;")
 RC.append("SELECT Food_ID, Food_Name INTO #food FROM dbo.Foods;")
 RC.append("PRINT N'   + Foods (món ăn khái niệm từ sách): %d';" % len(foods)); COUNTS["Foods"] = len(foods)
 for r in recipes:
     desc = "%s – công thức từ sách Tuyệt kỹ 500 công thức nấu ăn chay (%s), phù hợp người %s, khoảng %s kcal mỗi khẩu phần (%d khẩu phần)." % (r["name"], r["ref"], GOAL_LABEL[r["goal"]], r["kcal"], r["serv"])
-    rows.append([str(r["id"]), q(r["food"]["name"]), str(r["user"]["id"]), q(r["cat"]), v(r["school"]), q(r["title"]), q(desc), q(r["instr"]), str(r["prep"]), str(r["cook"]), str(r["serv"]),
+    rows.append([str(r["id"]), q(r["food"]["name"]), str(r["user"]["id"]), v(r["school"]), q(r["title"]), q(desc), q(r["instr"]), str(r["prep"]), str(r["cook"]), str(r["serv"]),
                  str(r["kcal"]), v(r["diff"]), bit(r["verified"]), v(r["image"]), v(r["status"]), str(r["views"]), v(r["src_db"]), ts(r["m"]), tsx(r["m_upd"])])
-insert_join(RC, "Recipes", ["Recipe_ID", "Food_ID", "User_ID", "Category_ID", "Dietary_School_ID", "Title", "Description", "Instructions", "Prep_Time_Minutes", "Cook_Time_Minutes", "Servings",
+# Schema mới: Recipes không còn Category_ID, danh mục lấy qua Foods.Category_ID
+insert_join(RC, "Recipes", ["Recipe_ID", "Food_ID", "User_ID", "Dietary_School_ID", "Title", "Description", "Instructions", "Prep_Time_Minutes", "Cook_Time_Minutes", "Servings",
             "Calories_Kcal", "Difficulty_Level", "Is_Verified", "Image_Url", "Status", "View_Count", "Source", "Created_At", "Updated_At"],
-            "v.rid, f.Food_ID, v.uid, c.Category_ID, s.Dietary_School_ID, v.ti, v.de, v.ins, v.pr, v.ck, v.sv, v.kc, v.df, v.vf, v.im, v.st, v.vw, v.sr, v.cr, v.up",
-            ["rid", "fn", "uid", "cat", "sc", "ti", "de", "ins", "pr", "ck", "sv", "kc", "df", "vf", "im", "st", "vw", "sr", "cr", "up"], rows,
-            "JOIN #food f ON f.Food_Name = v.fn\nJOIN #cat c ON c.Category_Name = v.cat\nJOIN #sch s ON s.School_Code = v.sc", identity=True, batch=60)
+            "v.rid, f.Food_ID, v.uid, s.Dietary_School_ID, v.ti, v.de, v.ins, v.pr, v.ck, v.sv, v.kc, v.df, v.vf, v.im, v.st, v.vw, v.sr, v.cr, v.up",
+            ["rid", "fn", "uid", "sc", "ti", "de", "ins", "pr", "ck", "sv", "kc", "df", "vf", "im", "st", "vw", "sr", "cr", "up"], rows,
+            "JOIN #food f ON f.Food_Name = v.fn\nJOIN #sch s ON s.School_Code = v.sc", identity=True, batch=60)
 NOTES = ["Rửa sạch, cắt khúc", "Thái lát mỏng", "Băm nhỏ", "Ngâm nước ấm", "Cắt miếng vừa ăn", None, None, None]
 rows = []
 for r in recipes:
