@@ -43,6 +43,11 @@ public class PostSummaryDto
     public int VoteCount { get; set; }
 
     /// <summary>
+    /// Người dùng hiện tại đã thả tim nội dung này chưa (luôn false với Khách).
+    /// </summary>
+    public bool HasVoted { get; set; }
+
+    /// <summary>
     /// Tổng số bình luận đang hoạt động của bài viết.
     /// </summary>
     public int CommentCount { get; set; }

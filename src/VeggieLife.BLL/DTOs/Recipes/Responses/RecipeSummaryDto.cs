@@ -71,6 +71,11 @@ public class RecipeSummaryDto
     public int VoteCount { get; set; }
 
     /// <summary>
+    /// Người dùng hiện tại đã thả tim nội dung này chưa (luôn false với Khách).
+    /// </summary>
+    public bool HasVoted { get; set; }
+
+    /// <summary>
     /// Huy hiệu xác nhận chuẩn chay từ Quản trị viên (Admin).
     /// </summary>
     public bool IsVerified { get; set; }

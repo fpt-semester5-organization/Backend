@@ -296,7 +296,7 @@ public class PostServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ListPosts_AuthorLoggedIn_SeesApprovedPublicPlusOwnPrivateAndDraftPosts()
+    public async Task ListPosts_AuthorLoggedIn_FeedShowsOnlyApprovedPublicPosts()
     {
         // Arrange
         var filter = new PostFilterRequest { Page = 1, Size = 10 };
@@ -304,11 +304,10 @@ public class PostServiceTests : IDisposable
         // Act: User 1024 is logged in
         var (items, meta) = await _service.ListPostsAsync(filter, isGuest: false, guestId: null, currentUserId: 1024);
 
-        // Assert: User 1024 sees Post 1 (approved public), Post 2 (approved public),
-        // PLUS Post 3 (own private), Post 4 (own pending); Post 5 (deleted) is NOT shown
-        items.Should().HaveCount(4);
-        items.Select(i => i.PostId).Should().Contain(new[] { 1, 2, 3, 4 });
-        items.Select(i => i.PostId).Should().NotContain(5);
+        // Assert: bảng tin chung chỉ hiện bài đã duyệt và công khai (Post 1, 2);
+        // bài riêng tư (Post 3), chờ duyệt (Post 4) của chính tác giả xem ở trang Nội dung của tôi, không ở bảng tin
+        items.Should().HaveCount(2);
+        items.Select(i => i.PostId).Should().BeEquivalentTo(new[] { 1, 2 });
         meta.SignUpPromptAtItem.Should().BeNull(); // Member does not receive guest signup prompt
     }
 

@@ -65,7 +65,7 @@ public class RecipesController : BaseApiController
         var isGuest = IsGuestUser();
         var guestId = ResolveGuestId();
 
-        var (items, meta) = await _recipeService.ListRecipesAsync(filter, isGuest, guestId, ct);
+        var (items, meta) = await _recipeService.ListRecipesAsync(filter, isGuest, guestId, ct, CurrentUserId.HasValue ? (int?)CurrentUserId.Value : null);
         return PagedResponse(items, meta, "OK");
     }
 
