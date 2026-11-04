@@ -9,9 +9,9 @@ GO
 
 SET NOCOUNT ON;
 
-PRINT '============================================================================';
-PRINT '            KIỂM TRA TỰ ĐỘNG CƠ SỞ DỮ LIỆU VEGGIELIFE (41 BẢNG - 343 CỘT)';
-PRINT '============================================================================';
+PRINT N'============================================================================';
+PRINT N'            KIỂM TRA TỰ ĐỘNG CƠ SỞ DỮ LIỆU VEGGIELIFE (41 BẢNG - 343 CỘT)';
+PRINT N'============================================================================';
 
 DECLARE @TotalTables INT;
 DECLARE @TotalColumns INT;
@@ -22,21 +22,21 @@ SELECT
 FROM INFORMATION_SCHEMA.COLUMNS 
 WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME <> 'sysdiagrams';
 
-PRINT '1. TỔNG HỢP TOÀN BỘ CƠ SỞ DỮ LIỆU:';
-PRINT '   - Số bảng thực tế: ' + CAST(@TotalTables AS VARCHAR(10)) + ' / 41 bảng yêu cầu';
-PRINT '   - Số cột thực tế:  ' + CAST(@TotalColumns AS VARCHAR(10)) + ' / 343 cột yêu cầu';
+PRINT N'1. TỔNG HỢP TOÀN BỘ CƠ SỞ DỮ LIỆU:';
+PRINT N'   - Số bảng thực tế: ' + CAST(@TotalTables AS NVARCHAR(10)) + N' / 41 bảng yêu cầu';
+PRINT N'   - Số cột thực tế:  ' + CAST(@TotalColumns AS NVARCHAR(10)) + N' / 343 cột yêu cầu';
 
 IF @TotalTables = 41 AND @TotalColumns = 343
 BEGIN
-    PRINT '   >>> KẾT QUẢ NGHIỆM THU: [PASS] ĐẠT 100% TIÊU CHÍ (41 BẢNG, 343 CỘT)';
+    PRINT N'   >>> KẾT QUẢ NGHIỆM THU: [PASS] ĐẠT 100% TIÊU CHÍ (41 BẢNG, 343 CỘT)';
 END
 ELSE
 BEGIN
-    PRINT '   >>> KẾT QUẢ NGHIỆM THU: [FAIL] KHÔNG KHỚP TIÊU CHÍ ĐẶC TẢ!';
+    PRINT N'   >>> KẾT QUẢ NGHIỆM THU: [FAIL] KHÔNG KHỚP TIÊU CHÍ ĐẶC TẢ!';
 END
-PRINT '----------------------------------------------------------------------------';
+PRINT N'----------------------------------------------------------------------------';
 
-PRINT '2. CHI TIẾT SỐ LƯỢNG CỘT TỪNG BẢNG (41 BẢNG CHUẨN 3NF):';
+PRINT N'2. CHI TIẾT SỐ LƯỢNG CỘT TỪNG BẢNG (41 BẢNG CHUẨN 3NF):';
 
 SELECT 
     ROW_NUMBER() OVER (ORDER BY TABLE_NAME) AS [STT],

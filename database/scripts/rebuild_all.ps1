@@ -16,6 +16,23 @@ param (
 
 $ErrorActionPreference = "Stop"
 
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding  = [System.Text.Encoding]::UTF8
+$OutputEncoding           = [System.Text.Encoding]::UTF8
+chcp 65001 | Out-Null
+
+if (-not $Server) { $Server = "localhost,1433" }
+if (-not $Database) { $Database = "VeggieLifeDb" }
+if (-not $User -and -not $Password) {
+    if ($env:DB_USER) {
+        $User = $env:DB_USER
+        $Password = $env:DB_PASSWORD
+    } else {
+        $User = "sa"
+        $Password = "12345"
+    }
+}
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 Write-Host "============================================================" -ForegroundColor Magenta
