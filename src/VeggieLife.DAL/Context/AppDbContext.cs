@@ -1073,7 +1073,13 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValue("g")
 
                 .HasColumnName("Standard_Unit");
-
+            entity.Property(e => e.ImageUrl)
+                .HasMaxLength(500)
+                .IsUnicode(false)
+                .HasColumnName("Image_Url");
+            entity.Property(e => e.IsLocked)
+                .HasDefaultValue(false)
+                .HasColumnName("Is_Locked");
         });
 
 
