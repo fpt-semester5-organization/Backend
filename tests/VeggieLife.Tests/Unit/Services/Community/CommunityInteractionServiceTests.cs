@@ -119,7 +119,6 @@ public class CommunityInteractionServiceTests : IDisposable
         {
             RecipeId = 20,
             UserId = 1,
-            CategoryId = 1,
             DietarySchoolId = 1,
             Title = "Công thức canh rong biển",
             Instructions = "Nấu rong biển với đậu hũ",

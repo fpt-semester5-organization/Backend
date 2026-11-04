@@ -26,6 +26,7 @@ public class VideosController : BaseApiController
         _videoService = videoService;
     }
 
+
     /// <summary>
     /// FN-POST-08: Tải video hoặc ảnh lên (Cloudinary).
     /// Gắn vào một bài viết hoặc công thức; video mới kích hoạt bóc tách công thức ngầm và lưu CSDL với trạng thái 'PROCESSING'.
@@ -75,7 +76,9 @@ public class VideosController : BaseApiController
 
         var message = result.Status == "PROCESSING"
             ? "Đã nhận video, đang xử lý."
-            : "Đã tải ảnh lên thành công.";
+            : (result.ModerationStatus == "QUARANTINED_HIDDEN" || result.Status == "BANNED"
+                ? "Nội dung phương tiện vi phạm tiêu chuẩn cộng đồng và đã bị đánh Red-Flag."
+                : (result.VideoId.HasValue ? "Đã kiểm duyệt video thành công." : "Đã tải ảnh lên thành công."));
 
         return AcceptedResponse(result, message);
     }
@@ -108,6 +111,30 @@ public class VideosController : BaseApiController
 
         var result = await _videoService.GetVideoTranscriptAsync(id, isGuest, guestId, currentUserId, ct);
         return OkResponse(result, "OK");
+    }
+
+    /// <summary>
+    /// Lưu bản phiên âm và công thức bóc tách từ video xuống CSDL (FN-POST-09, FN-POST-10).
+    /// Đảm bảo kết quả từ AI được lưu bền vững và không phải gọi lại AI nhiều lần.
+    /// </summary>
+    [HttpPost("{id:int}/transcript")]
+    [HttpPost("{id:int}/save-transcript")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<VideoTranscriptResponseData>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> SaveVideoTranscript(
+        [FromRoute] int id,
+        [FromBody] SaveVideoTranscriptDto dto,
+        CancellationToken ct)
+    {
+        if (id <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã video không hợp lệ (id > 0).");
+        }
+
+        var result = await _videoService.SaveVideoTranscriptAsync(id, dto, ct);
+        return OkResponse(result, "Đã lưu bản tóm tắt và công thức video.");
     }
 
     /// <summary>
@@ -195,9 +222,9 @@ public class VideosController : BaseApiController
     }
 
     /// <summary>
-    /// Phân giải mã định danh của khách vãng lai từ Claim, Header hoặc Cookie.
+    /// Phân giải mã định danh của khách vãng lai từ Claim, Header, Cookie hoặc IP.
     /// </summary>
-    private string? ResolveGuestId()
+    private string ResolveGuestId()
     {
         if (!string.IsNullOrEmpty(CurrentGuestUuid))
         {
@@ -206,12 +233,12 @@ public class VideosController : BaseApiController
 
         if (Request.Headers.TryGetValue("X-Guest-UUID", out var uuidHeader) && !string.IsNullOrEmpty(uuidHeader.FirstOrDefault()))
         {
-            return uuidHeader.FirstOrDefault();
+            return uuidHeader.FirstOrDefault()!;
         }
 
         if (Request.Headers.TryGetValue("X-Guest-Id", out var idHeader) && !string.IsNullOrEmpty(idHeader.FirstOrDefault()))
         {
-            return idHeader.FirstOrDefault();
+            return idHeader.FirstOrDefault()!;
         }
 
         if (Request.Cookies.TryGetValue("guest_uuid", out var cookieValue) && !string.IsNullOrEmpty(cookieValue))
@@ -219,6 +246,7 @@ public class VideosController : BaseApiController
             return cookieValue;
         }
 
-        return null;
+        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown-guest";
+        return $"guest-ip-{clientIp}";
     }
 }

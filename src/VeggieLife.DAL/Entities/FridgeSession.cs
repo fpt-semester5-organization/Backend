@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace VeggieLife.DAL.Entities;
@@ -12,6 +12,8 @@ public partial class FridgeSession
     public string ImageCdnUrl { get; set; } = null!;
 
     public int DetectedItemsCount { get; set; }
+
+    public string? DetectedDataJson { get; set; }
 
     public DateTime CreatedAt { get; set; }
 

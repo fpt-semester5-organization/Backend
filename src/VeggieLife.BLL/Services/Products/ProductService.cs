@@ -11,6 +11,7 @@ using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.Products.Responses;
+using AiCostCalculator = VeggieLife.BLL.Services.AI.AiCostCalculator;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
@@ -641,7 +642,7 @@ public class ProductService : IProductService
                         UserId = userId.Value,
                         FeatureCode = "AI_BARCODE",
                         TokensConsumed = aiResponse.Usage?.TotalTokens ?? 0,
-                        CostEstimateUsd = 0.0002m,
+                        CostEstimateUsd = AiCostCalculator.CalculateFromTotal(aiResponse.Usage?.TotalTokens ?? 0),
                         RequestStatus = "SUCCESS",
                         ExecutionTimeMs = aiResponse.Usage?.LatencyMs ?? 0,
                         CreatedAt = DateTime.UtcNow

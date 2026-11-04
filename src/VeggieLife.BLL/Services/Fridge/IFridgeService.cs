@@ -22,6 +22,14 @@ public interface IFridgeService
         string? guestUuid,
         CancellationToken ct = default);
 
+    Task<CreateFridgeDetectionResponseData> DetectIngredientsAsync(
+        FridgeDetectionInputDto input,
+        int? userId,
+        string userRole,
+        string? guestUuid,
+        bool autoSave,
+        CancellationToken ct = default);
+
     /// <summary>
     /// FN-VIS-02: Lấy danh sách nguyên liệu trong tủ lạnh ảo của người dùng, ưu tiên NON-FRESH xếp trước.
     /// </summary>
@@ -56,6 +64,13 @@ public interface IFridgeService
         CancellationToken ct = default);
 
     /// <summary>
+    /// FN-VIS-01: Lấy phiên nhận diện gần nhất đã lưu trong CSDL của người dùng (không gọi lại AI).
+    /// </summary>
+    Task<LatestFridgeSessionDto?> GetLatestFridgeSessionAsync(
+        int userId,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// FN-VIS-03: Gợi ý công thức món ăn có độ tương đồng nguyên liệu >= 70% từ tủ lạnh ảo.
     /// Ưu tiên các món tận dụng nguyên liệu đang NON-FRESH, loại trừ vi phạm trường phái và dị ứng.
     /// </summary>
@@ -63,6 +78,15 @@ public interface IFridgeService
         int userId,
         double minSimilarity = 0.7,
         int limit = 10,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Lấy hạn mức quét ảnh tủ lạnh hôm nay của người dùng đồng bộ từ SystemSettings.
+    /// </summary>
+    Task<FridgeDetectionQuotaDto> GetFridgeQuotaAsync(
+        int? userId,
+        string? guestUuid,
+        string userRole,
         CancellationToken ct = default);
 }
 

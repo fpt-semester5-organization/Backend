@@ -81,8 +81,9 @@ public class PostsController : BaseApiController
     {
         var isGuest = IsGuestUser();
         var currentUserId = CurrentUserId.HasValue ? (int?)CurrentUserId.Value : null;
+        var isAdmin = string.Equals(CurrentUserRole, UserRoles.Admin, StringComparison.OrdinalIgnoreCase);
 
-        var post = await _postService.GetPostByIdAsync(id, isGuest, currentUserId, ct);
+        var post = await _postService.GetPostByIdAsync(id, isGuest, currentUserId, isAdmin, ct);
         return OkResponse(post, "OK");
     }
 
@@ -107,7 +108,13 @@ public class PostsController : BaseApiController
         var role = CurrentUserRole ?? "MEMBER";
 
         var result = await _postService.CreatePostAsync(request, userId, role, ct);
-        return CreatedResponse(result, "Đã đăng bài.");
+        var message = result.ModerationStatus switch
+        {
+            "QUARANTINED_HIDDEN" => "Bài viết đang chờ kiểm duyệt nên chưa hiển thị công khai.",
+            "DRAFT" => "Đã lưu nháp bài viết.",
+            _ => "Đã đăng bài."
+        };
+        return CreatedResponse(result, message);
     }
 
     /// <summary>
@@ -132,7 +139,12 @@ public class PostsController : BaseApiController
         var role = CurrentUserRole ?? "MEMBER";
 
         var result = await _postService.UpdatePostAsync(id, request, userId, role, ct);
-        return OkResponse(result, "Đã cập nhật.");
+        var message = result.ModerationStatus switch
+        {
+            "QUARANTINED_HIDDEN" => "Bài viết đang chờ kiểm duyệt nên chưa hiển thị công khai.",
+            _ => "Đã cập nhật."
+        };
+        return OkResponse(result, message);
     }
 
     /// <summary>
@@ -214,7 +226,8 @@ public class PostsController : BaseApiController
             throw AppException.Internal(ErrorCodes.ErrInternal, "Dịch vụ bình luận chưa được cấu hình.");
         }
 
-        var (items, meta) = await _commentService.ListPostCommentsAsync(id, page, size, ct);
+        var isAdmin = string.Equals(CurrentUserRole, UserRoles.Admin, StringComparison.OrdinalIgnoreCase);
+        var (items, meta) = await _commentService.ListPostCommentsAsync(id, page, size, isAdmin, ct);
         return PagedResponse(items, meta, "OK");
     }
 
@@ -249,7 +262,11 @@ public class PostsController : BaseApiController
         var userId = (int)CurrentUserId!.Value;
         var result = await _commentService.CreatePostCommentAsync(id, request, userId, ct);
 
-        return CreatedResponse(result, "Đã bình luận.");
+        var message = result.Status == "QUARANTINED_HIDDEN"
+            ? "Bình luận của bạn có dấu hiệu vi phạm tiêu chuẩn cộng đồng và đang chờ kiểm duyệt nên chưa hiển thị công khai."
+            : "Đã bình luận.";
+
+        return CreatedResponse(result, message);
     }
 
     /// <summary>

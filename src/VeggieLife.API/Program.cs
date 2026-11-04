@@ -8,6 +8,8 @@ using VeggieLife.BLL.Services.Products;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.External.OpenFoodFacts;
 
+Console.OutputEncoding = System.Text.Encoding.UTF8;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. Cấu hình DbContext kết nối SQL Server (Bắt buộc dùng SQL Server để lưu bền vững vào CSDL, không lưu trên RAM)
@@ -78,12 +80,15 @@ builder.Services.AddControllers()
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+        options.JsonSerializerOptions.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All);
+        options.JsonSerializerOptions.Converters.Add(new VeggieLife.API.Extensions.UtcDateTimeConverter());
+        options.JsonSerializerOptions.Converters.Add(new VeggieLife.API.Extensions.NullableUtcDateTimeConverter());
     });
 
-// 6. Cấu hình Health Checks
+// 7. Cấu hình Health Checks
 builder.Services.AddAppHealthChecks();
 
-// 7. Cấu hình Swagger UI kèm Bearer Token Authentication
+// 8. Cấu hình Swagger UI kèm Bearer Token Authentication
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerWithAuth();
 
@@ -98,17 +103,36 @@ if (!AppDomain.CurrentDomain.GetAssemblies().Any(a => a.FullName?.Contains("xuni
 
     if (db.Database.ProviderName?.Contains("SqlServer") == true)
     {
+        // 1. Kiểm tra kết nối vật lý tới SQL Server
+        bool canConnect = false;
         try
         {
-            // Tự động tạo CSDL VeggieLifeDb và 38 bảng nếu máy mới chưa có
-            db.Database.EnsureCreated();
-            VeggieLife.API.Extensions.DevDataSeeder.SeedIfEmpty(db);
-            logger.LogInformation("CSDL SQL Server (VeggieLifeDb) đã kết nối thành công và sẵn sàng lưu trữ bền vững.");
+            canConnect = db.Database.CanConnect();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "LỖI KẾT NỐI SQL SERVER: Không thể kết nối tới SQL Server ({ConnectionString}). Vui lòng đảm bảo dịch vụ SQL Server (MSSQLSERVER/SQLEXPRESS) đang chạy trên máy.", connectionString);
             throw new InvalidOperationException($"[LỖI CSDL]: Không thể kết nối tới SQL Server tại '{connectionString}'. Vui lòng bật dịch vụ SQL Server trên máy để lưu dữ liệu bền vững, không lưu trên RAM.", ex);
+        }
+
+        if (!canConnect)
+        {
+            logger.LogError("LỖI KẾT NỐI SQL SERVER: Không thể kết nối tới SQL Server ({ConnectionString}). Vui lòng đảm bảo dịch vụ SQL Server (MSSQLSERVER/SQLEXPRESS) đang chạy trên máy.", connectionString);
+            throw new InvalidOperationException($"[LỖI CSDL]: Không thể kết nối tới SQL Server tại '{connectionString}'. Vui lòng bật dịch vụ SQL Server trên máy để lưu dữ liệu bền vững, không lưu trên RAM.");
+        }
+
+        logger.LogInformation("CSDL SQL Server (VeggieLifeDb) đã kết nối thành công và sẵn sàng lưu trữ bền vững.");
+
+        // 2. Khởi tạo cấu trúc bảng & nạp dữ liệu mẫu ban đầu
+        try
+        {
+            db.Database.EnsureCreated();
+            VeggieLife.API.Extensions.DevDataSeeder.SeedIfEmpty(db);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "LỖI NẠP DỮ LIỆU BAN ĐẦU (SEED DATA): Gặp sự cố khi khởi tạo cấu trúc hoặc nạp dữ liệu mẫu: {Message}. Chi tiết: {InnerMessage}", ex.Message, ex.InnerException?.Message);
+            throw new InvalidOperationException($"[LỖI SEED DATA]: Gặp lỗi khi nạp dữ liệu ban đầu: {ex.Message} (Chi tiết: {ex.InnerException?.Message})", ex);
         }
     }
     else if (db.Database.ProviderName?.Contains("InMemory") == true)
@@ -121,10 +145,10 @@ if (!AppDomain.CurrentDomain.GetAssemblies().Any(a => a.FullName?.Contains("xuni
 
 app.UseCors();
 
-// 8. Pipeline: Xử lý ngoại lệ tập trung toàn cục (Global Exception Handling)
+// 9. Pipeline: Xử lý ngoại lệ tập trung toàn cục (Global Exception Handling)
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-// 9. Pipeline: Swagger UI phục vụ kiểm thử
+// 10. Pipeline: Swagger UI phục vụ kiểm thử
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -143,13 +167,16 @@ else
     app.UseHttpsRedirection();
 }
 
-// 10. Pipeline: Authentication & Authorization
+// 11. Pipeline: Authentication & Authorization
 app.UseAuthentication();
+app.UseMiddleware<UserBlacklistMiddleware>();
 app.UseMiddleware<GuestSecurityMiddleware>();
 app.UseAuthorization();
 
-// 11. Pipeline: Map Controllers & Custom Health Checks
+// 12. Pipeline: Map Controllers & Custom Health Checks
 app.MapControllers();
+app.MapHub<VeggieLife.API.Hubs.UserHub>("/hubs/user");
+app.MapHub<VeggieLife.API.Hubs.UserHub>("/hubs/auth");
 app.MapCustomHealthCheck();
 
 app.Run();

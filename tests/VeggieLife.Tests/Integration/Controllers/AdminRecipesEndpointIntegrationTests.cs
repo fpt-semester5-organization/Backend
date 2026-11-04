@@ -114,7 +114,6 @@ public class AdminRecipesEndpointIntegrationTests : IClassFixture<WebApplication
         var r301 = new Recipe
         {
             RecipeId = 301,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Nấm kho tiêu chay thuần chuẩn",
             Instructions = "[\"Bước 1: Rửa sạch nấm và đậu hũ\", \"Bước 2: Kho nhỏ lửa với tiêu đen và nước tương\"]",
@@ -155,7 +154,6 @@ public class AdminRecipesEndpointIntegrationTests : IClassFixture<WebApplication
         var r302 = new Recipe
         {
             RecipeId = 302,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Đậu hũ luộc chay",
             Instructions = "[\"Bước 1: Nấu nước sôi\", \"Bước 2: Luộc đậu hũ\"]",

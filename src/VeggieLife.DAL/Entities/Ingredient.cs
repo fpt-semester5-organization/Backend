@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace VeggieLife.DAL.Entities;
@@ -18,6 +18,10 @@ public partial class Ingredient
     public bool IsAllium { get; set; }
 
     public string FoodGroup { get; set; } = null!;
+
+    public string? ImageUrl { get; set; }
+
+    public bool IsLocked { get; set; }
 
     public DateTime CreatedAt { get; set; }
 

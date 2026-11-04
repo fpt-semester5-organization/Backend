@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace VeggieLife.BLL.DTOs.Videos.Responses;
@@ -19,6 +19,23 @@ public class VideoTranscriptResponseData
     public string RawTranscript { get; set; } = string.Empty;
 
     /// <summary>
+    /// Trạng thái phiên âm (COMPLETED, PENDING, FAILED).
+    /// </summary>
+    public string TranscriptStatus { get; set; } = "COMPLETED";
+
+    /// <summary>
+    /// N?i dung tm t?t c?a AI tr? v?.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AiSummary { get; set; }
+
+    /// <summary>
+    /// Các phân đoạn có mốc thời gian (nếu có từ AI service).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<TranscriptSegmentDto>? Segments { get; set; }
+
+    /// <summary>
     /// Công thức nấu ăn đã trích xuất cấu trúc hóa từ bản phiên âm.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -32,6 +49,16 @@ public class VideoTranscriptResponseData
 }
 
 /// <summary>
+/// DTO phân đoạn lời thoại theo mốc thời gian (SCR-21 / đồng bộ video).
+/// </summary>
+public class TranscriptSegmentDto
+{
+    public double Start { get; set; }
+    public double End { get; set; }
+    public string Text { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// DTO cấu trúc công thức được trích xuất từ video.
 /// </summary>
 public class ExtractedRecipeDto
@@ -42,6 +69,18 @@ public class ExtractedRecipeDto
     public string Title { get; set; } = string.Empty;
 
     /// <summary>
+    /// Khẩu phần (số người).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Servings { get; set; }
+
+    /// <summary>
+    /// Thời gian nấu (phút).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? CookTimeMinutes { get; set; }
+
+    /// <summary>
     /// Danh sách nguyên liệu và định lượng.
     /// </summary>
     public List<ExtractedIngredientDto> Ingredients { get; set; } = new();
@@ -50,6 +89,12 @@ public class ExtractedRecipeDto
     /// Các bước chế biến nấu ăn.
     /// </summary>
     public List<string> Steps { get; set; } = new();
+
+    /// <summary>
+    /// Mẹo nhỏ hoặc lưu ý chế biến (nếu có).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Tips { get; set; }
 }
 
 /// <summary>

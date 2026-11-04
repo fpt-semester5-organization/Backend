@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace VeggieLife.DAL.Entities;
@@ -8,8 +8,6 @@ public partial class Recipe
     public int RecipeId { get; set; }
 
     public int? UserId { get; set; }
-
-    public int CategoryId { get; set; }
 
     public int DietarySchoolId { get; set; }
 
@@ -43,7 +41,11 @@ public partial class Recipe
 
     public DateTime? UpdatedAt { get; set; }
 
-    public virtual FoodCategory Category { get; set; } = null!;
+    /// <summary>Khóa ngoại tới bảng Foods (nullable để tương thích ngược với dữ liệu cũ).</summary>
+    public int? FoodId { get; set; }
+
+    /// <summary>Món ăn mà công thức này thuộc về (có thể null với công thức cũ).</summary>
+    public virtual Food? Food { get; set; }
 
     public virtual DietarySchool DietarySchool { get; set; } = null!;
 

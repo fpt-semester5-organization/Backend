@@ -20,6 +20,8 @@ BEGIN
         [Calories_Per_100g]     DECIMAL(6,1) NOT NULL,
         [Is_Allium]             BIT NOT NULL CONSTRAINT [DF_Ingredients_Is_Allium] DEFAULT (0),
         [Food_Group]            VARCHAR(20) NOT NULL CONSTRAINT [DF_Ingredients_Food_Group] DEFAULT ('PLANT'),
+        [Image_Url]             VARCHAR(500) NULL,
+        [Is_Locked]             BIT NOT NULL CONSTRAINT [DF_Ingredients_Is_Locked] DEFAULT (0),
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_Ingredients_Created_At] DEFAULT (SYSDATETIME()),
 
         CONSTRAINT [PK_Ingredients] PRIMARY KEY CLUSTERED ([Ingredient_ID] ASC),
@@ -35,5 +37,8 @@ BEGIN
 
     CREATE NONCLUSTERED INDEX [IX_Ingredients_Is_Allium] 
     ON [dbo].[Ingredients]([Is_Allium] ASC);
+
+    CREATE NONCLUSTERED INDEX [IX_Ingredients_Is_Locked] 
+    ON [dbo].[Ingredients]([Is_Locked] ASC);
 END;
 GO

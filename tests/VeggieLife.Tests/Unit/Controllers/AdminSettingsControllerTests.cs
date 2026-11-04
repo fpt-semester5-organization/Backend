@@ -82,7 +82,7 @@ public class AdminSettingsControllerTests
         // Assert
         var okResult = response.Should().BeOfType<OkObjectResult>().Subject;
         var apiResponse = okResult.Value.Should().BeOfType<ApiResponse<SystemSettingDto>>().Subject;
-        apiResponse.Data.SettingKey.Should().Be("MEAL_SWAP_LIMIT_DRAFT");
+        apiResponse.Data!.SettingKey.Should().Be("MEAL_SWAP_LIMIT_DRAFT");
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public class AdminSettingsControllerTests
         // Assert
         var okResult = response.Should().BeOfType<OkObjectResult>().Subject;
         var apiResponse = okResult.Value.Should().BeOfType<ApiResponse<SystemSettingDto>>().Subject;
-        apiResponse.Data.SettingValue.Should().Be("25");
+        apiResponse.Data!.SettingValue.Should().Be("25");
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public class AdminSettingsControllerTests
         // Assert
         var okResult = response.Should().BeOfType<OkObjectResult>().Subject;
         var apiResponse = okResult.Value.Should().BeOfType<ApiResponse<SystemSettingDto>>().Subject;
-        apiResponse.Data.SettingValue.Should().Be("21");
+        apiResponse.Data!.SettingValue.Should().Be("21");
     }
 
     [Fact]

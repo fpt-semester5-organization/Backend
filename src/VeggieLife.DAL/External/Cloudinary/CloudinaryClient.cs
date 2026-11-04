@@ -199,6 +199,55 @@ public class CloudinaryClient : ICloudinaryClient
         }
     }
 
+    public async Task<CloudinaryMediaResult> UploadRawAsync(
+        Stream stream,
+        string fileName,
+        string folder = "veggielife/documents",
+        CancellationToken ct = default)
+    {
+        ValidateConfiguration();
+
+        try
+        {
+            var rawParams = new ImageUploadParams
+            {
+                File = new FileDescription(fileName, stream),
+                Folder = folder,
+                UseFilename = true,
+                UniqueFilename = true
+            };
+
+            var uploadResult = await _cloudinary.UploadAsync(rawParams, "raw", ct);
+
+            if (uploadResult.Error != null)
+            {
+                _logger.LogError("Lỗi phản hồi từ Cloudinary API khi tải tệp '{FileName}': {Message}",
+                    fileName, uploadResult.Error.Message);
+                throw new CloudinaryException($"Máy chủ Cloudinary từ chối yêu cầu: {uploadResult.Error.Message}");
+            }
+
+            return new CloudinaryMediaResult
+            {
+                PublicId = uploadResult.PublicId,
+                Url = uploadResult.Url?.ToString() ?? string.Empty,
+                SecureUrl = uploadResult.SecureUrl?.ToString() ?? string.Empty,
+                ResourceType = "raw",
+                Format = uploadResult.Format ?? Path.GetExtension(fileName).TrimStart('.'),
+                Bytes = uploadResult.Bytes,
+                CreatedAt = uploadResult.CreatedAt
+            };
+        }
+        catch (CloudinaryException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi tải tệp tài liệu lên Cloudinary: {Message}", ex.Message);
+            throw new CloudinaryException("Không thể kết nối đến máy chủ lưu trữ Cloudinary do sự cố mạng.", ex);
+        }
+    }
+
     public async Task<CloudinaryDeleteResult> DeleteResourceAsync(
         string publicId,
         string resourceType = "image",

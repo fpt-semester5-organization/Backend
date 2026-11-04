@@ -181,9 +181,39 @@ public class AdminSubscriptionService : IAdminSubscriptionService
 
         var oldValue = JsonSerializer.Serialize(new
         {
+            planName = plan.PlanName,
+            durationDays = plan.DurationDays,
             price = (long)plan.Price,
             isActive = plan.IsActive
         });
+
+        if (!string.IsNullOrWhiteSpace(request?.PlanName))
+        {
+            var trimmedName = request.PlanName.Trim();
+            if (trimmedName.Length > 100)
+            {
+                throw AppException.BadRequest(ErrorCodes.ErrValidation, "Tên gói tối đa 100 ký tự.");
+            }
+
+            var isDuplicate = await _db.SubscriptionPlans
+                .IgnoreQueryFilters()
+                .AnyAsync(p => p.PlanId != id && p.PlanName.ToLower() == trimmedName.ToLower(), ct);
+            if (isDuplicate)
+            {
+                throw AppException.Conflict(ErrorCodes.ErrPlanDuplicate, "Tên gói đã tồn tại.");
+            }
+
+            plan.PlanName = trimmedName;
+        }
+
+        if (request?.DurationDays.HasValue == true)
+        {
+            if (request.DurationDays.Value <= 0)
+            {
+                throw AppException.BadRequest(ErrorCodes.ErrValidation, "Thời hạn gói phải lớn hơn 0.");
+            }
+            plan.DurationDays = request.DurationDays.Value;
+        }
 
         if (request?.PriceVnd.HasValue == true)
         {
@@ -208,6 +238,8 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             OldValue = oldValue,
             NewValue = JsonSerializer.Serialize(new
             {
+                planName = plan.PlanName,
+                durationDays = plan.DurationDays,
                 price = (long)plan.Price,
                 isActive = plan.IsActive
             }),
@@ -224,6 +256,67 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             PlanId = plan.PlanId,
             PriceVnd = (long)plan.Price
         };
+    }
+
+    /// <summary>
+    /// FN-ADM-13: Xóa gói VIP (nếu chưa có giao dịch phát sinh) hoặc tự động ẩn gói nếu đã có giao dịch phát sinh.
+    /// Ghi AuditLogs DELETE_VIP_PLAN và xóa cache plans_cache.
+    /// </summary>
+    public async Task DeleteSubscriptionPlanAsync(
+        int id,
+        int adminId,
+        CancellationToken ct = default)
+    {
+        if (id <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã gói không hợp lệ.");
+        }
+
+        var plan = await _db.SubscriptionPlans
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.PlanId == id, ct);
+        if (plan == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrAdmNotFound, "Đối tượng không tồn tại.");
+        }
+
+        var hasTransactions = await _db.PaymentTransactions
+            .AnyAsync(t => t.PlanId == id, ct);
+
+        if (hasTransactions)
+        {
+            plan.IsActive = false;
+            plan.UpdatedAt = DateTime.UtcNow;
+
+            _db.AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = adminId,
+                ActorRole = UserRoles.Admin,
+                Action = "UPDATE_VIP_PRICE",
+                TargetTable = "SubscriptionPlans",
+                TargetId = plan.PlanId.ToString(),
+                Note = $"Tự động chuyển sang ẩn gói VIP '{plan.PlanName}' khi yêu cầu xóa do đã có giao dịch phát sinh",
+                CreatedAt = DateTime.UtcNow
+            });
+            await _db.SaveChangesAsync(ct);
+            await InvalidatePlanCacheAsync(ct);
+
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Gói này đã phát sinh giao dịch thanh toán, hệ thống đã chuyển sang trạng thái 'Ẩn gói' để bảo lưu lịch sử giao dịch và đối soát.");
+        }
+
+        _db.SubscriptionPlans.Remove(plan);
+        _db.AuditLogs.Add(new AuditLog
+        {
+            ActorUserId = adminId,
+            ActorRole = UserRoles.Admin,
+            Action = "DELETE_VIP_PLAN",
+            TargetTable = "SubscriptionPlans",
+            TargetId = id.ToString(),
+            Note = $"Xóa hoàn toàn gói VIP '{plan.PlanName}' (chưa có giao dịch phát sinh)",
+            CreatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync(ct);
+        await InvalidatePlanCacheAsync(ct);
     }
 
     /// <summary>

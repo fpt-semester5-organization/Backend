@@ -19,4 +19,14 @@ public class CheckoutSubscriptionRequest
     /// </summary>
     [Required(ErrorMessage = "Cổng thanh toán (gateway) là bắt buộc (MOMO hoặc VIETQR).")]
     public string Gateway { get; set; } = string.Empty;
+
+    /// <summary>
+    /// URL chuyển hướng khi thanh toán thành công (tùy chọn, tự động nhận diện từ Origin header nếu để trống).
+    /// </summary>
+    public string? ReturnUrl { get; set; }
+
+    /// <summary>
+    /// URL chuyển hướng khi hủy thanh toán (tùy chọn, tự động nhận diện từ Origin header nếu để trống).
+    /// </summary>
+    public string? CancelUrl { get; set; }
 }

@@ -1,12 +1,15 @@
 -- ============================================================================
--- VeggieLifeDb - Master Schema Creation Script (39 Tables)
+-- VeggieLifeDb - Master Schema Creation Script (41 Tables & All Migration Patches)
 -- Clusters:
 --   - Quản trị Tài khoản, Sức khỏe & Hội viên (9 thực thể)
 --   - Mạng xã hội Ẩm thực, Video, Kiểm duyệt & Tương tác (7 thực thể)
---   - Kho Công thức Chay, Thực đơn, Nguyên liệu & Đi chợ (10 thực thể)
+--   - Kho Công thức Chay, Thực đơn, Nguyên liệu & Đi chợ (11 thực thể)
 --   - Tra cứu Phụ gia, Quét Mã vạch & An toàn (5 thực thể)
 --   - Trợ lý Tư vấn AI, Tủ lạnh Ảo & Địa điểm (7 thực thể)
+--   - Quản trị Hệ thống, Tham số & Kiểm toán (2 thực thể)
 -- Target RDBMS: Microsoft SQL Server 2022
+-- Total Entities: 41 Tables, 343 Columns
+-- Generated from: database/schema/ (Files 01 to 45)
 -- ============================================================================
 
 USE [VeggieLifeDb];
@@ -16,6 +19,7 @@ SET ANSI_NULLS ON;
 GO
 SET QUOTED_IDENTIFIER ON;
 GO
+
 
 -- ============================================================================
 -- START: 01_DietarySchools.sql
@@ -49,7 +53,8 @@ BEGIN
     );
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -73,6 +78,7 @@ CREATE TABLE dbo.Allergens (
     CONSTRAINT UQ_Allergens_Name UNIQUE (Allergen_Name),
     CONSTRAINT UQ_Allergens_Code UNIQUE (Code)
 );
+
 GO
 
 
@@ -128,7 +134,8 @@ CREATE UNIQUE NONCLUSTERED INDEX UQ_Users_Google_ID
 ON dbo.Users(Google_ID) 
 WHERE Google_ID IS NOT NULL;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -178,6 +185,7 @@ BEGIN
             FOREIGN KEY (Dietary_School_ID) REFERENCES dbo.DietarySchools(Dietary_School_ID);
     END
 END;
+
 GO
 
 
@@ -202,6 +210,7 @@ CREATE TABLE dbo.UserWeightHistory (
     CONSTRAINT FK_UserWeightHistory_Users FOREIGN KEY (User_ID) 
         REFERENCES dbo.Users(User_ID)
 );
+
 GO
 
 
@@ -228,7 +237,8 @@ CREATE TABLE dbo.UserAllergies (
         REFERENCES dbo.Allergens(Allergen_ID) ON DELETE CASCADE
 );
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -260,7 +270,8 @@ CREATE TABLE dbo.SubscriptionPlans (
     CONSTRAINT CK_SubscriptionPlans_Features_JSON CHECK (Features_JSON IS NULL OR ISJSON(Features_JSON) = 1)
 );
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -301,7 +312,8 @@ CREATE TABLE dbo.PaymentTransactions (
     CONSTRAINT CK_PaymentTransactions_Period CHECK (Ends_At > Starts_At)
 );
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -335,6 +347,7 @@ CREATE TABLE dbo.AIQuotaLogs (
         'SUCCESS', 'QUOTA_EXCEEDED', 'ERROR'
     ))
 );
+
 GO
 
 
@@ -375,6 +388,8 @@ BEGIN
 
     CREATE NONCLUSTERED INDEX [IX_AuditLogs_Actor_User_ID] ON [dbo].[AuditLogs]([Actor_User_ID] ASC);
     CREATE NONCLUSTERED INDEX [IX_AuditLogs_Target] ON [dbo].[AuditLogs]([Target_Table] ASC, [Target_ID] ASC);
+    CREATE NONCLUSTERED INDEX [IX_AuditLogs_Created_At] ON [dbo].[AuditLogs]([Created_At] DESC);
+    CREATE NONCLUSTERED INDEX [IX_AuditLogs_Action] ON [dbo].[AuditLogs]([Action] ASC);
 
     IF OBJECT_ID(N'[dbo].[Users]', N'U') IS NOT NULL
     BEGIN
@@ -382,7 +397,8 @@ BEGIN
     END;
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -418,7 +434,8 @@ BEGIN
     ON [dbo].[FoodCategories]([Category_Name] ASC);
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -455,9 +472,16 @@ BEGIN
 
     CREATE UNIQUE NONCLUSTERED INDEX [UQ_Ingredients_Ingredient_Name] 
     ON [dbo].[Ingredients]([Ingredient_Name] ASC);
+
+    CREATE NONCLUSTERED INDEX [IX_Ingredients_Food_Group] 
+    ON [dbo].[Ingredients]([Food_Group] ASC);
+
+    CREATE NONCLUSTERED INDEX [IX_Ingredients_Is_Allium] 
+    ON [dbo].[Ingredients]([Is_Allium] ASC);
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -493,7 +517,8 @@ BEGIN
     END
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -541,7 +566,8 @@ BEGIN
     END;
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -551,8 +577,8 @@ GO
 -- Table: Recipes
 -- Cluster: Kho Công thức Chay, Thực đơn & Đi chợ
 -- Description: Kho công thức nấu ăn thuần chay chuẩn hóa, định lượng dinh dưỡng calo/macro.
+--              Đấu nối trực tiếp với Món ăn khái niệm (Foods). Danh mục thuộc về Món ăn (Foods.Category_ID).
 -- ============================================================================
-
 
 SET ANSI_NULLS ON;
 GO
@@ -564,7 +590,7 @@ BEGIN
     CREATE TABLE [dbo].[Recipes] (
         [Recipe_ID]             INT IDENTITY(1,1) NOT NULL,
         [User_ID]               INT NULL,
-        [Category_ID]           INT NOT NULL,
+        [Food_ID]               INT NULL,
         [Dietary_School_ID]     INT NOT NULL,
         [Title]                 NVARCHAR(150) NOT NULL,
         [Description]           NVARCHAR(1000) NULL,
@@ -575,7 +601,7 @@ BEGIN
         [Calories_Kcal]         DECIMAL(6,1) NOT NULL,
         [Difficulty_Level]      VARCHAR(10) NOT NULL CONSTRAINT [DF_Recipes_Difficulty] DEFAULT ('MEDIUM'),
         [Is_Verified]           BIT NOT NULL CONSTRAINT [DF_Recipes_Is_Verified] DEFAULT (0),
-        [Image_Url]             VARCHAR(255) NULL,
+        [Image_Url]             VARCHAR(1000) NULL,
         [Status]                VARCHAR(20) NOT NULL CONSTRAINT [DF_Recipes_Status] DEFAULT ('DRAFT'),
         [View_Count]            INT NOT NULL CONSTRAINT [DF_Recipes_View_Count] DEFAULT (0),
         [Source]                VARCHAR(10) NOT NULL CONSTRAINT [DF_Recipes_Source] DEFAULT ('USER'),
@@ -583,13 +609,12 @@ BEGIN
         [Updated_At]            DATETIME2(7) NULL,
 
         CONSTRAINT [PK_Recipes] PRIMARY KEY CLUSTERED ([Recipe_ID] ASC),
-        CONSTRAINT [FK_Recipes_FoodCategories] FOREIGN KEY ([Category_ID]) REFERENCES [dbo].[FoodCategories]([Category_ID]),
         CONSTRAINT [CK_Recipes_Difficulty_Level] CHECK ([Difficulty_Level] IN ('EASY', 'MEDIUM', 'HARD')),
         CONSTRAINT [CK_Recipes_Status] CHECK ([Status] IN ('DRAFT', 'PENDING_REVIEW', 'APPROVED_ACTIVE', 'REJECTED', 'QUARANTINED_HIDDEN', 'ARCHIVED', 'DELETED')),
         CONSTRAINT [CK_Recipes_Source] CHECK ([Source] IN ('USER', 'AI', 'SYSTEM'))
     );
 
-    CREATE NONCLUSTERED INDEX [IX_Recipes_Category_ID] ON [dbo].[Recipes]([Category_ID] ASC);
+    CREATE NONCLUSTERED INDEX [IX_Recipes_Food_ID] ON [dbo].[Recipes]([Food_ID] ASC);
     CREATE NONCLUSTERED INDEX [IX_Recipes_Dietary_School_ID] ON [dbo].[Recipes]([Dietary_School_ID] ASC);
     CREATE NONCLUSTERED INDEX [IX_Recipes_Status] ON [dbo].[Recipes]([Status] ASC);
 
@@ -605,6 +630,12 @@ BEGIN
         ALTER TABLE [dbo].[Recipes] ADD CONSTRAINT [FK_Recipes_DietarySchools] FOREIGN KEY ([Dietary_School_ID]) REFERENCES [dbo].[DietarySchools]([Dietary_School_ID]);
     END;
 
+    -- Foreign Key to Foods if table exists
+    IF OBJECT_ID(N'[dbo].[Foods]', N'U') IS NOT NULL AND OBJECT_ID(N'[dbo].[FK_Recipes_Foods]', N'F') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[Recipes] ADD CONSTRAINT [FK_Recipes_Foods] FOREIGN KEY ([Food_ID]) REFERENCES [dbo].[Foods]([Food_ID]);
+    END;
+
     -- Foreign Key from Posts to Recipes
     IF OBJECT_ID(N'[dbo].[Posts]', N'U') IS NOT NULL AND OBJECT_ID(N'[dbo].[FK_Posts_Recipes]', N'F') IS NULL
     BEGIN
@@ -612,7 +643,57 @@ BEGIN
     END;
 END;
 GO
+
+-- 1. Đảm bảo cột Food_ID tồn tại nếu bảng Recipes đã được tạo trước đó
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[Recipes]')
+      AND name = 'Food_ID'
+)
+BEGIN
+    ALTER TABLE [dbo].[Recipes] ADD [Food_ID] INT NULL;
+END;
 GO
+
+-- 2. Đảm bảo index IX_Recipes_Food_ID tồn tại
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'[dbo].[Recipes]')
+      AND name = 'IX_Recipes_Food_ID'
+)
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_Recipes_Food_ID] ON [dbo].[Recipes]([Food_ID] ASC);
+END;
+GO
+
+-- 3. Đảm bảo Foreign Key FK_Recipes_Foods tồn tại nếu bảng Foods đã có
+IF OBJECT_ID(N'[dbo].[Foods]', N'U') IS NOT NULL AND OBJECT_ID(N'[dbo].[FK_Recipes_Foods]', N'F') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[Recipes] ADD CONSTRAINT [FK_Recipes_Foods]
+        FOREIGN KEY ([Food_ID]) REFERENCES [dbo].[Foods]([Food_ID]);
+END;
+GO
+
+-- 4. Bỏ Category_ID và khóa ngoại/index tương ứng khỏi bảng Recipes (Category thuộc về bảng Foods)
+IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_Recipes_FoodCategories')
+BEGIN
+    ALTER TABLE [dbo].[Recipes] DROP CONSTRAINT [FK_Recipes_FoodCategories];
+END;
+GO
+
+IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Recipes_Category_ID' AND object_id = OBJECT_ID(N'[dbo].[Recipes]'))
+BEGIN
+    DROP INDEX [IX_Recipes_Category_ID] ON [dbo].[Recipes];
+END;
+GO
+
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[Recipes]') AND name = 'Category_ID')
+BEGIN
+    ALTER TABLE [dbo].[Recipes] DROP COLUMN [Category_ID];
+END;
+GO
+
+
 
 
 -- ============================================================================
@@ -648,7 +729,8 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_RecipeIngredients_Ingredient_ID] ON [dbo].[RecipeIngredients]([Ingredient_ID] ASC);
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -688,7 +770,8 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_Videos_Post_ID] ON [dbo].[Videos]([Post_ID] ASC);
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -714,6 +797,7 @@ BEGIN
         [Recipe_ID]             INT NULL,
         [Raw_Transcript]        NVARCHAR(MAX) NULL,
         [Extracted_Recipe_JSON] NVARCHAR(MAX) NULL,
+        [AI_Summary]            NVARCHAR(MAX) NULL,
         [STT_Model_Version]     VARCHAR(50) NULL,
         [Status]                VARCHAR(20) NOT NULL CONSTRAINT [DF_VideoTranscripts_Status] DEFAULT ('PENDING'),
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_VideoTranscripts_Created_At] DEFAULT (SYSDATETIME()),
@@ -727,9 +811,18 @@ BEGIN
 
     CREATE UNIQUE NONCLUSTERED INDEX [UQ_VideoTranscripts_Video_ID] ON [dbo].[VideoTranscripts]([Video_ID] ASC);
     CREATE NONCLUSTERED INDEX [IX_VideoTranscripts_Recipe_ID] ON [dbo].[VideoTranscripts]([Recipe_ID] ASC);
+END
+ELSE
+BEGIN
+    -- Trường hợp bảng đã tồn tại trong CSDL, tự động bổ sung cột AI_Summary nếu chưa có
+    IF COL_LENGTH(N'[dbo].[VideoTranscripts]', N'AI_Summary') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[VideoTranscripts] ADD [AI_Summary] NVARCHAR(MAX) NULL;
+    END;
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -768,6 +861,7 @@ BEGIN
 
     CREATE NONCLUSTERED INDEX [IX_Comments_Post_ID] ON [dbo].[Comments]([Post_ID] ASC);
     CREATE NONCLUSTERED INDEX [IX_Comments_Parent_Comment_ID] ON [dbo].[Comments]([Parent_Comment_ID] ASC);
+    CREATE NONCLUSTERED INDEX [IX_Comments_Parent_SoftDeleted] ON [dbo].[Comments]([Parent_Comment_ID] ASC, [Is_Soft_Deleted] ASC);
 
     IF OBJECT_ID(N'[dbo].[Users]', N'U') IS NOT NULL
     BEGIN
@@ -775,7 +869,8 @@ BEGIN
     END;
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -814,7 +909,8 @@ BEGIN
     END
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -859,6 +955,8 @@ BEGIN
     );
 
     CREATE NONCLUSTERED INDEX [IX_ViolationReports_Status] ON [dbo].[ViolationReports]([Status] ASC);
+    CREATE NONCLUSTERED INDEX [IX_ViolationReports_Status_CreatedAt] ON [dbo].[ViolationReports]([Status] ASC, [Created_At] DESC);
+    CREATE NONCLUSTERED INDEX [IX_ViolationReports_Status_Source_Type] ON [dbo].[ViolationReports]([Status] ASC, [Report_Source] ASC, [Violation_Type] ASC);
 
     IF OBJECT_ID(N'[dbo].[Users]', N'U') IS NOT NULL
     BEGIN
@@ -867,7 +965,8 @@ BEGIN
     END;
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -899,11 +998,14 @@ BEGIN
         [Custom_Instructions]   NVARCHAR(200) NULL,
         [Plan_Status]           VARCHAR(20) NOT NULL CONSTRAINT [DF_MealPlans_Status] DEFAULT ('DRAFT'),
         [Generated_By_AI]       BIT NOT NULL CONSTRAINT [DF_MealPlans_Generated_By_AI] DEFAULT (0),
+        [Max_Swaps_Allowed]     INT NOT NULL CONSTRAINT [DF_MealPlans_Max_Swaps] DEFAULT (21),
+        [Swaps_Remaining]       INT NOT NULL CONSTRAINT [DF_MealPlans_Swaps_Remaining] DEFAULT (21),
+        [Duration_Days]         INT NOT NULL CONSTRAINT [DF_MealPlans_Duration_Days] DEFAULT (7),
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_MealPlans_Created_At] DEFAULT (SYSDATETIME()),
 
         CONSTRAINT [PK_MealPlans] PRIMARY KEY CLUSTERED ([Plan_ID] ASC),
         CONSTRAINT [CK_MealPlans_Budget_Tier] CHECK ([Budget_Tier] IN ('ECONOMICAL', 'STANDARD', 'PREMIUM')),
-        CONSTRAINT [CK_MealPlans_Status] CHECK ([Plan_Status] IN ('DRAFT', 'ACTIVE', 'ARCHIVED', 'TEMPLATE'))
+        CONSTRAINT [CK_MealPlans_Status] CHECK ([Plan_Status] IN ('DRAFT', 'ACTIVE', 'ARCHIVED', 'TEMPLATE', 'CANCELLED'))
     );
 
     CREATE NONCLUSTERED INDEX [IX_MealPlans_User_ID] ON [dbo].[MealPlans]([User_ID] ASC);
@@ -919,7 +1021,8 @@ BEGIN
     END;
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -958,7 +1061,8 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_MealSlots_Plan_ID] ON [dbo].[MealSlots]([Plan_ID] ASC);
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -995,7 +1099,8 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_ShoppingLists_Plan_ID] ON [dbo].[ShoppingLists]([Plan_ID] ASC);
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -1031,7 +1136,8 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_ShoppingListItems_List_ID] ON [dbo].[ShoppingListItems]([List_ID] ASC);
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -1059,6 +1165,7 @@ CREATE TABLE dbo.Products (
     CONSTRAINT UQ_Products_Barcode UNIQUE (Barcode),
     CONSTRAINT CK_Products_Vegan_Verdict CHECK (Vegan_Verdict IN ('VEGAN', 'NON_VEGAN', 'DOUBTFUL'))
 );
+
 GO
 
 
@@ -1074,7 +1181,7 @@ GO
 CREATE TABLE dbo.ENumberDictionary (
     Code VARCHAR(15) NOT NULL,
     Name NVARCHAR(150) NOT NULL,
-    Category_Type VARCHAR(50) NULL,
+    Category_Type NVARCHAR(100) NULL,
     Origin_Source NVARCHAR(100) NOT NULL,
     Vegan_Status VARCHAR(20) NOT NULL,
     Health_Risk_Notes NVARCHAR(MAX) NULL,
@@ -1084,6 +1191,7 @@ CREATE TABLE dbo.ENumberDictionary (
     CONSTRAINT PK_ENumberDictionary PRIMARY KEY CLUSTERED (Code),
     CONSTRAINT CK_ENumberDictionary_Vegan_Status CHECK (Vegan_Status IN ('VEGAN', 'NON_VEGAN', 'DOUBTFUL'))
 );
+
 GO
 
 
@@ -1108,7 +1216,8 @@ CREATE TABLE dbo.Product_ENumbers (
         REFERENCES dbo.ENumberDictionary(Code) ON DELETE CASCADE
 );
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -1133,7 +1242,8 @@ CREATE TABLE dbo.ProductAllergens (
     CONSTRAINT CK_ProductAllergens_Presence CHECK (Presence_Type IN ('CONTAINS', 'MAY_CONTAIN'))
 );
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -1163,7 +1273,8 @@ CREATE TABLE dbo.UserScanHistory (
     CONSTRAINT CK_UserScanHistory_Owner CHECK (User_ID IS NOT NULL OR Guest_UUID IS NOT NULL)
 );
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -1188,6 +1299,7 @@ BEGIN
         [User_ID]               INT NOT NULL,
         [Image_CDN_URL]         VARCHAR(255) NOT NULL,
         [Detected_Items_Count]  INT NOT NULL CONSTRAINT [DF_FridgeSessions_Items_Count] DEFAULT (0),
+        [Detected_Data_JSON]    NVARCHAR(MAX) NULL,
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_FridgeSessions_Created_At] DEFAULT (SYSDATETIME()),
 
         CONSTRAINT [PK_FridgeSessions] PRIMARY KEY CLUSTERED ([Session_ID] ASC)
@@ -1201,7 +1313,8 @@ BEGIN
     END;
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -1230,6 +1343,7 @@ BEGIN
         [Freshness_Status]      VARCHAR(15) NOT NULL CONSTRAINT [DF_FridgeInventory_Freshness] DEFAULT ('FRESH'),
         [Quantity]              DECIMAL(8,2) NOT NULL CONSTRAINT [DF_FridgeInventory_Quantity] DEFAULT (1.00),
         [Unit]                  NVARCHAR(30) NOT NULL CONSTRAINT [DF_FridgeInventory_Unit] DEFAULT (N'phần'),
+        [Thumbnail_URL]         NVARCHAR(MAX) NULL,
 
         CONSTRAINT [PK_FridgeInventory] PRIMARY KEY CLUSTERED ([Inventory_ID] ASC),
         CONSTRAINT [FK_FridgeInventory_Ingredients] FOREIGN KEY ([Ingredient_ID]) REFERENCES [dbo].[Ingredients]([Ingredient_ID]),
@@ -1249,7 +1363,8 @@ BEGIN
     END;
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -1272,7 +1387,7 @@ BEGIN
     CREATE TABLE [dbo].[VeganVenues] (
         [Venue_ID]              INT IDENTITY(1,1) NOT NULL,
         [External_Source]       VARCHAR(20) NOT NULL,
-        [External_Place_ID]     VARCHAR(100) NULL,
+        [External_Place_ID]     VARCHAR(255) NULL,
         [Venue_Name]            NVARCHAR(150) NOT NULL,
         [Address]               NVARCHAR(255) NOT NULL,
         [Latitude]              DECIMAL(9,6) NOT NULL,
@@ -1294,9 +1409,16 @@ BEGIN
 
     CREATE NONCLUSTERED INDEX [IX_VeganVenues_Coordinates] 
     ON [dbo].[VeganVenues]([Latitude] ASC, [Longitude] ASC);
+
+    CREATE NONCLUSTERED INDEX [IX_VeganVenues_Is_Active] 
+    ON [dbo].[VeganVenues]([Is_Active] ASC);
+
+    CREATE NONCLUSTERED INDEX [IX_VeganVenues_External_Source] 
+    ON [dbo].[VeganVenues]([External_Source] ASC);
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -1332,7 +1454,8 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_VenueMenuItems_Venue_ID] ON [dbo].[VenueMenuItems]([Venue_ID] ASC);
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -1366,7 +1489,8 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_VenueCategories_Venue_ID] ON [dbo].[VenueCategories]([Venue_ID] ASC);
 END;
 GO
-GO
+
+
 
 
 -- ============================================================================
@@ -1395,6 +1519,7 @@ CREATE TABLE dbo.ChatSessions (
         REFERENCES dbo.HealthProfiles(User_ID),
     CONSTRAINT CK_ChatSessions_Owner CHECK (User_ID IS NOT NULL OR Guest_UUID IS NOT NULL)
 );
+
 GO
 
 
@@ -1421,6 +1546,7 @@ CREATE TABLE dbo.ChatMessages (
     CONSTRAINT CK_ChatMessages_Sender_Type CHECK (Sender_Type IN ('USER', 'ASSISTANT')),
     CONSTRAINT CK_ChatMessages_Metadata_JSON CHECK (Metadata_JSON IS NULL OR ISJSON(Metadata_JSON) = 1)
 );
+
 GO
 
 
@@ -1449,6 +1575,7 @@ CREATE TABLE dbo.Surveys (
         REFERENCES dbo.ChatSessions(Chat_Session_ID) ON DELETE SET NULL,
     CONSTRAINT CK_Surveys_Rating_Score CHECK (Rating_Score BETWEEN 1 AND 5)
 );
+
 GO
 
 
@@ -1458,28 +1585,32 @@ GO
 -- ============================================================
 -- File: 39_SystemSettings.sql
 -- Bảng Thực Thể: SystemSettings (3.39)
--- Mục đích nghiệp vụ: Lưu trữ các tham số cấu hình động toàn hệ thống (Hạn mức đổi món, hạn mức AI, ngưỡng ngân sách...)
+-- Mục đích nghiệp vụ: Lưu trữ các tham số cấu hình động toàn hệ thống (Hạn mức đổi món, hạn mức AI, ngưỡng ngân sách, URL tài liệu pháp lý...)
 -- Phục vụ quản trị tập trung linh hoạt từ Admin Dashboard theo chuẩn Enterprise.
 -- ============================================================
 
-CREATE TABLE dbo.SystemSettings (
-    Setting_Key VARCHAR(60) NOT NULL,
-    Setting_Value NVARCHAR(500) NOT NULL,
-    Default_Value NVARCHAR(500) NOT NULL,
-    Data_Type VARCHAR(20) NOT NULL CONSTRAINT DF_SystemSettings_Data_Type DEFAULT 'INT',
-    Category VARCHAR(30) NOT NULL,
-    Description NVARCHAR(255) NULL,
-    Updated_At DATETIME2(7) NOT NULL CONSTRAINT DF_SystemSettings_Updated_At DEFAULT SYSDATETIME(),
-    Updated_By INT NULL,
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[SystemSettings]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE dbo.SystemSettings (
+        Setting_Key VARCHAR(60) NOT NULL,
+        Setting_Value NVARCHAR(2000) NOT NULL,
+        Default_Value NVARCHAR(2000) NOT NULL,
+        Data_Type VARCHAR(20) NOT NULL CONSTRAINT DF_SystemSettings_Data_Type DEFAULT 'INT',
+        Category VARCHAR(30) NOT NULL,
+        Description NVARCHAR(255) NULL,
+        Legal_Documents_Url NVARCHAR(MAX) NULL,
+        Updated_At DATETIME2(7) NOT NULL CONSTRAINT DF_SystemSettings_Updated_At DEFAULT SYSDATETIME(),
+        Updated_By INT NULL,
 
-    CONSTRAINT PK_SystemSettings PRIMARY KEY CLUSTERED (Setting_Key),
-    CONSTRAINT FK_SystemSettings_Users FOREIGN KEY (Updated_By) 
-        REFERENCES dbo.Users(User_ID) ON DELETE SET NULL,
-    CONSTRAINT CK_SystemSettings_Data_Type CHECK (Data_Type IN ('INT', 'DECIMAL', 'BOOLEAN', 'STRING')),
-    CONSTRAINT CK_SystemSettings_Category CHECK (Category IN ('MEAL_PLAN', 'AI_QUOTA', 'LLMOPS', 'COMMUNITY', 'GENERAL'))
-);
+        CONSTRAINT PK_SystemSettings PRIMARY KEY CLUSTERED (Setting_Key),
+        CONSTRAINT FK_SystemSettings_Users FOREIGN KEY (Updated_By) 
+            REFERENCES dbo.Users(User_ID) ON DELETE SET NULL,
+        CONSTRAINT CK_SystemSettings_Data_Type CHECK (Data_Type IN ('INT', 'DECIMAL', 'BOOLEAN', 'STRING')),
+        CONSTRAINT CK_SystemSettings_Category CHECK (Category IN ('MEAL_PLAN', 'AI_QUOTA', 'LLMOPS', 'COMMUNITY', 'GENERAL'))
+    );
+END;
+
 GO
-
 
 
 -- ============================================================================
@@ -1517,4 +1648,263 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_MealSlotSwapHistories_Slot_ID] ON [dbo].[MealSlotSwapHistories]([Slot_ID] ASC);
 END;
 GO
+
+
+
+
+-- ============================================================================
+-- START: 41_Foods.sql
+-- ============================================================================
+-- ============================================================================
+-- File: 41_Foods.sql
+-- Table: Foods (3.41)
+-- Cluster: Kho Công thức Chay, Thực đơn & Đi chợ
+-- Description: Danh mục món ăn khái niệm (Food entity). Một Food có thể có nhiều Recipe
+--              với các biến thể dinh dưỡng khác nhau (tăng cân, giảm cân, duy trì...).
+-- ============================================================================
+
+SET ANSI_NULLS ON;
 GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[Foods]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE [dbo].[Foods] (
+        [Food_ID]       INT IDENTITY(1,1) NOT NULL,
+        [Category_ID]   INT NOT NULL,
+        [Food_Name]     NVARCHAR(150) NOT NULL,
+        [Image_URL]     NVARCHAR(500) NULL,
+        [Created_At]    DATETIME2(7) NOT NULL CONSTRAINT [DF_Foods_Created_At] DEFAULT (SYSDATETIME()),
+        [Updated_At]    DATETIME2(7) NULL,
+
+        CONSTRAINT [PK_Foods] PRIMARY KEY CLUSTERED ([Food_ID] ASC),
+        CONSTRAINT [UQ_Foods_Food_Name] UNIQUE ([Food_Name] ASC)
+    );
+
+    CREATE NONCLUSTERED INDEX [IX_Foods_Category_ID] ON [dbo].[Foods]([Category_ID] ASC);
+END;
+GO
+
+IF OBJECT_ID(N'[dbo].[FoodCategories]', N'U') IS NOT NULL AND OBJECT_ID(N'[dbo].[FK_Foods_FoodCategories]', N'F') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[Foods] ADD CONSTRAINT [FK_Foods_FoodCategories]
+        FOREIGN KEY ([Category_ID]) REFERENCES [dbo].[FoodCategories]([Category_ID]);
+END;
+GO
+
+
+
+
+-- ============================================================================
+-- START: 42_Recipes_Add_FoodId.sql
+-- ============================================================================
+-- ============================================================================
+-- File: 42_Recipes_Add_FoodId.sql
+-- Table: Recipes (Alteration)
+-- Cluster: Kho Công thức Chay, Thực đơn & Đi chợ
+-- Description: Thêm khóa ngoại Food_ID vào bảng Recipes để liên kết công thức với món ăn khái niệm (Foods).
+--              Nullable để tương thích ngược với dữ liệu công thức đã tồn tại.
+-- ============================================================================
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[Recipes]')
+      AND name = 'Food_ID'
+)
+BEGIN
+    ALTER TABLE [dbo].[Recipes] ADD [Food_ID] INT NULL;
+END;
+GO
+
+IF OBJECT_ID(N'[dbo].[Foods]', N'U') IS NOT NULL AND OBJECT_ID(N'[dbo].[FK_Recipes_Foods]', N'F') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[Recipes] ADD CONSTRAINT [FK_Recipes_Foods]
+        FOREIGN KEY ([Food_ID]) REFERENCES [dbo].[Foods]([Food_ID]);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'[dbo].[Recipes]')
+      AND name = 'IX_Recipes_Food_ID'
+)
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_Recipes_Food_ID] ON [dbo].[Recipes]([Food_ID] ASC);
+END;
+GO
+
+
+
+
+-- ============================================================================
+-- START: 43_MealPlans_Add_DurationDays.sql
+-- ============================================================================
+-- ============================================================================
+-- File: 43_MealPlans_Add_DurationDays.sql
+-- Table: MealPlans (Alteration)
+-- Cluster: Kho Công thức Chay, Thực đơn & Đi chợ
+-- Description: Thêm cột Duration_Days vào bảng MealPlans để lưu số ngày của thực đơn (1 - 30 ngày, mặc định 7 ngày).
+-- ============================================================================
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[MealPlans]')
+      AND name = 'Duration_Days'
+)
+BEGIN
+    ALTER TABLE [dbo].[MealPlans] ADD [Duration_Days] INT NOT NULL CONSTRAINT [DF_MealPlans_Duration_Days] DEFAULT (7);
+END;
+GO
+
+
+
+
+-- ============================================================================
+-- START: 44_SystemSettings_Add_LegalDocuments.sql
+-- ============================================================================
+-- ============================================================================
+-- File: 44_SystemSettings_Add_LegalDocuments.sql
+-- Table: SystemSettings (Alteration & Data Seeding)
+-- Cluster: Quản trị Hệ thống, Tham số & Kiểm toán (Cluster 6)
+-- Description: Bổ sung thuộc tính Legal_Documents_Url và lưu trữ các đường dẫn
+--              Cloudinary của 4 tài liệu pháp lý (Legal documents) vào bảng SystemSettings.
+-- ============================================================================
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+-- 1. Thêm thuộc tính (cột) Legal_Documents_Url vào bảng SystemSettings nếu chưa tồn tại
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[SystemSettings]')
+      AND name = 'Legal_Documents_Url'
+)
+BEGIN
+    ALTER TABLE [dbo].[SystemSettings]
+    ADD [Legal_Documents_Url] NVARCHAR(MAX) NULL;
+END;
+GO
+
+-- 2. Mở rộng độ dài Setting_Value và Default_Value lên NVARCHAR(2000) để chứa JSON cấu hình đầy đủ
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[SystemSettings]')
+      AND name = 'Setting_Value'
+      AND max_length = 1000 -- 500 characters in NVARCHAR = 1000 bytes
+)
+BEGIN
+    ALTER TABLE [dbo].[SystemSettings] ALTER COLUMN [Setting_Value] NVARCHAR(2000) NOT NULL;
+    ALTER TABLE [dbo].[SystemSettings] ALTER COLUMN [Default_Value] NVARCHAR(2000) NOT NULL;
+END;
+GO
+
+-- 3. Nạp / Đồng bộ cấu hình URL tài liệu pháp lý (định dạng ảnh PNG chất lượng cao) vào bảng SystemSettings
+MERGE INTO dbo.SystemSettings AS Target
+USING (VALUES
+    (
+        'LEGAL_DOCUMENTS',
+        N'{"user_agreement":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png","privacy_policy":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png","terms_of_service":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png","vegan_disclaimer":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png"}',
+        N'{"user_agreement":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png","privacy_policy":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png","terms_of_service":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png","vegan_disclaimer":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png"}',
+        'STRING',
+        'GENERAL',
+        N'Tài liệu pháp lý VeggieLife (Điều khoản, Chính sách bảo mật, Cam kết người dùng, Quy chuẩn ẩm thực chay)',
+        N'{"user_agreement":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png","privacy_policy":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png","terms_of_service":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png","vegan_disclaimer":"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png"}'
+    ),
+    (
+        'LEGAL_USER_AGREEMENT_URL',
+        N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png',
+        N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png',
+        'STRING',
+        'GENERAL',
+        N'Bản Cam Kết Và Thỏa Thuận Đăng Ký Người Dùng',
+        N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png'
+    ),
+    (
+        'LEGAL_PRIVACY_POLICY_URL',
+        N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png',
+        N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png',
+        'STRING',
+        'GENERAL',
+        N'Chính Sách Bảo Mật Dữ Liệu VeggieLife',
+        N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png'
+    ),
+    (
+        'LEGAL_TERMS_OF_SERVICE_URL',
+        N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png',
+        N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png',
+        'STRING',
+        'GENERAL',
+        N'Điều Khoản Sử Dụng Dịch Vụ VeggieLife',
+        N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png'
+    ),
+    (
+        'LEGAL_VEGAN_DISCLAIMER_URL',
+        N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png',
+        N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png',
+        'STRING',
+        'GENERAL',
+        N'Quy Chuẩn Ẩm Thực Chay Và Miễn Trừ Y Tế VeggieLife',
+        N'https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png'
+    )
+) AS Source (Setting_Key, Setting_Value, Default_Value, Data_Type, Category, Description, Legal_Documents_Url)
+ON Target.Setting_Key = Source.Setting_Key
+WHEN MATCHED THEN
+    UPDATE SET 
+        Setting_Value = Source.Setting_Value,
+        Default_Value = Source.Default_Value,
+        Data_Type = Source.Data_Type,
+        Category = Source.Category,
+        Description = Source.Description,
+        Legal_Documents_Url = Source.Legal_Documents_Url,
+        Updated_At = SYSDATETIME()
+WHEN NOT MATCHED BY TARGET THEN
+    INSERT (Setting_Key, Setting_Value, Default_Value, Data_Type, Category, Description, Legal_Documents_Url, Updated_At)
+    VALUES (Source.Setting_Key, Source.Setting_Value, Source.Default_Value, Source.Data_Type, Source.Category, Source.Description, Source.Legal_Documents_Url, SYSDATETIME());
+GO
+
+
+
+
+-- ============================================================================
+-- START: 45_MealPlans_Allow_Cancelled_Status.sql
+-- ============================================================================
+-- ============================================================================
+-- File: 45_MealPlans_Allow_Cancelled_Status.sql
+-- Table: MealPlans (Alteration)
+-- Cluster: Kho Công thức Chay, Thực đơn & Đi chợ
+-- Description: Bổ sung giá trị CANCELLED vào check constraint CK_MealPlans_Status để hỗ trợ tính năng Hủy thực đơn.
+-- ============================================================================
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+IF EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE parent_object_id = OBJECT_ID(N'[dbo].[MealPlans]')
+      AND name = 'CK_MealPlans_Status'
+)
+BEGIN
+    ALTER TABLE [dbo].[MealPlans] DROP CONSTRAINT [CK_MealPlans_Status];
+END;
+GO
+
+ALTER TABLE [dbo].[MealPlans] ADD CONSTRAINT [CK_MealPlans_Status]
+    CHECK ([Plan_Status] IN ('DRAFT', 'ACTIVE', 'ARCHIVED', 'TEMPLATE', 'CANCELLED'));
+GO
+
+

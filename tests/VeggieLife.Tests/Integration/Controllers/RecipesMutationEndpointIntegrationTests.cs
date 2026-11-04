@@ -134,7 +134,6 @@ public class RecipesMutationEndpointIntegrationTests : IClassFixture<WebApplicat
         {
             RecipeId = 801,
             UserId = 301,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Canh đậu hũ nấm thuần chay đã duyệt",
             Instructions = "[\"Bước 1: Nấu canh sôi\", \"Bước 2: Nêm nếm muối\"]",
@@ -161,7 +160,6 @@ public class RecipesMutationEndpointIntegrationTests : IClassFixture<WebApplicat
         {
             RecipeId = 802,
             UserId = 301,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức chuẩn bị gỡ profile",
             Instructions = "[\"Bước 1: Sơ chế\", \"Bước 2: Nấu chín\"]",
@@ -178,7 +176,6 @@ public class RecipesMutationEndpointIntegrationTests : IClassFixture<WebApplicat
         {
             RecipeId = 803,
             UserId = 301,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức chuẩn bị xóa mềm",
             Instructions = "[\"Bước 1: Sơ chế\", \"Bước 2: Nấu chín\"]",

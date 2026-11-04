@@ -33,8 +33,8 @@ public class MealPlansController : BaseApiController
     }
 
     /// <summary>
-    /// FN-MEAL-01: Sinh thực đơn tuần bằng AI.
-    /// Sinh thực đơn 7 ngày × 3 bữa (21 bữa) từ hồ sơ sức khỏe, trường phái, dị ứng, mức ngân sách.
+    /// FN-MEAL-01: Sinh thực đơn dinh dưỡng bằng AI.
+    /// Cho phép tạo thực đơn linh hoạt theo số ngày (DurationDays từ 1 đến 30 ngày) và có thể bắt đầu vào bất kỳ ngày nào trong tuần.
     /// Thực đơn ở trạng thái DRAFT để người dùng xem và tùy chỉnh.
     /// Hạn mức tuần: Free 1 thực đơn/tuần, VIP 3 thực đơn/tuần.
     /// </summary>
@@ -57,6 +57,29 @@ public class MealPlansController : BaseApiController
     }
 
     /// <summary>
+    /// FN-MEAL-01: Sinh thực đơn linh hoạt số ngày (1 đến 30 ngày) bằng AI.
+    /// Cho phép người dùng tùy chọn số ngày thực đơn (DurationDays từ 1 đến 30 ngày) và bắt đầu vào bất kỳ ngày nào trong tuần.
+    /// </summary>
+    [HttpPost("custom-days")]
+    [HttpPost("flexible")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<CreateMealPlanResponseData>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> CreateMealPlanCustomDays(
+        [FromBody] CreateMealPlanRequest request,
+        CancellationToken ct)
+    {
+        var (userId, userRole) = EnsureAuthorizedUser();
+        var result = await _mealPlanService.CreateMealPlanAsync(userId, userRole, request, ct);
+        return CreatedResponse(result, "Đã tạo thực đơn nháp.");
+    }
+
+    /// <summary>
     /// FN-MEAL-02: Xem danh sách các thực đơn của người dùng.
     /// Lấy danh sách thực đơn (Plan_Status != TEMPLATE) sắp xếp mới nhất trước, có phân trang.
     /// </summary>
@@ -68,10 +91,13 @@ public class MealPlansController : BaseApiController
     public async Task<IActionResult> ListMealPlans(
         [FromQuery] int page = 1,
         [FromQuery] int size = 10,
+        [FromQuery] string? status = null,
         CancellationToken ct = default)
     {
         var (userId, _) = EnsureAuthorizedUser();
-        var (items, meta) = await _mealPlanService.ListMealPlansAsync(userId, page, size, ct);
+        var (items, meta) = string.IsNullOrWhiteSpace(status)
+            ? await _mealPlanService.ListMealPlansAsync(userId, page, size, ct)
+            : await _mealPlanService.ListMealPlansAsync(userId, page, size, status, ct);
         return PagedResponse(items, meta, "OK");
     }
 
@@ -111,6 +137,28 @@ public class MealPlansController : BaseApiController
         var (userId, userRole) = EnsureAuthorizedUser();
         var result = await _mealPlanService.ActivateMealPlanAsync(id, userId, userRole, ct);
         return OkResponse(result, "Đã kích hoạt thực đơn.");
+    }
+
+    /// <summary>
+    /// TASK-K1 / FN-MEAL: Hủy thực đơn của người dùng (Phương án A - PlanStatus = CANCELLED).
+    /// Khóa hiệu lực thực đơn. Lưu ý: Lượt tạo thực đơn trong tuần không được hoàn lại do đã tiêu tốn tài nguyên sinh thực đơn AI (BR-PAY-SUB-01).
+    /// </summary>
+    [HttpPut("{id:int}/cancel")]
+    [HttpPost("{id:int}/cancel")]
+    [HttpDelete("{id:int}")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<MealPlanDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CancelMealPlan(
+        [FromRoute] int id,
+        CancellationToken ct = default)
+    {
+        var (userId, _) = EnsureAuthorizedUser();
+        var result = await _mealPlanService.CancelMealPlanAsync(id, userId, ct);
+        return OkResponse(result, "Đã hủy thực đơn thành công.");
     }
 
     /// <summary>
@@ -156,6 +204,30 @@ public class MealPlansController : BaseApiController
         var (userId, _) = EnsureAuthorizedUser();
         var result = await _mealPlanService.GetMealSlotSwapHistoryAsync(slotId, userId, id, ct);
         return OkResponse(result, "OK");
+    }
+
+    /// <summary>
+    /// FN-MEAL-03: Đổi món theo ghi chú/khẩu vị người dùng bằng AI.
+    /// Gom 100 món ứng viên, đóng gói toàn bộ công thức gửi qua AI để chọn món tối ưu nhất theo ghi chú.
+    /// </summary>
+    [HttpPost("slots/{slotId:int}/swap-by-note")]
+    [HttpPost("{id:int}/slots/{slotId:int}/swap-by-note")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<UpdateMealPlanSlotResponseData>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> SwapMealSlotByNote(
+        [FromRoute] int slotId,
+        [FromRoute] int? id,
+        [FromBody] SwapMealSlotByNoteRequest request,
+        CancellationToken ct = default)
+    {
+        var (userId, userRole) = EnsureAuthorizedUser();
+        var result = await _mealPlanService.SwapMealSlotByNoteAsync(slotId, userId, userRole, request, id, ct);
+        return OkResponse(result, "Đã đổi món theo yêu cầu.");
     }
 
     /// <summary>
@@ -232,27 +304,6 @@ public class MealPlansController : BaseApiController
         var (userId, _) = EnsureAuthorizedUser();
         var result = await _shoppingListService.CreateMealPlanShoppingListAsync(id, userId, request ?? new CreateMealPlanShoppingListRequest(), ct);
         return CreatedResponse(result, "Đã tạo danh sách đi chợ.");
-    }
-
-    /// <summary>
-    /// FN-MEAL-08: Xuất thực đơn tuần và danh sách đi chợ ra PDF dành riêng cho VIP (BR-PAY-SUB-03).
-    /// </summary>
-    [HttpGet("{id:int}/export")]
-    [Authorize]
-    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> ExportMealPlan(
-        [FromRoute] int id,
-        [FromQuery] string? include = "PLAN,SHOPPING",
-        CancellationToken ct = default)
-    {
-        var (userId, userRole) = EnsureAuthorizedUser();
-        var pdfBytes = await _mealPlanService.ExportMealPlanPdfAsync(id, userId, userRole, include, ct);
-        return File(pdfBytes, "application/pdf", $"veggielife-meal-plan-{id}.pdf");
     }
 
     private (int UserId, string UserRole) EnsureAuthorizedUser()

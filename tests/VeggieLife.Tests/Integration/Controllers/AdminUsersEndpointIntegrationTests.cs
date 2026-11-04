@@ -202,7 +202,6 @@ public class AdminUsersEndpointIntegrationTests : IClassFixture<WebApplicationFa
         {
             RecipeId = 601,
             UserId = 200,
-            CategoryId = 1,
             DietarySchoolId = 1,
             Title = "Công thức nấu chay số 1",
             Instructions = "[\"B1\"]",

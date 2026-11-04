@@ -26,14 +26,18 @@ public class JwtTokenService : IJwtTokenService
     public TokenResult GenerateUserToken(User user, bool isVip = false)
     {
         var jti = Guid.NewGuid().ToString("N");
+        var effectiveRole = (!string.Equals(user.Role, UserRoles.Admin, StringComparison.OrdinalIgnoreCase) && isVip)
+            ? UserRoles.Vip
+            : user.Role;
+
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
             new(JwtRegisteredClaimNames.Sub, user.UserId.ToString()),
             new(ClaimTypes.Email, user.Email),
             new(ClaimTypes.Name, user.FullName),
-            new(ClaimTypes.Role, user.Role),
-            new("role", user.Role),
+            new(ClaimTypes.Role, effectiveRole),
+            new("role", effectiveRole),
             new("AccountStatus", user.AccountStatus),
             new(JwtRegisteredClaimNames.Jti, jti),
             new("isVip", isVip ? "true" : "false")

@@ -17,4 +17,17 @@ public interface IEmailService
     /// Gửi email thông báo kích hoạt thành công hoặc biên lai giao dịch.
     /// </summary>
     Task SendNotificationEmailAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default);
+
+    /// <summary>
+    /// Gửi email thông báo kèm một tệp đính kèm (biên lai PDF). Mặc định gửi như thư thông báo thường.
+    /// </summary>
+    Task SendNotificationEmailWithAttachmentAsync(
+        string toEmail,
+        string subject,
+        string htmlBody,
+        string attachmentFileName,
+        byte[] attachmentBytes,
+        string attachmentContentType,
+        CancellationToken ct = default)
+        => SendNotificationEmailAsync(toEmail, subject, htmlBody, ct);
 }

@@ -1,4 +1,4 @@
-﻿-- ============================================================
+-- ============================================================
 -- File: 02_Seed_Allergens.sql
 -- Thư mục: database/seed/
 -- Mục đích: Nạp sẵn từ điển các nhóm chất gây dị ứng thực phẩm theo tiêu chuẩn FDA Top 9 & Bộ Y tế

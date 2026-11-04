@@ -63,7 +63,7 @@ public class RecipesControllerTests
         };
         var meta = new PagedMeta(1, 10, 1, signUpPromptAtItem: 5);
 
-        _mockService.Setup(s => s.ListRecipesAsync(filter, true, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.ListRecipesAsync(filter, true, It.IsAny<string?>(), It.IsAny<CancellationToken>(), It.IsAny<int?>()))
             .ReturnsAsync((sampleList, meta));
 
         // Act
@@ -109,7 +109,7 @@ public class RecipesControllerTests
             MemberActions = new MemberActionsDto { CanVote = false, CanComment = false, CanReport = false }
         };
 
-        _mockService.Setup(s => s.GetRecipeByIdAsync(512, true, null, It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.GetRecipeByIdAsync(512, true, (int?)null, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(detailDto);
 
         // Act
@@ -146,7 +146,7 @@ public class RecipesControllerTests
             MemberActions = new MemberActionsDto { CanVote = true, CanComment = true, CanReport = true }
         };
 
-        _mockService.Setup(s => s.GetRecipeByIdAsync(512, false, 42, It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.GetRecipeByIdAsync(512, false, (int?)42, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(detailDto);
 
         // Act
@@ -155,7 +155,7 @@ public class RecipesControllerTests
         // Assert
         var okResult = result as OkObjectResult;
         okResult.Should().NotBeNull();
-        _mockService.Verify(s => s.GetRecipeByIdAsync(512, false, 42, It.IsAny<CancellationToken>()), Times.Once);
+        _mockService.Verify(s => s.GetRecipeByIdAsync(512, false, (int?)42, false, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

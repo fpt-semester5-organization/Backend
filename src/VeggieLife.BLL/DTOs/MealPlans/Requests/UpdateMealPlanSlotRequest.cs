@@ -16,4 +16,14 @@ public class UpdateMealPlanSlotRequest
     /// Danh sách mã công thức không muốn chọn làm món thay thế.
     /// </summary>
     public List<int>? ExcludedRecipeIds { get; set; }
+
+    /// <summary>
+    /// Mã món ăn mới muốn thay thế trực tiếp (khi người dùng tự chọn từ cơ sở dữ liệu).
+    /// </summary>
+    public int? NewRecipeId { get; set; }
+
+    /// <summary>
+    /// Ghi chú lưu ý riêng cho món ăn này.
+    /// </summary>
+    public string? CustomNote { get; set; }
 }

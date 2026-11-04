@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using VeggieLife.BLL.Common.Responses;
+using VeggieLife.BLL.DTOs.Foods.Responses;
 using VeggieLife.BLL.DTOs.Recipes.Requests;
 using VeggieLife.BLL.DTOs.Recipes.Responses;
 
@@ -19,7 +20,8 @@ public interface IRecipeService
         RecipeFilterRequest filter,
         bool isGuest,
         string? guestId,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        int? currentUserId = null);
 
     /// <summary>
     /// Xem chi tiết đầy đủ một công thức nấu ăn đã được duyệt (FN-POST-02).
@@ -28,6 +30,7 @@ public interface IRecipeService
         int id,
         bool isGuest,
         int? currentUserId = null,
+        bool isAdmin = false,
         CancellationToken ct = default);
 
     /// <summary>
@@ -57,6 +60,9 @@ public interface IRecipeService
         string userRole,
         string mode,
         CancellationToken ct = default);
+
+    /// <summary>Tìm kiếm Food theo tên (dùng cho autocomplete combobox). Trả tối đa 10 kết quả.</summary>
+    Task<IReadOnlyList<FoodSummaryDto>> SearchFoodsAsync(string query, CancellationToken ct = default);
 
     /// <summary>
     /// FN-POST-11: Gợi ý các công thức tương đồng (cùng trường phái, chung nguyên liệu, nhiều votes) và bài viết/video liên quan.

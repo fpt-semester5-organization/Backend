@@ -26,11 +26,12 @@ BEGIN
         [Generated_By_AI]       BIT NOT NULL CONSTRAINT [DF_MealPlans_Generated_By_AI] DEFAULT (0),
         [Max_Swaps_Allowed]     INT NOT NULL CONSTRAINT [DF_MealPlans_Max_Swaps] DEFAULT (21),
         [Swaps_Remaining]       INT NOT NULL CONSTRAINT [DF_MealPlans_Swaps_Remaining] DEFAULT (21),
+        [Duration_Days]         INT NOT NULL CONSTRAINT [DF_MealPlans_Duration_Days] DEFAULT (7),
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_MealPlans_Created_At] DEFAULT (SYSDATETIME()),
 
         CONSTRAINT [PK_MealPlans] PRIMARY KEY CLUSTERED ([Plan_ID] ASC),
         CONSTRAINT [CK_MealPlans_Budget_Tier] CHECK ([Budget_Tier] IN ('ECONOMICAL', 'STANDARD', 'PREMIUM')),
-        CONSTRAINT [CK_MealPlans_Status] CHECK ([Plan_Status] IN ('DRAFT', 'ACTIVE', 'ARCHIVED', 'TEMPLATE'))
+        CONSTRAINT [CK_MealPlans_Status] CHECK ([Plan_Status] IN ('DRAFT', 'ACTIVE', 'ARCHIVED', 'TEMPLATE', 'CANCELLED'))
     );
 
     CREATE NONCLUSTERED INDEX [IX_MealPlans_User_ID] ON [dbo].[MealPlans]([User_ID] ASC);

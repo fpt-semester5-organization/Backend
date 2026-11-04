@@ -61,5 +61,13 @@ public interface IVideoService
         int id,
         int? currentUserId = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Lưu bản phiên âm và công thức bóc tách từ video xuống CSDL (FN-POST-09, FN-POST-10).
+    /// </summary>
+    Task<VideoTranscriptResponseData> SaveVideoTranscriptAsync(
+        int videoId,
+        SaveVideoTranscriptDto dto,
+        CancellationToken ct = default);
 }
 

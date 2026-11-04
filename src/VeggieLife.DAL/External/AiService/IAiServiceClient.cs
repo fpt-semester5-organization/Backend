@@ -15,6 +15,11 @@ public interface IAiServiceClient
     Task<AiMealPlanResponse?> GenerateMealPlanAsync(AiMealPlanRequest request, CancellationToken ct = default);
 
     /// <summary>
+    /// Gửi danh sách món ứng viên kèm ghi chú đổi món sang AI Service để chọn món phù hợp (FN-MEAL-03).
+    /// </summary>
+    Task<AiSwapMealByNoteResponse?> SwapMealByNoteAsync(AiSwapMealByNoteRequest request, CancellationToken ct = default);
+
+    /// <summary>
     /// Gửi hình ảnh tủ lạnh sang AI Service nhận diện nguyên liệu và độ tươi (FN-VIS-01).
     /// </summary>
     Task<AiFridgeDetectionResult?> DetectFridgeIngredientsAsync(System.IO.Stream imageStream, string mimeType, CancellationToken ct = default);

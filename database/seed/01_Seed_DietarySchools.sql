@@ -1,4 +1,4 @@
-﻿-- ============================================================
+-- ============================================================
 -- File: 01_Seed_DietarySchools.sql
 -- Thư mục: database/seed/
 -- Mục đích: Nạp sẵn dữ liệu master 07 trường phái ăn chay hệ thống

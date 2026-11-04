@@ -101,6 +101,58 @@ public class AdminIngredientsController : BaseApiController
         return OkResponse(result, "Đã cập nhật.");
     }
 
+    /// <summary>
+    /// BR-ADM-ING-01: Chuyển đổi trạng thái Khóa / Mở khóa bảo vệ nguyên liệu.
+    /// </summary>
+    [HttpPatch("{id:int}/lock")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ToggleLock(
+        [FromRoute] int id,
+        [FromBody] ToggleIngredientLockRequest request,
+        CancellationToken ct)
+    {
+        var adminId = EnsureAdmin();
+        var isLocked = await _ingredientService.ToggleLockAsync(id, request.IsLocked, adminId, ct);
+        return OkResponse(new { ingredientId = id, isLocked }, isLocked ? "Đã khóa nguyên liệu thành công." : "Đã mở khóa nguyên liệu thành công.");
+    }
+
+    /// <summary>
+    /// FN-ADM-12: Lấy danh sách ảnh ứng viên bóc tách từ ảnh tủ lạnh người dùng (AI Vision box2d).
+    /// </summary>
+    /// <summary>
+    /// FN-ADM-12: Tải ảnh từ máy tính lên Cloudinary và lưu URL làm ảnh đại diện duy nhất cho nguyên liệu.
+    /// </summary>
+    [HttpPost("{id:int}/image")]
+    [Consumes("multipart/form-data")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UploadImage(
+        [FromRoute] int id,
+        Microsoft.AspNetCore.Http.IFormFile? file,
+        CancellationToken ct)
+    {
+        var adminId = EnsureAdmin();
+        if (file == null || file.Length == 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrMediaInvalidFile, "Tệp hình ảnh không được để trống.");
+        }
+
+        if (file.Length > 5 * 1024 * 1024)
+        {
+            throw new AppException(413, ErrorCodes.ErrMediaFileTooLarge, "Tệp vượt quá dung lượng tối đa 5 MB.");
+        }
+
+        await using var stream = file.OpenReadStream();
+        var imageUrl = await _ingredientService.UploadImageAsync(id, stream, file.FileName, adminId, ct);
+        return OkResponse(new { ingredientId = id, imageUrl }, "Tải ảnh lên Cloudinary và cập nhật ảnh đại diện thành công.");
+    }
+
     private int EnsureAdmin()
     {
         if (User.Identity == null || !User.Identity.IsAuthenticated)

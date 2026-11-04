@@ -49,6 +49,22 @@ public static class AdminIngredientValidator
         {
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã nhóm dị ứng phải lớn hơn 0.");
         }
+
+        if (!string.IsNullOrWhiteSpace(filter.StallType) &&
+            !ValidStallTypes.Contains(filter.StallType.Trim().ToUpperInvariant()))
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Quầy hàng lọc không hợp lệ (chấp nhận: PRODUCE, CONDIMENTS, DRY_GOODS, PLANT_PROTEIN).");
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.FoodGroup) &&
+            !ValidFoodGroups.Contains(filter.FoodGroup.Trim().ToUpperInvariant()))
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Nhóm thực phẩm lọc không hợp lệ (chấp nhận: PLANT, EGG, DAIRY, POULTRY, SEAFOOD).");
+        }
     }
 
     public static void ValidateCreate(CreateAdminIngredientRequest request)

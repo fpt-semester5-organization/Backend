@@ -138,7 +138,6 @@ public class RecipeServiceTests : IDisposable
         {
             RecipeId = 501,
             UserId = 1,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Canh nấm đậu phụ rong biển",
             Description = "Món canh thanh đạm bổ dưỡng",
@@ -161,7 +160,6 @@ public class RecipeServiceTests : IDisposable
         {
             RecipeId = 502,
             UserId = 1,
-            CategoryId = 2,
             DietarySchoolId = 1,
             Title = "Nấm xào thập cẩm thanh tịnh",
             Description = "Nấm xào ngũ sắc hấp dẫn",
@@ -184,7 +182,6 @@ public class RecipeServiceTests : IDisposable
         {
             RecipeId = 503,
             UserId = 1,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Canh bí đỏ nháp",
             Description = "Bản nháp",
@@ -206,7 +203,6 @@ public class RecipeServiceTests : IDisposable
         {
             RecipeId = 504,
             UserId = 1,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức nghi vấn vi phạm",
             Description = "Cách ly",
@@ -344,8 +340,8 @@ public class RecipeServiceTests : IDisposable
     [Fact]
     public async Task ListRecipesAsync_FilterByCategory_ReturnsCorrectRecipes()
     {
-        // Act: Lọc Món xào (ID 2)
         var filter = new RecipeFilterRequest { CategoryId = 2 };
+        // Act: Lọc Món xào (ID 2)
         var (items, meta) = await _service.ListRecipesAsync(filter, isGuest: false, guestId: null);
 
         // Assert
@@ -531,6 +527,17 @@ public class RecipeServiceTests : IDisposable
         // Assert: BR-ADM-CNT-001 -> 404 ERR_CONTENT_NOT_FOUND
         await act.Should().ThrowAsync<AppException>()
             .Where(e => e.StatusCode == 404 && e.ErrorCode == ErrorCodes.ErrContentNotFound);
+    }
+
+    [Fact]
+    public async Task GetRecipeByIdAsync_UnapprovedRecipe_WhenUserIsAdmin_ReturnsDetails()
+    {
+        // Act: Recipe 503 là DRAFT, admin (ID 99, isAdmin = true) xem để thẩm tra
+        var result = await _service.GetRecipeByIdAsync(503, isGuest: false, currentUserId: 99, isAdmin: true);
+
+        // Assert: Admin có thể xem được nội dung chi tiết công thức để thẩm tra
+        result.Should().NotBeNull();
+        result.RecipeId.Should().Be(503);
     }
 
     [Fact]

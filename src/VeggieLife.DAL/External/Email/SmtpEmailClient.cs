@@ -38,12 +38,34 @@ public class SmtpEmailClient : ISmtpEmailClient
     /// <summary>
     /// Gửi thư điện tử qua giao thức mạng SMTP với chuỗi nhà cung cấp tự động chuyển đổi khi gặp sự cố.
     /// </summary>
-    public async Task SendEmailAsync(
+    public Task SendEmailAsync(
         string toEmail,
         string subject,
         string htmlBody,
         string? plainTextBody = null,
         CancellationToken ct = default)
+        => SendCoreAsync(toEmail, subject, htmlBody, plainTextBody, null, ct);
+
+    /// <summary>
+    /// Gửi thư HTML kèm tệp đính kèm (biên lai PDF) qua chuỗi nhà cung cấp SMTP.
+    /// </summary>
+    public Task SendEmailWithAttachmentAsync(
+        string toEmail,
+        string subject,
+        string htmlBody,
+        string attachmentFileName,
+        byte[] attachmentBytes,
+        string attachmentContentType,
+        CancellationToken ct = default)
+        => SendCoreAsync(toEmail, subject, htmlBody, null, (attachmentFileName, attachmentBytes, attachmentContentType), ct);
+
+    private async Task SendCoreAsync(
+        string toEmail,
+        string subject,
+        string htmlBody,
+        string? plainTextBody,
+        (string Name, byte[] Bytes, string ContentType)? attachment,
+        CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(toEmail))
         {
@@ -74,7 +96,7 @@ public class SmtpEmailClient : ISmtpEmailClient
                     "[SmtpEmailClient] Đang gửi email tới '{ToEmail}' qua nhà cung cấp '{ProviderName}' ({Host}:{Port})...",
                     toEmail, provider.Name, provider.Host, provider.Port);
 
-                await SendViaProviderAsync(provider, toEmail, subject, htmlBody, plainTextBody, ct);
+                await SendViaProviderAsync(provider, toEmail, subject, htmlBody, plainTextBody, attachment, ct);
 
                 _logger.LogInformation(
                     "[SmtpEmailClient] Đã gửi thành công email tới '{ToEmail}' qua nhà cung cấp '{ProviderName}'!",
@@ -115,6 +137,7 @@ public class SmtpEmailClient : ISmtpEmailClient
         string subject,
         string htmlBody,
         string? plainTextBody,
+        (string Name, byte[] Bytes, string ContentType)? attachment,
         CancellationToken ct)
     {
         using var client = new SmtpClient(provider.Host, provider.Port)
@@ -157,6 +180,11 @@ public class SmtpEmailClient : ISmtpEmailClient
         else
         {
             message.Body = htmlBody;
+        }
+
+        if (attachment is { } file)
+        {
+            message.Attachments.Add(new Attachment(new System.IO.MemoryStream(file.Bytes), file.Name, file.ContentType));
         }
 
         await client.SendMailAsync(message, ct);

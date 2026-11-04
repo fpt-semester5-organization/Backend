@@ -117,7 +117,6 @@ public class RecipeRelatedSuggestionTests : IDisposable
         {
             RecipeId = 100,
             UserId = 1,
-            CategoryId = 1, // Canh
             DietarySchoolId = 7, // VEGAN
             Title = "Canh nấm rong biển hạt sen",
             Description = "Món canh bổ dưỡng thanh mát",
@@ -142,7 +141,6 @@ public class RecipeRelatedSuggestionTests : IDisposable
         {
             RecipeId = 101,
             UserId = 1,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Canh đậu hũ nấm rơm",
             Instructions = "[\"B1\"]",
@@ -165,7 +163,6 @@ public class RecipeRelatedSuggestionTests : IDisposable
         {
             RecipeId = 102,
             UserId = 1,
-            CategoryId = 2,
             DietarySchoolId = 7,
             Title = "Đậu hũ sốt nấm xào thập cẩm",
             Instructions = "[\"B1\"]",
@@ -188,7 +185,6 @@ public class RecipeRelatedSuggestionTests : IDisposable
         {
             RecipeId = 103,
             UserId = 1,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Canh rong biển đậu nành",
             Instructions = "[\"B1\"]",
@@ -210,7 +206,6 @@ public class RecipeRelatedSuggestionTests : IDisposable
         {
             RecipeId = 104,
             UserId = 1,
-            CategoryId = 1,
             DietarySchoolId = 1, // BUDDHIST
             Title = "Canh thanh tịnh chay Phật giáo",
             Instructions = "[\"B1\"]",
@@ -233,7 +228,6 @@ public class RecipeRelatedSuggestionTests : IDisposable
         {
             RecipeId = 105,
             UserId = 1,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Canh nháp chưa duyệt",
             Instructions = "[\"B1\"]",
@@ -249,7 +243,6 @@ public class RecipeRelatedSuggestionTests : IDisposable
         {
             RecipeId = 106,
             UserId = 1,
-            CategoryId = 99,
             DietarySchoolId = 7,
             Title = "Canh trong danh mục bị ẩn",
             Instructions = "[\"B1\"]",

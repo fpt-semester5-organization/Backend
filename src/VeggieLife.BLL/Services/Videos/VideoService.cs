@@ -1,16 +1,21 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
+using VeggieLife.BLL.DTOs.Posts.Responses;
 using VeggieLife.BLL.DTOs.Videos.Requests;
 using VeggieLife.BLL.DTOs.Videos.Responses;
+using VeggieLife.BLL.Services.AI;
 using VeggieLife.BLL.Services.Cache;
+using VeggieLife.BLL.Services.Knowledge;
 using VeggieLife.BLL.Services.Media;
+using VeggieLife.BLL.Services.Moderation;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
 
@@ -26,6 +31,9 @@ public class VideoService : IVideoService
     private readonly IMediaService _mediaService;
     private readonly IRedisService _redisService;
     private readonly ILogger<VideoService> _logger;
+    private readonly IContentModerationService _moderationService;
+    private readonly IKnowledgeSyncQueue _knowledgeSyncQueue;
+    private readonly IAiSttClient? _aiSttClient;
 
     private static readonly string[] AllowedImageExtensions = { ".jpg", ".jpeg", ".png", ".webp" };
     private static readonly string[] AllowedVideoExtensions = { ".mp4", ".mov" };
@@ -34,12 +42,18 @@ public class VideoService : IVideoService
         AppDbContext context,
         IMediaService mediaService,
         IRedisService redisService,
-        ILogger<VideoService> logger)
+        ILogger<VideoService> logger,
+        IContentModerationService? moderationService = null,
+        IKnowledgeSyncQueue? knowledgeSyncQueue = null,
+        IAiSttClient? aiSttClient = null)
     {
         _context = context;
         _mediaService = mediaService;
         _redisService = redisService;
         _logger = logger;
+        _moderationService = moderationService ?? new SimulatedContentModerationService(new Microsoft.Extensions.Logging.Abstractions.NullLogger<SimulatedContentModerationService>());
+        _knowledgeSyncQueue = knowledgeSyncQueue ?? new KnowledgeSyncQueueStub(new Microsoft.Extensions.Logging.Abstractions.NullLogger<KnowledgeSyncQueueStub>());
+        _aiSttClient = aiSttClient;
     }
 
     /// <summary>
@@ -110,12 +124,17 @@ public class VideoService : IVideoService
                     RecipeId = targetRecipe.RecipeId,
                     Title = targetRecipe.Title,
                     Content = targetRecipe.Description ?? targetRecipe.Title,
-                    Visibility = "PUBLIC",
-                    ModerationStatus = targetRecipe.Status == "APPROVED_ACTIVE" ? "APPROVED_ACTIVE" : "DRAFT",
+                    Visibility = targetRecipe.Status == "APPROVED_ACTIVE" ? "PUBLIC" : "PRIVATE",
+                    ModerationStatus = targetRecipe.Status,
                     CreatedAt = DateTime.UtcNow
                 };
                 _context.Posts.Add(targetPost);
                 await _context.SaveChangesAsync(ct);
+            }
+            else
+            {
+                targetPost.ModerationStatus = targetRecipe.Status;
+                targetPost.Visibility = targetRecipe.Status == "APPROVED_ACTIVE" ? "PUBLIC" : "PRIVATE";
             }
         }
 
@@ -141,17 +160,109 @@ public class VideoService : IVideoService
 
             var imageUploadResult = await _mediaService.UploadImageAsync(dto.FileStream, fileName, "veggielife/images", ct);
 
+            var safeImageUrl = imageUploadResult.SecureUrl?.Length > 1000
+                ? imageUploadResult.SecureUrl[..1000]
+                : imageUploadResult.SecureUrl;
+
+            string? imageModerationStatus = null;
+
             // Gắn URL ảnh vào bài viết hoặc công thức đích
             if (targetPost != null)
             {
-                targetPost.ImageUrl = imageUploadResult.SecureUrl;
+                targetPost.ImageUrl = safeImageUrl;
                 targetPost.UpdatedAt = DateTime.UtcNow;
+
+                // Khi tải ảnh thay thế cho bài viết đã có video, đánh dấu DELETED các video cũ
+                var existingAttachedVideos = await _context.Videos
+                    .Where(v => v.PostId == targetPost.PostId && v.Status != "DELETED")
+                    .ToListAsync(ct);
+                foreach (var v in existingAttachedVideos)
+                {
+                    v.Status = "DELETED";
+                    v.UpdatedAt = DateTime.UtcNow;
+                }
+
+                // Quét kiểm duyệt AI đối với bài viết nếu không phải DRAFT (BR-USR-03, BR-ADM-CNT-002)
+                if (targetPost.ModerationStatus != "DRAFT")
+                {
+                    var modResult = await _moderationService.ModeratePostAsync(targetPost.Title, targetPost.Content, safeImageUrl, ct);
+                    await LogAiQuotaAsync(userId, modResult, ct);
+
+                    var isQuarantined = modResult.ViolationScore >= 85.0
+                        || (!string.IsNullOrEmpty(modResult.ViolationType) && modResult.ViolationType != "NONE")
+                        || !modResult.IsApproved
+                        || modResult.ModerationStatus == "QUARANTINED_HIDDEN";
+
+                    if (isQuarantined)
+                    {
+                        targetPost.ModerationStatus = "QUARANTINED_HIDDEN";
+                        _context.ViolationReports.Add(new ViolationReport
+                        {
+                            PostId = targetPost.PostId,
+                            ViolationType = MapToValidViolationType(modResult.ViolationType),
+                            EvidenceSummary = (modResult.Note ?? "AI phát hiện vi phạm hình ảnh.").Length > 500
+                                ? (modResult.Note ?? "AI phát hiện vi phạm hình ảnh.").Substring(0, 500)
+                                : (modResult.Note ?? "AI phát hiện vi phạm hình ảnh."),
+                            ReportSource = "AI_SCAN",
+                            Status = "PENDING",
+                            CreatedAt = DateTime.UtcNow
+                        });
+                        await _knowledgeSyncQueue.EnqueueDeleteAsync("POST", targetPost.PostId, ct);
+                    }
+                    else
+                    {
+                        targetPost.ModerationStatus = "APPROVED_ACTIVE";
+                        if (targetPost.Visibility == "PUBLIC")
+                        {
+                            await _knowledgeSyncQueue.EnqueueUpsertAsync("POST", targetPost.PostId, ct);
+                        }
+                    }
+
+                    imageModerationStatus = targetPost.ModerationStatus;
+                    await InvalidatePostListCacheAsync(ct);
+                }
             }
 
             if (targetRecipe != null)
             {
-                targetRecipe.ImageUrl = imageUploadResult.SecureUrl;
+                targetRecipe.ImageUrl = safeImageUrl;
                 targetRecipe.UpdatedAt = DateTime.UtcNow;
+
+                if (targetRecipe.Status != "DRAFT")
+                {
+                    var modResult = await _moderationService.ModeratePostAsync(targetRecipe.Title, targetRecipe.Description ?? targetRecipe.Title, safeImageUrl, ct);
+                    await LogAiQuotaAsync(userId, modResult, ct);
+
+                    var isQuarantined = modResult.ViolationScore >= 85.0
+                        || (!string.IsNullOrEmpty(modResult.ViolationType) && modResult.ViolationType != "NONE")
+                        || !modResult.IsApproved
+                        || modResult.ModerationStatus == "QUARANTINED_HIDDEN";
+
+                    if (isQuarantined)
+                    {
+                        targetRecipe.Status = "QUARANTINED_HIDDEN";
+                        _context.ViolationReports.Add(new ViolationReport
+                        {
+                            RecipeId = targetRecipe.RecipeId,
+                            ViolationType = MapToValidViolationType(modResult.ViolationType),
+                            EvidenceSummary = (modResult.Note ?? "AI phát hiện vi phạm hình ảnh.").Length > 500
+                                ? (modResult.Note ?? "AI phát hiện vi phạm hình ảnh.").Substring(0, 500)
+                                : (modResult.Note ?? "AI phát hiện vi phạm hình ảnh."),
+                            ReportSource = "AI_SCAN",
+                            Status = "PENDING",
+                            CreatedAt = DateTime.UtcNow
+                        });
+                        await _knowledgeSyncQueue.EnqueueDeleteAsync("RECIPE", targetRecipe.RecipeId, ct);
+                    }
+                    else
+                    {
+                        targetRecipe.Status = "APPROVED_ACTIVE";
+                        await _knowledgeSyncQueue.EnqueueUpsertAsync("RECIPE", targetRecipe.RecipeId, ct);
+                    }
+
+                    imageModerationStatus = targetRecipe.Status;
+                    await InvalidateRecipeListCacheAsync(ct);
+                }
             }
 
             await _context.SaveChangesAsync(ct);
@@ -160,7 +271,8 @@ public class VideoService : IVideoService
             {
                 VideoId = null,
                 Status = "READY",
-                ImageUrl = imageUploadResult.SecureUrl
+                ImageUrl = imageUploadResult.SecureUrl,
+                ModerationStatus = imageModerationStatus
             };
         }
 
@@ -178,42 +290,322 @@ public class VideoService : IVideoService
             : (targetPost?.Title ?? targetRecipe?.Title ?? "Video hướng dẫn nấu ăn");
         var finalTitle = rawTitle.Length > 150 ? rawTitle[..150] : rawTitle;
 
-        var thumbnailUrl = _mediaService.GetImageUrl(videoUploadResult.PublicId, format: "jpg");
-        if (thumbnailUrl.Length > 255) thumbnailUrl = thumbnailUrl[..255];
+        var thumbnailUrl = !string.IsNullOrEmpty(videoUploadResult.SecureUrl) && videoUploadResult.SecureUrl.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
+            ? videoUploadResult.SecureUrl[..^4] + ".jpg"
+            : _mediaService.GetImageUrl(videoUploadResult.PublicId, format: "jpg");
+        if (thumbnailUrl.Length > 1000) thumbnailUrl = thumbnailUrl[..1000];
 
         var durationSeconds = (int)Math.Round(videoUploadResult.DurationSeconds ?? 0);
 
-        // INSERT Videos (Status = PROCESSING)
+        // Cập nhật ảnh đại diện bài viết / công thức theo ảnh thu nhỏ của video mới
+        if (targetPost != null)
+        {
+            targetPost.ImageUrl = thumbnailUrl;
+            targetPost.UpdatedAt = DateTime.UtcNow;
+
+            // Đánh dấu DELETED các video trước đó của bài viết để video mới thay thế
+            var existingAttachedVideos = await _context.Videos
+                .Where(v => v.PostId == targetPost.PostId && v.Status != "DELETED")
+                .ToListAsync(ct);
+            foreach (var v in existingAttachedVideos)
+            {
+                v.Status = "DELETED";
+                v.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        if (targetRecipe != null)
+        {
+            targetRecipe.ImageUrl = thumbnailUrl;
+            targetRecipe.UpdatedAt = DateTime.UtcNow;
+        }
+
+        string? moderationStatus = null;
+        var videoStatus = "PROCESSING";
+
+        // Quét kiểm duyệt AI ngay với hình ảnh trích từ video (thumbnail) (BR-USR-03, BR-ADM-CNT-002)
+        if (targetPost != null && targetPost.ModerationStatus != "DRAFT")
+        {
+            var modResult = await _moderationService.ModeratePostAsync(targetPost.Title, targetPost.Content, thumbnailUrl, ct);
+            await LogAiQuotaAsync(userId, modResult, ct);
+
+            var isQuarantined = modResult.ViolationScore >= 85.0
+                || (!string.IsNullOrEmpty(modResult.ViolationType) && modResult.ViolationType != "NONE")
+                || !modResult.IsApproved
+                || modResult.ModerationStatus == "QUARANTINED_HIDDEN";
+
+            if (isQuarantined)
+            {
+                targetPost.ModerationStatus = "QUARANTINED_HIDDEN";
+                _context.ViolationReports.Add(new ViolationReport
+                {
+                    PostId = targetPost.PostId,
+                    ViolationType = MapToValidViolationType(modResult.ViolationType),
+                    EvidenceSummary = (modResult.Note ?? "AI phát hiện hình ảnh video vi phạm tiêu chuẩn cộng đồng.").Length > 500
+                        ? (modResult.Note ?? "AI phát hiện hình ảnh video vi phạm tiêu chuẩn cộng đồng.")[..500]
+                        : (modResult.Note ?? "AI phát hiện hình ảnh video vi phạm tiêu chuẩn cộng đồng."),
+                    ReportSource = "AI_SCAN",
+                    Status = "PENDING",
+                    CreatedAt = DateTime.UtcNow
+                });
+                await _knowledgeSyncQueue.EnqueueDeleteAsync("POST", targetPost.PostId, ct);
+                videoStatus = "BANNED";
+            }
+            else
+            {
+                // Hình ảnh video hợp lệ, nhưng bài viết phải chờ STT hoàn thành để kiểm tra kịch bản/lời thoại trước khi công khai
+                targetPost.ModerationStatus = "PENDING_REVIEW";
+                videoStatus = "PROCESSING";
+            }
+
+            moderationStatus = targetPost.ModerationStatus;
+            await InvalidatePostListCacheAsync(ct);
+        }
+
+        if (targetRecipe != null && targetRecipe.Status != "DRAFT")
+        {
+            var modResult = await _moderationService.ModeratePostAsync(targetRecipe.Title, targetRecipe.Description ?? targetRecipe.Title, thumbnailUrl, ct);
+            await LogAiQuotaAsync(userId, modResult, ct);
+
+            var isQuarantined = modResult.ViolationScore >= 85.0
+                || (!string.IsNullOrEmpty(modResult.ViolationType) && modResult.ViolationType != "NONE")
+                || !modResult.IsApproved
+                || modResult.ModerationStatus == "QUARANTINED_HIDDEN";
+
+            if (isQuarantined)
+            {
+                targetRecipe.Status = "QUARANTINED_HIDDEN";
+                if (targetPost != null && targetPost.RecipeId == targetRecipe.RecipeId)
+                {
+                    targetPost.ModerationStatus = "QUARANTINED_HIDDEN";
+                }
+                _context.ViolationReports.Add(new ViolationReport
+                {
+                    RecipeId = targetRecipe.RecipeId,
+                    ViolationType = MapToValidViolationType(modResult.ViolationType),
+                    EvidenceSummary = (modResult.Note ?? "AI phát hiện hình ảnh video vi phạm tiêu chuẩn cộng đồng.").Length > 500
+                        ? (modResult.Note ?? "AI phát hiện hình ảnh video vi phạm tiêu chuẩn cộng đồng.")[..500]
+                        : (modResult.Note ?? "AI phát hiện hình ảnh video vi phạm tiêu chuẩn cộng đồng."),
+                    ReportSource = "AI_SCAN",
+                    Status = "PENDING",
+                    CreatedAt = DateTime.UtcNow
+                });
+                await _knowledgeSyncQueue.EnqueueDeleteAsync("RECIPE", targetRecipe.RecipeId, ct);
+                videoStatus = "BANNED";
+            }
+            else
+            {
+                // Hình ảnh video đạt chuẩn kiểm duyệt AI
+                if (targetRecipe.Status != "DRAFT")
+                {
+                    targetRecipe.Status = "APPROVED_ACTIVE";
+                    if (targetPost != null && targetPost.RecipeId == targetRecipe.RecipeId)
+                    {
+                        targetPost.ModerationStatus = "APPROVED_ACTIVE";
+                        targetPost.Visibility = "PUBLIC";
+                    }
+                }
+                videoStatus = "READY";
+            }
+            moderationStatus = targetRecipe.Status;
+            await InvalidateRecipeListCacheAsync(ct);
+            await _redisService.RemoveAsync($"recipe_detail:{targetRecipe.RecipeId}", ct);
+        }
+
+        string? rawTranscript = null;
+        ExtractedRecipeDto? extractedRecipe = null;
+
+        // Bóc tách STT và kiểm duyệt nội dung lời thoại đồng bộ ngay tại giao diện đăng bài (BR-AI-STT-01, BR-USR-03)
+        if (videoStatus != "BANNED" && _aiSttClient != null)
+        {
+            try
+            {
+                _logger.LogInformation("Bắt đầu xử lý bóc tách STT và kiểm duyệt lời thoại đồng bộ cho video {Url}...", videoUploadResult.SecureUrl);
+                var sttResult = await _aiSttClient.ExtractRecipeFromVideoAsync(videoUploadResult.SecureUrl, ct);
+                if (sttResult != null)
+                {
+                    rawTranscript = sttResult.RawTranscript;
+                    extractedRecipe = sttResult.Recipe;
+
+                    if (!string.IsNullOrWhiteSpace(rawTranscript))
+                    {
+                        var transcriptModResult = await _moderationService.ModeratePostAsync(
+                            targetPost?.Title ?? targetRecipe?.Title ?? "Video hướng dẫn",
+                            rawTranscript,
+                            thumbnailUrl,
+                            ct);
+                        await LogAiQuotaAsync(userId, transcriptModResult, ct);
+
+                        var isTranscriptQuarantined = transcriptModResult.ViolationScore >= 85.0
+                            || (!string.IsNullOrEmpty(transcriptModResult.ViolationType) && transcriptModResult.ViolationType != "NONE")
+                            || !transcriptModResult.IsApproved
+                            || transcriptModResult.ModerationStatus == "QUARANTINED_HIDDEN";
+
+                        if (isTranscriptQuarantined)
+                        {
+                            _logger.LogWarning("Lời thoại video vi phạm tiêu chuẩn cộng đồng: score={Score}, type={Type}",
+                                transcriptModResult.ViolationScore, transcriptModResult.ViolationType);
+
+                            videoStatus = "BANNED";
+                            if (targetPost != null)
+                            {
+                                targetPost.ModerationStatus = "QUARANTINED_HIDDEN";
+                                _context.ViolationReports.Add(new ViolationReport
+                                {
+                                    PostId = targetPost.PostId,
+                                    ViolationType = MapToValidViolationType(transcriptModResult.ViolationType),
+                                    EvidenceSummary = (transcriptModResult.Note ?? $"Lời thoại video vi phạm {transcriptModResult.ViolationType}: {rawTranscript}").Length > 500
+                                        ? (transcriptModResult.Note ?? $"Lời thoại video vi phạm {transcriptModResult.ViolationType}: {rawTranscript}")[..500]
+                                        : (transcriptModResult.Note ?? $"Lời thoại video vi phạm {transcriptModResult.ViolationType}: {rawTranscript}"),
+                                    ReportSource = "AI_SCAN",
+                                    Status = "PENDING",
+                                    CreatedAt = DateTime.UtcNow
+                                });
+                                await _knowledgeSyncQueue.EnqueueDeleteAsync("POST", targetPost.PostId, ct);
+                                moderationStatus = targetPost.ModerationStatus;
+                            }
+                            if (targetRecipe != null)
+                            {
+                                targetRecipe.Status = "QUARANTINED_HIDDEN";
+                                if (targetPost != null && targetPost.RecipeId == targetRecipe.RecipeId)
+                                {
+                                    targetPost.ModerationStatus = "QUARANTINED_HIDDEN";
+                                }
+                                _context.ViolationReports.Add(new ViolationReport
+                                {
+                                    RecipeId = targetRecipe.RecipeId,
+                                    ViolationType = MapToValidViolationType(transcriptModResult.ViolationType),
+                                    EvidenceSummary = (transcriptModResult.Note ?? $"Lời thoại video vi phạm {transcriptModResult.ViolationType}: {rawTranscript}").Length > 500
+                                        ? (transcriptModResult.Note ?? $"Lời thoại video vi phạm {transcriptModResult.ViolationType}: {rawTranscript}")[..500]
+                                        : (transcriptModResult.Note ?? $"Lời thoại video vi phạm {transcriptModResult.ViolationType}: {rawTranscript}"),
+                                    ReportSource = "AI_SCAN",
+                                    Status = "PENDING",
+                                    CreatedAt = DateTime.UtcNow
+                                });
+                                await _knowledgeSyncQueue.EnqueueDeleteAsync("RECIPE", targetRecipe.RecipeId, ct);
+                                moderationStatus = targetRecipe.Status;
+                                await InvalidateRecipeListCacheAsync(ct);
+                                await _redisService.RemoveAsync($"recipe_detail:{targetRecipe.RecipeId}", ct);
+                            }
+                        }
+                        else
+                        {
+                            // Cả hình ảnh video và kịch bản lời thoại đều hợp lệ tiêu chuẩn cộng đồng
+                            if (targetPost != null && targetPost.ModerationStatus != "DRAFT")
+                            {
+                                targetPost.ModerationStatus = "APPROVED_ACTIVE";
+                                moderationStatus = targetPost.ModerationStatus;
+                                if (targetPost.Visibility == "PUBLIC")
+                                {
+                                    await _knowledgeSyncQueue.EnqueueUpsertAsync("POST", targetPost.PostId, ct);
+                                }
+                            }
+                            if (targetRecipe != null && targetRecipe.Status != "DRAFT")
+                            {
+                                targetRecipe.Status = "APPROVED_ACTIVE";
+                                if (targetPost != null && targetPost.RecipeId == targetRecipe.RecipeId)
+                                {
+                                    targetPost.ModerationStatus = "APPROVED_ACTIVE";
+                                }
+                                moderationStatus = targetRecipe.Status;
+                                await _knowledgeSyncQueue.EnqueueUpsertAsync("RECIPE", targetRecipe.RecipeId, ct);
+                                await InvalidateRecipeListCacheAsync(ct);
+                                await _redisService.RemoveAsync($"recipe_detail:{targetRecipe.RecipeId}", ct);
+                            }
+                            videoStatus = "READY";
+                        }
+                    }
+                    else
+                    {
+                        // Video không có lời thoại (im lặng/nhạc), hình ảnh đã duyệt hợp lệ
+                        if (targetPost != null && targetPost.ModerationStatus != "DRAFT")
+                        {
+                            targetPost.ModerationStatus = "APPROVED_ACTIVE";
+                            moderationStatus = targetPost.ModerationStatus;
+                            if (targetPost.Visibility == "PUBLIC")
+                            {
+                                await _knowledgeSyncQueue.EnqueueUpsertAsync("POST", targetPost.PostId, ct);
+                            }
+                        }
+                        if (targetRecipe != null && targetRecipe.Status != "DRAFT")
+                        {
+                            targetRecipe.Status = "APPROVED_ACTIVE";
+                            if (targetPost != null && targetPost.RecipeId == targetRecipe.RecipeId)
+                            {
+                                targetPost.ModerationStatus = "APPROVED_ACTIVE";
+                            }
+                            moderationStatus = targetRecipe.Status;
+                            await _knowledgeSyncQueue.EnqueueUpsertAsync("RECIPE", targetRecipe.RecipeId, ct);
+                            await InvalidateRecipeListCacheAsync(ct);
+                            await _redisService.RemoveAsync($"recipe_detail:{targetRecipe.RecipeId}", ct);
+                        }
+                        videoStatus = "READY";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Lỗi khi trích xuất STT đồng bộ cho video {Url}, sẽ tiếp tục xếp hàng nền.", videoUploadResult.SecureUrl);
+            }
+        }
+
         var video = new Video
         {
-            PostId = targetPost!.PostId,
+            PostId = targetPost != null ? targetPost.PostId : (targetRecipe?.RecipeId ?? 0),
             Title = finalTitle,
-            VideoUrl = videoUploadResult.SecureUrl.Length > 255 ? videoUploadResult.SecureUrl[..255] : videoUploadResult.SecureUrl,
+            VideoUrl = videoUploadResult.SecureUrl.Length > 1000 ? videoUploadResult.SecureUrl[..1000] : videoUploadResult.SecureUrl,
             ThumbnailUrl = thumbnailUrl,
             DurationSeconds = durationSeconds,
             ViewCount = 0,
-            Status = "PROCESSING",
+            Status = videoStatus,
             CreatedAt = DateTime.UtcNow
         };
 
         _context.Videos.Add(video);
-        await _context.SaveChangesAsync(ct);
 
-        // 6. Đưa job bóc tách vào hàng đợi Redis stt_queue (LPUSH)
-        await _redisService.EnqueueAsync("stt_queue", new
+        var transcript = new VideoTranscript
         {
-            VideoId = video.VideoId,
-            VideoUrl = video.VideoUrl,
-            DurationSeconds = video.DurationSeconds,
-            CreatedAt = video.CreatedAt
-        }, ct);
+            Video = video,
+            RecipeId = targetRecipe?.RecipeId,
+            Status = videoStatus == "BANNED" ? "FAILED" : (videoStatus == "READY" ? "COMPLETED" : "PENDING"),
+            RawTranscript = rawTranscript ?? string.Empty,
+            ExtractedRecipeJson = extractedRecipe != null ? JsonSerializer.Serialize(extractedRecipe) : null,
+            SttModelVersion = "faster-whisper-small-int8",
+            CompletedAt = videoStatus == "READY" ? DateTime.UtcNow : null,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.VideoTranscripts.Add(transcript);
 
-        _logger.LogInformation("Đã khởi tạo bản ghi video id={VideoId} với trạng thái PROCESSING và xếp hàng STT.", video.VideoId);
+        await _context.SaveChangesAsync(ct);
+        await InvalidatePostListCacheAsync(ct);
+
+        // Chỉ đưa vào hàng đợi STT nền nếu chưa hoàn thành hoặc chưa bị cấm (videoStatus == "PROCESSING")
+        if (videoStatus == "PROCESSING")
+        {
+            await _redisService.EnqueueAsync("stt_queue", new
+            {
+                VideoId = video.VideoId,
+                VideoUrl = video.VideoUrl,
+                DurationSeconds = video.DurationSeconds,
+                CreatedAt = video.CreatedAt
+            }, ct);
+            _logger.LogInformation("Đã khởi tạo bản ghi video id={VideoId} với trạng thái PROCESSING và xếp hàng bóc tách STT.", video.VideoId);
+        }
+        else if (videoStatus == "BANNED")
+        {
+            _logger.LogWarning("Video id={VideoId} vi phạm tiêu chuẩn cộng đồng và đã bị BANNED.", video.VideoId);
+        }
+        else
+        {
+            _logger.LogInformation("Video id={VideoId} đã kiểm duyệt thành công và sẵn sàng hiển thị (READY).", video.VideoId);
+        }
 
         return new CreateVideoResponseData
         {
             VideoId = video.VideoId,
-            Status = "PROCESSING"
+            Status = videoStatus,
+            ImageUrl = thumbnailUrl,
+            ModerationStatus = moderationStatus ?? targetPost?.ModerationStatus ?? targetRecipe?.Status
         };
     }
 
@@ -234,7 +626,7 @@ public class VideoService : IVideoService
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã video phải lớn hơn 0.");
         }
 
-        // 2. Xử lý hạn ngạch nếu là Khách vãng lai (BR-GUEST-02, BR-AI-STT-03)
+        // 2. Xử lý hạn ngạch nếu là Khách vãng lai (BR-GUEST-02, BR-AI-STT-03, Leader câu 7: mở lại cùng video không bị trừ thêm)
         VideoTranscriptQuotaDto? quota = null;
         if (isGuest)
         {
@@ -244,21 +636,38 @@ public class VideoService : IVideoService
             }
 
             var guestKey = $"guest_quota:ai:{guestUuid}";
+            var viewedKey = $"guest_quota:ai:{guestUuid}:video:{id}";
             const int limit = 3;
 
-            var (allowed, current, remaining) = await _redisService.TryConsumeQuotaAsync(guestKey, limit, TimeSpan.FromHours(24), ct);
-            if (!allowed)
+            var alreadyViewed = await _redisService.ExistsAsync(viewedKey, ct);
+            if (!alreadyViewed)
             {
-                throw AppException.Forbidden(ErrorCodes.ErrQuotaAiExceeded,
-                    "Khách đã dùng hết 03 lượt AI dùng thử (FN-POST-09, BR-GUEST-02). Vui lòng đăng ký tài khoản để tiếp tục.");
-            }
+                var (allowed, current, remaining) = await _redisService.TryConsumeQuotaAsync(guestKey, limit, TimeSpan.FromHours(24), ct);
+                if (!allowed)
+                {
+                    throw AppException.Forbidden(ErrorCodes.ErrQuotaAiExceeded,
+                        "Khách đã dùng hết 03 lượt AI dùng thử (FN-POST-09, BR-GUEST-02). Vui lòng đăng ký tài khoản để tiếp tục.");
+                }
 
-            quota = new VideoTranscriptQuotaDto
+                await _redisService.SetAsync(viewedKey, true, TimeSpan.FromHours(24), ct);
+
+                quota = new VideoTranscriptQuotaDto
+                {
+                    Used = (int)current,
+                    Limit = limit,
+                    Remaining = (int)remaining
+                };
+            }
+            else
             {
-                Used = (int)current,
-                Limit = limit,
-                Remaining = (int)remaining
-            };
+                var currentUsed = await _redisService.GetAsync<int?>(guestKey, ct) ?? 1;
+                quota = new VideoTranscriptQuotaDto
+                {
+                    Used = currentUsed,
+                    Limit = limit,
+                    Remaining = Math.Max(0, limit - currentUsed)
+                };
+            }
         }
 
         // 3. Truy vấn Video cùng VideoTranscript và Recipe
@@ -283,24 +692,46 @@ public class VideoService : IVideoService
             throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc chưa ở trạng thái APPROVED_ACTIVE.");
         }
 
-        // 5. Kiểm tra trạng thái bản phiên âm
+        // 5. Kiểm tra trạng thái bản phiên âm (hỗ trợ cả READY lẫn COMPLETED)
         var transcript = video.VideoTranscript;
-        if (transcript == null || transcript.Status != "READY")
+        if (transcript == null || (transcript.Status != "READY" && transcript.Status != "COMPLETED"))
         {
             throw AppException.NotFound(ErrorCodes.ErrTranscriptNotReady, "Chưa có bản phiên âm cho video này.");
         }
 
-        // 6. Xây dựng ExtractedRecipeDto
+        // 6. Xây dựng ExtractedRecipeDto và Segments
         ExtractedRecipeDto? extractedRecipe = null;
+        List<TranscriptSegmentDto>? segments = null;
         if (!string.IsNullOrWhiteSpace(transcript.ExtractedRecipeJson))
         {
             try
             {
                 using var doc = System.Text.Json.JsonDocument.Parse(transcript.ExtractedRecipeJson);
                 var root = doc.RootElement;
-                var title = root.TryGetProperty("title", out var titleElem) ? titleElem.GetString() ?? string.Empty : string.Empty;
+                // Trích xuất segments nếu có
+                if (root.TryGetProperty("segments", out var segElem) && segElem.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    segments = new List<TranscriptSegmentDto>();
+                    foreach (var s in segElem.EnumerateArray())
+                    {
+                        var start = s.TryGetProperty("start", out var st) ? st.GetDouble() : 0.0;
+                        var end = s.TryGetProperty("end", out var en) ? en.GetDouble() : 0.0;
+                        var text = s.TryGetProperty("text", out var tx) ? tx.GetString() ?? string.Empty : string.Empty;
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            segments.Add(new TranscriptSegmentDto { Start = start, End = end, Text = text });
+                        }
+                    }
+                }
+
+                // Trích xuất recipe (hỗ trợ cả recipe lồng trong "recipe" hoặc ở root, hỗ trợ cả camelCase và PascalCase)
+                var recipeElem = (root.TryGetProperty("recipe", out var rElem) || root.TryGetProperty("Recipe", out rElem)) ? rElem : root;
+                var title = (recipeElem.TryGetProperty("title", out var titleElem) || recipeElem.TryGetProperty("Title", out titleElem))
+                    ? titleElem.GetString() ?? string.Empty
+                    : string.Empty;
+
                 var steps = new List<string>();
-                if (root.TryGetProperty("steps", out var stepsElem) && stepsElem.ValueKind == System.Text.Json.JsonValueKind.Array)
+                if ((recipeElem.TryGetProperty("steps", out var stepsElem) || recipeElem.TryGetProperty("Steps", out stepsElem)) && stepsElem.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
                     foreach (var s in stepsElem.EnumerateArray())
                     {
@@ -313,7 +744,7 @@ public class VideoService : IVideoService
                 }
 
                 var ingredients = new List<ExtractedIngredientDto>();
-                if (root.TryGetProperty("ingredients", out var ingElem) && ingElem.ValueKind == System.Text.Json.JsonValueKind.Array)
+                if ((recipeElem.TryGetProperty("ingredients", out var ingElem) || recipeElem.TryGetProperty("Ingredients", out ingElem)) && ingElem.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
                     foreach (var item in ingElem.EnumerateArray())
                     {
@@ -326,23 +757,48 @@ public class VideoService : IVideoService
                         }
                         else if (item.ValueKind == System.Text.Json.JsonValueKind.Object)
                         {
-                            var name = item.TryGetProperty("name", out var n) ? n.GetString() ?? string.Empty : string.Empty;
+                            var name = (item.TryGetProperty("name", out var n) || item.TryGetProperty("Name", out n)) ? n.GetString() ?? string.Empty : string.Empty;
                             decimal? qty = null;
-                            if (item.TryGetProperty("quantity", out var q) && q.TryGetDecimal(out var dec))
+                            if ((item.TryGetProperty("quantity", out var q) || item.TryGetProperty("Quantity", out q)) && q.TryGetDecimal(out var dec))
                             {
                                 qty = dec;
                             }
-                            var unit = item.TryGetProperty("unit", out var u) ? u.GetString() : null;
+                            var unit = (item.TryGetProperty("unit", out var u) || item.TryGetProperty("Unit", out u)) ? u.GetString() : null;
                             ingredients.Add(new ExtractedIngredientDto { Name = name, Quantity = qty, Unit = unit });
                         }
+                    }
+                }
+
+                int? servings = null;
+                if ((recipeElem.TryGetProperty("servings", out var sElem) || recipeElem.TryGetProperty("Servings", out sElem)) && sElem.TryGetInt32(out var sVal))
+                {
+                    servings = sVal;
+                }
+
+                int? cookTime = null;
+                if ((recipeElem.TryGetProperty("cookTimeMinutes", out var ctElem) || recipeElem.TryGetProperty("CookTimeMinutes", out ctElem)) && ctElem.TryGetInt32(out var ctVal))
+                {
+                    cookTime = ctVal;
+                }
+
+                var tips = new List<string>();
+                if ((recipeElem.TryGetProperty("tips", out var tElem) || recipeElem.TryGetProperty("Tips", out tElem)) && tElem.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var tip in tElem.EnumerateArray())
+                    {
+                        var str = tip.GetString();
+                        if (!string.IsNullOrEmpty(str)) tips.Add(str);
                     }
                 }
 
                 extractedRecipe = new ExtractedRecipeDto
                 {
                     Title = title,
+                    Servings = servings,
+                    CookTimeMinutes = cookTime,
                     Ingredients = ingredients,
-                    Steps = steps
+                    Steps = steps,
+                    Tips = tips.Count > 0 ? tips : null
                 };
             }
             catch (Exception ex)
@@ -377,6 +833,9 @@ public class VideoService : IVideoService
         {
             VideoId = video.VideoId,
             RawTranscript = transcript.RawTranscript ?? string.Empty,
+            TranscriptStatus = transcript.Status == "READY" ? "COMPLETED" : transcript.Status,
+            AiSummary = transcript.AiSummary,
+            Segments = (segments != null && segments.Count > 0) ? segments : null,
             ExtractedRecipe = extractedRecipe,
             Quota = quota
         };
@@ -514,6 +973,197 @@ public class VideoService : IVideoService
             } : null,
             CreatedAt = video.CreatedAt,
             UpdatedAt = video.UpdatedAt
+        };
+    }
+
+    /// <summary>
+    /// Lưu bản phiên âm và công thức bóc tách từ video xuống CSDL (FN-POST-09, FN-POST-10).
+    /// Hỗ trợ lưu trữ trực tiếp sau khi AI phân tích để không phải gọi AI lần thứ hai.
+    /// </summary>
+    public async Task<VideoTranscriptResponseData> SaveVideoTranscriptAsync(
+        int videoId,
+        SaveVideoTranscriptDto dto,
+        CancellationToken ct = default)
+    {
+        if (videoId <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã video phải lớn hơn 0.");
+        }
+
+        var video = await _context.Videos
+            .Include(v => v.Post)
+            .Include(v => v.VideoTranscript)
+                .ThenInclude(vt => vt!.Recipe)
+            .FirstOrDefaultAsync(v => v.VideoId == videoId, ct);
+
+        if (video == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Video không tồn tại.");
+        }
+
+        if (video.VideoTranscript == null)
+        {
+            video.VideoTranscript = new VideoTranscript
+            {
+                VideoId = video.VideoId,
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.VideoTranscripts.Add(video.VideoTranscript);
+        }
+
+        var combinedData = new Dictionary<string, object?>();
+        if (dto.Recipe != null)
+        {
+            combinedData["recipe"] = dto.Recipe;
+        }
+        if (dto.Segments != null && dto.Segments.Count > 0)
+        {
+            combinedData["segments"] = dto.Segments;
+        }
+
+        var recipeJson = combinedData.Count > 0
+            ? JsonSerializer.Serialize(combinedData, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All)
+            })
+            : null;
+
+        var aiSummary = dto.AiSummary;
+        if (string.IsNullOrWhiteSpace(aiSummary) && dto.Recipe != null)
+        {
+            var ingCount = dto.Recipe.Ingredients?.Count ?? 0;
+            var stepCount = dto.Recipe.Steps?.Count ?? 0;
+            aiSummary = $"{dto.Recipe.Title} (Khẩu phần: {dto.Recipe.Servings ?? 2} người, {ingCount} nguyên liệu, {stepCount} bước chế biến)";
+        }
+
+        video.VideoTranscript.RawTranscript = dto.RawTranscript ?? string.Empty;
+        video.VideoTranscript.ExtractedRecipeJson = recipeJson;
+        video.VideoTranscript.AiSummary = aiSummary;
+        video.VideoTranscript.SttModelVersion = dto.SttModelVersion ?? "faster-whisper-small-int8";
+        video.VideoTranscript.Status = "READY";
+        video.VideoTranscript.CompletedAt = DateTime.UtcNow;
+        video.Status = "READY";
+
+        // Tự động tạo công thức nháp (Draft Recipe) nếu video chưa có liên kết recipe
+        if (dto.Recipe != null && video.VideoTranscript.RecipeId == null && video.Post != null)
+        {
+            try
+            {
+                var defaultCategory = await _context.FoodCategories.FirstOrDefaultAsync(ct);
+                var defaultDietarySchool = await _context.DietarySchools.FirstOrDefaultAsync(ct);
+
+                var rawTitle = !string.IsNullOrWhiteSpace(video.Title)
+                    ? $"Công thức từ video {video.Title.Trim()}"
+                    : (dto.Recipe.Title ?? "Công thức từ video");
+                var recipeTitle = rawTitle.Length > 150 ? rawTitle[..150] : rawTitle;
+
+                var steps = dto.Recipe.Steps ?? new List<string>();
+                var instructions = steps.Count > 0
+                    ? JsonSerializer.Serialize(steps, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase })
+                    : "[]";
+
+                var draftRecipe = new Recipe
+                {
+                    UserId = video.Post.UserId,
+                    DietarySchoolId = defaultDietarySchool?.DietarySchoolId ?? 1,
+                    Title = recipeTitle,
+                    Description = dto.Recipe.Title ?? video.Title,
+                    Instructions = instructions,
+                    PrepTimeMinutes = 15,
+                    CookTimeMinutes = dto.Recipe.CookTimeMinutes ?? 20,
+                    Servings = dto.Recipe.Servings ?? 2,
+                    CaloriesKcal = 150.0m,
+                    DifficultyLevel = "MEDIUM",
+                    IsVerified = false,
+                    ImageUrl = video.ThumbnailUrl ?? video.Post.ImageUrl,
+                    Status = "DRAFT",
+                    ViewCount = 0,
+                    Source = "AI",
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.Recipes.Add(draftRecipe);
+                await _context.SaveChangesAsync(ct);
+
+                video.VideoTranscript.RecipeId = draftRecipe.RecipeId;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Không thể tạo bản ghi Recipe nháp khi lưu transcript cho video id={VideoId}", videoId);
+            }
+        }
+
+        await _context.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Đã lưu bản phiên âm và công thức bóc tách thành công cho video id={VideoId}.", videoId);
+
+        return new VideoTranscriptResponseData
+        {
+            VideoId = video.VideoId,
+            RawTranscript = video.VideoTranscript.RawTranscript ?? string.Empty,
+            TranscriptStatus = "COMPLETED",
+            AiSummary = video.VideoTranscript.AiSummary,
+            ExtractedRecipe = dto.Recipe,
+            Segments = dto.Segments
+        };
+    }
+
+    private async Task InvalidatePostListCacheAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _redisService.RemoveAsync("post_list:*", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi khi xóa bộ nhớ đệm post_list:* trên Redis.");
+        }
+    }
+
+    private async Task InvalidateRecipeListCacheAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _redisService.RemoveAsync("recipe_search:*", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi khi xóa bộ nhớ đệm recipe_search:* trên Redis.");
+        }
+    }
+
+    private async Task LogAiQuotaAsync(int userId, ContentModerationResult modResult, CancellationToken ct)
+    {
+        try
+        {
+            var quotaLog = new AiquotaLog
+            {
+                UserId = userId,
+                FeatureCode = "CONTENT_MODERATION",
+                TokensConsumed = modResult.TokensConsumed,
+                CostEstimateUsd = modResult.CostEstimateUsd,
+                RequestStatus = "SUCCESS",
+                ExecutionTimeMs = modResult.ExecutionTimeMs,
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.AiquotaLogs.Add(quotaLog);
+            await _context.SaveChangesAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi khi ghi nhật ký AIQuotaLogs cho người dùng {UserId}.", userId);
+        }
+    }
+
+    private static string MapToValidViolationType(string? violationType)
+    {
+        return violationType switch
+        {
+            "VIO_MEAT" => "VIO_MEAT",
+            "VIO_LABEL" => "VIO_LABEL",
+            "VIO_SPAM" => "VIO_SPAM",
+            _ => "VIO_HATE"
         };
     }
 }

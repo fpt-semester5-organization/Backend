@@ -23,6 +23,8 @@ namespace VeggieLife.BLL.Services.Settings;
 public class SystemSettingService : ISystemSettingService
 {
     private const string CacheKeyPrefix = "sys_setting:";
+    private const string CacheKeyLegalDocuments = "sys_setting:legal_documents:all";
+    private const string CacheKeyPublicSettings = "sys_setting:public_cache";
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(30);
 
     private readonly AppDbContext _db;
@@ -146,6 +148,10 @@ public class SystemSettingService : ISystemSettingService
 
         var oldValue = setting.SettingValue;
         setting.SettingValue = trimmedNewValue;
+        if (request.LegalDocumentsUrl != null)
+        {
+            setting.LegalDocumentsUrl = request.LegalDocumentsUrl.Trim();
+        }
         setting.UpdatedAt = DateTime.UtcNow;
         setting.UpdatedBy = adminId;
 
@@ -170,6 +176,12 @@ public class SystemSettingService : ISystemSettingService
         try
         {
             await _redis.SetAsync(cacheKey, trimmedNewValue, CacheTtl, ct);
+            await _redis.RemoveAsync(CacheKeyPublicSettings, ct);
+            await _redis.RemoveAsync("plans_cache", ct);
+            if (key.StartsWith("LEGAL_", StringComparison.OrdinalIgnoreCase))
+            {
+                await _redis.RemoveAsync(CacheKeyLegalDocuments, ct);
+            }
         }
         catch (Exception ex)
         {
@@ -215,6 +227,12 @@ public class SystemSettingService : ISystemSettingService
         try
         {
             await _redis.SetAsync(cacheKey, setting.DefaultValue, CacheTtl, ct);
+            await _redis.RemoveAsync(CacheKeyPublicSettings, ct);
+            await _redis.RemoveAsync("plans_cache", ct);
+            if (key.StartsWith("LEGAL_", StringComparison.OrdinalIgnoreCase))
+            {
+                await _redis.RemoveAsync(CacheKeyLegalDocuments, ct);
+            }
         }
         catch (Exception ex)
         {
@@ -338,8 +356,165 @@ public class SystemSettingService : ISystemSettingService
             DataType = setting.DataType,
             Category = setting.Category,
             Description = setting.Description,
+            LegalDocumentsUrl = setting.LegalDocumentsUrl,
             UpdatedAt = setting.UpdatedAt,
             UpdatedBy = setting.UpdatedBy
         };
+    }
+
+    public async Task<VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData> GetLegalDocumentsAsync(CancellationToken ct = default)
+    {
+        // 1. Kiểm tra Redis Cache
+        try
+        {
+            var cached = await _redis.GetAsync<VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData>(CacheKeyLegalDocuments, ct);
+            if (cached != null)
+            {
+                return cached;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi đọc Redis cache cho danh mục tài liệu pháp lý. Chuyển sang đọc Database.");
+        }
+
+        const string defaultUserAgreement = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg";
+        const string defaultPrivacyPolicy = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg";
+        const string defaultTermsOfService = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg";
+        const string defaultVeganDisclaimer = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg";
+
+        var result = new VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData
+        {
+            UserAgreementUrl = defaultUserAgreement,
+            PrivacyPolicyUrl = defaultPrivacyPolicy,
+            TermsOfServiceUrl = defaultTermsOfService,
+            VeganDisclaimerUrl = defaultVeganDisclaimer,
+            MedicalDisclaimer = "Khuyến nghị mang tính chất tham khảo dinh dưỡng, vui lòng tham vấn ý kiến bác sĩ chuyên khoa đối với các bệnh lý nền.",
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        try
+        {
+            var legalSettings = await _db.SystemSettings
+                .AsNoTracking()
+                .Where(s => s.SettingKey == "LEGAL_DOCUMENTS" || s.SettingKey.StartsWith("LEGAL_"))
+                .ToListAsync(ct);
+
+            var mainSetting = legalSettings.FirstOrDefault(s => s.SettingKey == "LEGAL_DOCUMENTS");
+            if (mainSetting != null)
+            {
+                result.UpdatedAt = mainSetting.UpdatedAt;
+                var rawJson = !string.IsNullOrWhiteSpace(mainSetting.LegalDocumentsUrl)
+                    ? mainSetting.LegalDocumentsUrl
+                    : mainSetting.SettingValue;
+
+                if (!string.IsNullOrWhiteSpace(rawJson) && rawJson.TrimStart().StartsWith("{"))
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(rawJson);
+                        var root = doc.RootElement;
+                        if (root.TryGetProperty("user_agreement", out var ua) || root.TryGetProperty("userAgreement", out ua))
+                            result.UserAgreementUrl = ua.GetString() ?? result.UserAgreementUrl;
+                        if (root.TryGetProperty("privacy_policy", out var pp) || root.TryGetProperty("privacyPolicy", out pp))
+                            result.PrivacyPolicyUrl = pp.GetString() ?? result.PrivacyPolicyUrl;
+                        if (root.TryGetProperty("terms_of_service", out var tos) || root.TryGetProperty("termsOfService", out tos))
+                            result.TermsOfServiceUrl = tos.GetString() ?? result.TermsOfServiceUrl;
+                        if (root.TryGetProperty("vegan_disclaimer", out var vd) || root.TryGetProperty("veganDisclaimer", out vd))
+                            result.VeganDisclaimerUrl = vd.GetString() ?? result.VeganDisclaimerUrl;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Lỗi giải mã JSON cấu hình LEGAL_DOCUMENTS.");
+                    }
+                }
+            }
+
+            foreach (var item in legalSettings)
+            {
+                var url = !string.IsNullOrWhiteSpace(item.LegalDocumentsUrl) ? item.LegalDocumentsUrl : item.SettingValue;
+                if (string.IsNullOrWhiteSpace(url)) continue;
+
+                if (string.Equals(item.SettingKey, "LEGAL_USER_AGREEMENT_URL", StringComparison.OrdinalIgnoreCase))
+                    result.UserAgreementUrl = url;
+                else if (string.Equals(item.SettingKey, "LEGAL_PRIVACY_POLICY_URL", StringComparison.OrdinalIgnoreCase))
+                    result.PrivacyPolicyUrl = url;
+                else if (string.Equals(item.SettingKey, "LEGAL_TERMS_OF_SERVICE_URL", StringComparison.OrdinalIgnoreCase))
+                    result.TermsOfServiceUrl = url;
+                else if (string.Equals(item.SettingKey, "LEGAL_VEGAN_DISCLAIMER_URL", StringComparison.OrdinalIgnoreCase))
+                    result.VeganDisclaimerUrl = url;
+
+                if (item.UpdatedAt > (result.UpdatedAt ?? DateTime.MinValue))
+                {
+                    result.UpdatedAt = item.UpdatedAt;
+                }
+            }
+
+            // Lưu cache Redis
+            try
+            {
+                await _redis.SetAsync(CacheKeyLegalDocuments, result, CacheTtl, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Không thể lưu Redis cache cho danh mục tài liệu pháp lý.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi truy vấn Database cho danh mục tài liệu pháp lý. Sử dụng giá trị fallback.");
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Lấy toàn bộ các chỉ số cấu hình công khai phục vụ Frontend (MEAL_PLAN, AI_QUOTA, LEGAL) với Redis Cache-Aside.
+    /// </summary>
+    public async Task<VeggieLife.BLL.DTOs.Settings.PublicSystemSettingsDto> GetPublicSettingsAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var cached = await _redis.GetAsync<VeggieLife.BLL.DTOs.Settings.PublicSystemSettingsDto>(CacheKeyPublicSettings, ct);
+            if (cached != null)
+            {
+                return cached;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi đọc Redis cache cho cấu hình công khai. Chuyển sang đọc trực tiếp.");
+        }
+
+        var result = new VeggieLife.BLL.DTOs.Settings.PublicSystemSettingsDto();
+
+        result.MealPlanWeeklyLimitFree = await GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_FREE", 1, ct);
+        result.MealPlanWeeklyLimitVip = await GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_VIP", 3, ct);
+        result.MealSwapLimitDraft = await GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct);
+        result.MealSwapLimitActive = await GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
+        result.MealSwapCalorieTolerancePercent = await GetIntSettingAsync("MEAL_SWAP_CALORIE_TOLERANCE_PERCENT", 15, ct);
+
+        result.ChatLimitDailyGuest = await GetIntSettingAsync("CHAT_LIMIT_DAILY_GUEST", 3, ct);
+        result.ChatLimitDailyFree = await GetIntSettingAsync("CHAT_LIMIT_DAILY_FREE", 20, ct);
+        result.ChatLimitDailyVip = await GetIntSettingAsync("CHAT_LIMIT_DAILY_VIP", 200, ct);
+        result.FridgeScanLimitDailyFree = await GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_FREE", 10, ct);
+        result.FridgeScanLimitDailyVip = await GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_VIP", 30, ct);
+
+        var legalDocs = await GetLegalDocumentsAsync(ct);
+        result.LegalUserAgreementUrl = legalDocs.UserAgreementUrl;
+        result.LegalPrivacyPolicyUrl = legalDocs.PrivacyPolicyUrl;
+        result.LegalTermsOfServiceUrl = legalDocs.TermsOfServiceUrl;
+        result.LegalVeganDisclaimerUrl = legalDocs.VeganDisclaimerUrl;
+
+        try
+        {
+            await _redis.SetAsync(CacheKeyPublicSettings, result, TimeSpan.FromMinutes(10), ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Không thể lưu Redis cache cho cấu hình công khai.");
+        }
+
+        return result;
     }
 }

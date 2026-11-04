@@ -30,17 +30,17 @@ public class AiSttClient : IAiSttClient
 
         if (_client.BaseAddress == null)
         {
-            var baseUrl = config["AiService:SttBaseUrl"] ?? config["AiService:BaseUrl"] ?? "http://localhost:8082";
+            var baseUrl = config["AiService:SttBaseUrl"] ?? config["AiService:BaseUrl"] ?? "http://localhost:8081";
             _client.BaseAddress = new Uri(baseUrl);
         }
 
         if (!_client.DefaultRequestHeaders.Contains("X-Internal-Api-Key"))
         {
-            var apiKey = config["AiService:InternalApiKey"] ?? "veggielife-secret-internal-key-2026";
+            var apiKey = config["AiService:InternalApiKey"] ?? string.Empty;
             _client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
         }
 
-        _client.Timeout = TimeSpan.FromSeconds(120);
+        _client.Timeout = Timeout.InfiniteTimeSpan;
     }
 
     public async Task<AiSttResultDto?> ExtractRecipeFromVideoAsync(string videoUrl, CancellationToken ct = default)
@@ -56,12 +56,51 @@ public class AiSttClient : IAiSttClient
             var payload = new { videoUrl };
             _logger.LogInformation("Gửi yêu cầu bóc tách STT tới {BaseAddress}/stt/video-to-recipe...", _client.BaseAddress);
 
-            var response = await _client.PostAsJsonAsync("/stt/video-to-recipe", payload, JsonOptions, ct);
+            HttpResponseMessage response;
+            try
+            {
+                response = await _client.PostAsJsonAsync("/stt/video-to-recipe", payload, JsonOptions, ct);
+            }
+            catch (HttpRequestException ex) when (_client.BaseAddress?.Port != 8081)
+            {
+                _logger.LogWarning(ex, "Không kết nối được tới {BaseAddress}, thử kết nối dự phòng tới http://localhost:8081/stt/video-to-recipe", _client.BaseAddress);
+                using var fallbackClient = new HttpClient { BaseAddress = new Uri("http://localhost:8081"), Timeout = _client.Timeout };
+                foreach (var h in _client.DefaultRequestHeaders)
+                {
+                    fallbackClient.DefaultRequestHeaders.TryAddWithoutValidation(h.Key, h.Value);
+                }
+                response = await fallbackClient.PostAsJsonAsync("/stt/video-to-recipe", payload, JsonOptions, ct);
+            }
 
             if (!response.IsSuccessStatusCode)
             {
                 var errorBody = await response.Content.ReadAsStringAsync(ct);
-                _logger.LogError("AI STT Microservice trả về mã lỗi {StatusCode}: {ErrorBody}", response.StatusCode, errorBody);
+                _logger.LogWarning("AI STT Microservice trả về mã {StatusCode}: {ErrorBody}", response.StatusCode, errorBody);
+
+                // Nếu video có lời thoại nhưng không phải công thức nấu ăn (NOT_A_RECIPE), vẫn lấy rawTranscript để kiểm duyệt nội dung
+                if (response.StatusCode == System.Net.HttpStatusCode.UnprocessableEntity)
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(errorBody);
+                        if (doc.RootElement.TryGetProperty("rawTranscript", out var transcriptProp) &&
+                            !string.IsNullOrWhiteSpace(transcriptProp.GetString()))
+                        {
+                            var transcriptText = transcriptProp.GetString()!;
+                            _logger.LogInformation("Trích xuất được rawTranscript từ phản hồi 422: length={Len}", transcriptText.Length);
+                            return new AiSttResultDto
+                            {
+                                RawTranscript = transcriptText,
+                                Recipe = null
+                            };
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Không thể parse rawTranscript từ lỗi 422: {ErrorBody}", errorBody);
+                    }
+                }
+
                 return null;
             }
 

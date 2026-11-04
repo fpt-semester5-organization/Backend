@@ -43,28 +43,15 @@ public class AiServiceClient : IAiServiceClient
             _httpClient.DefaultRequestHeaders.Add("X-Internal-Api-Key", _settings.InternalApiKey);
         }
 
-        _httpClient.Timeout = TimeSpan.FromSeconds(_settings.TimeoutSeconds > 0 ? _settings.TimeoutSeconds : 60);
+        _httpClient.Timeout = Timeout.InfiniteTimeSpan;
     }
 
     public bool IsCircuitOpen
     {
         get
         {
-            lock (_lock)
-            {
-                if (_circuitOpenUntil.HasValue)
-                {
-                    if (DateTime.UtcNow < _circuitOpenUntil.Value)
-                    {
-                        return true;
-                    }
-
-                    // Hết thời gian ngắt mạch (5 phút) -> Đóng mạch chuyển sang Half-Open
-                    _circuitOpenUntil = null;
-                    _consecutiveFailures = 0;
-                }
-                return false;
-            }
+            // Bỏ ngắt mạch dưới Backend để không bao giờ tự động chặn yêu cầu của người dùng
+            return false;
         }
     }
 
@@ -81,17 +68,14 @@ public class AiServiceClient : IAiServiceClient
 
         try
         {
-            // Thiết lập timeout 4 giây bằng CancellationTokenSource kết hợp (BR-ADM-AI-002)
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
-
-            var response = await _httpClient.PostAsJsonAsync("/meal/generate", request, linkedCts.Token);
+            var response = await _httpClient.PostAsJsonAsync("/meal/generate", request, ct);
             sw.Stop();
 
             if (response.IsSuccessStatusCode)
             {
-                var result = await response.Content.ReadFromJsonAsync<AiMealPlanResponse>(cancellationToken: linkedCts.Token);
-                if (result != null && result.Slots != null && result.Slots.Count == 21)
+                var result = await response.Content.ReadFromJsonAsync<AiMealPlanResponse>(cancellationToken: ct);
+                var expectedSlotCount = (request.DurationDays > 0 ? request.DurationDays : 7) * 3;
+                if (result != null && result.Slots != null && (result.Slots.Count == expectedSlotCount || (request.DurationDays != 7 && result.Slots.Count > 0)))
                 {
                     result.Success = true; // [BỔ SUNG QUAN TRỌNG]: Xác nhận kết quả hợp lệ
                     result.ExecutionTimeMs = (int)sw.ElapsedMilliseconds;
@@ -101,15 +85,15 @@ public class AiServiceClient : IAiServiceClient
             }
 
             var statusCode = (int)response.StatusCode;
-            _logger.LogWarning("[AiServiceClient] ai-service phản hồi lỗi HTTP {StatusCode}", statusCode);
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken: ct);
+            _logger.LogWarning("[AiServiceClient] ai-service phản hồi lỗi HTTP {StatusCode}: {ErrorBody}", statusCode, errorBody);
             RecordFailure();
             return null;
         }
         catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
         {
-            // Quá 4 giây timeout (BR-ADM-AI-002)
             sw.Stop();
-            _logger.LogWarning(ex, "[AiServiceClient] Gọi ai-service bị TIMEOUT quá 4 giây ({ElapsedMs} ms).", sw.ElapsedMilliseconds);
+            _logger.LogWarning(ex, "[AiServiceClient] Gọi ai-service bị TIMEOUT ({ElapsedMs} ms).", sw.ElapsedMilliseconds);
             RecordFailure();
             return null;
         }
@@ -130,6 +114,62 @@ public class AiServiceClient : IAiServiceClient
         }
     }
 
+    public async Task<AiSwapMealByNoteResponse?> SwapMealByNoteAsync(AiSwapMealByNoteRequest request, CancellationToken ct = default)
+    {
+        if (IsCircuitOpen)
+        {
+            _logger.LogWarning("[AiServiceClient] Mạch AI đang mở (Circuit Breaker OPEN). Không thể gọi AI đổi món theo note.");
+            return null;
+        }
+
+        var sw = Stopwatch.StartNew();
+
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync("/meal/swap-by-note", request, ct);
+            sw.Stop();
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<AiSwapMealByNoteResponse>(cancellationToken: ct);
+                if (result != null && result.SelectedRecipeId > 0)
+                {
+                    result.Success = true;
+                    result.ExecutionTimeMs = (int)sw.ElapsedMilliseconds;
+                    RecordSuccess();
+                    return result;
+                }
+            }
+
+            var statusCode = (int)response.StatusCode;
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken: ct);
+            _logger.LogWarning("[AiServiceClient] ai-service /meal/swap-by-note phản hồi HTTP {StatusCode}: {ErrorBody}", statusCode, errorBody);
+            RecordFailure();
+            return null;
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            sw.Stop();
+            _logger.LogWarning(ex, "[AiServiceClient] Gọi ai-service /meal/swap-by-note bị TIMEOUT ({ElapsedMs} ms).", sw.ElapsedMilliseconds);
+            RecordFailure();
+            return null;
+        }
+        catch (HttpRequestException ex)
+        {
+            sw.Stop();
+            _logger.LogWarning(ex, "[AiServiceClient] Không thể kết nối tới ai-service ({BaseUrl}) cho swap-by-note.", _httpClient.BaseAddress);
+            RecordFailure();
+            return null;
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            _logger.LogError(ex, "[AiServiceClient] Lỗi không xác định khi gọi ai-service /meal/swap-by-note.");
+            RecordFailure();
+            return null;
+        }
+    }
+
     public async Task<AiFridgeDetectionResult?> DetectFridgeIngredientsAsync(System.IO.Stream imageStream, string mimeType, CancellationToken ct = default)
     {
         if (IsCircuitOpen)
@@ -140,20 +180,15 @@ public class AiServiceClient : IAiServiceClient
 
         var sw = Stopwatch.StartNew();
 
-        var timeoutSeconds = _settings.TimeoutSeconds > 0 ? Math.Max(_settings.TimeoutSeconds, 60) : 60;
-
         try
         {
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
-
             // Sao chép sang MemoryStream nội bộ để không vô tình dispose stream của caller
             using var memoryStream = new MemoryStream();
             if (imageStream.CanSeek)
             {
                 imageStream.Position = 0;
             }
-            await imageStream.CopyToAsync(memoryStream, linkedCts.Token);
+            await imageStream.CopyToAsync(memoryStream, ct);
             memoryStream.Position = 0;
 
             using var content = new MultipartFormDataContent();
@@ -162,7 +197,7 @@ public class AiServiceClient : IAiServiceClient
             content.Add(streamContent, "image", "fridge.jpg");
 
             // Gọi endpoint /vision/detect-ingredients chuẩn theo Kiến trúc D118-D119 (05. Architecture and Deployment.docx)
-            var response = await _httpClient.PostAsync("/vision/detect-ingredients", content, linkedCts.Token);
+            var response = await _httpClient.PostAsync("/vision/detect-ingredients", content, ct);
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
                 // Fallback nếu microservice ai-service cũ dùng route /fridge/detect
@@ -171,13 +206,13 @@ public class AiServiceClient : IAiServiceClient
                 using var fallbackStreamContent = new StreamContent(memoryStream);
                 fallbackStreamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType);
                 fallbackContent.Add(fallbackStreamContent, "image", "fridge.jpg");
-                response = await _httpClient.PostAsync("/fridge/detect", fallbackContent, linkedCts.Token);
+                response = await _httpClient.PostAsync("/fridge/detect", fallbackContent, ct);
             }
             sw.Stop();
 
             if (response.IsSuccessStatusCode)
             {
-                var result = await response.Content.ReadFromJsonAsync<AiFridgeDetectionResult>(cancellationToken: linkedCts.Token);
+                var result = await response.Content.ReadFromJsonAsync<AiFridgeDetectionResult>(cancellationToken: ct);
                 if (result != null)
                 {
                     result.ExecutionTimeMs = (int)sw.ElapsedMilliseconds;
@@ -187,14 +222,15 @@ public class AiServiceClient : IAiServiceClient
             }
 
             var statusCode = (int)response.StatusCode;
-            _logger.LogWarning("[AiServiceClient] ai-service /vision/detect-ingredients phản hồi lỗi HTTP {StatusCode}", statusCode);
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken: ct);
+            _logger.LogWarning("[AiServiceClient] ai-service /vision/detect-ingredients phản hồi lỗi HTTP {StatusCode}: {ErrorBody}", statusCode, errorBody);
             RecordFailure();
             return null;
         }
         catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
         {
             sw.Stop();
-            _logger.LogWarning(ex, "[AiServiceClient] Gọi ai-service /vision/detect-ingredients bị TIMEOUT quá {TimeoutSeconds} giây ({ElapsedMs} ms).", timeoutSeconds, sw.ElapsedMilliseconds);
+            _logger.LogWarning(ex, "[AiServiceClient] Gọi ai-service /vision/detect-ingredients bị TIMEOUT ({ElapsedMs} ms).", sw.ElapsedMilliseconds);
             RecordFailure();
             return null;
         }
@@ -226,16 +262,12 @@ public class AiServiceClient : IAiServiceClient
 
         try
         {
-            var timeoutSec = _settings.BarcodeTimeoutSeconds > 0 ? _settings.BarcodeTimeoutSeconds : 6;
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSec));
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
-
-            var response = await _httpClient.PostAsJsonAsync("/barcode/classify", request, linkedCts.Token);
+            var response = await _httpClient.PostAsJsonAsync("/barcode/classify", request, ct);
             sw.Stop();
 
             if (response.IsSuccessStatusCode)
             {
-                var result = await response.Content.ReadFromJsonAsync<AiBarcodeClassifyResponse>(cancellationToken: linkedCts.Token);
+                var result = await response.Content.ReadFromJsonAsync<AiBarcodeClassifyResponse>(cancellationToken: ct);
                 if (result != null)
                 {
                     if (result.Usage != null && result.Usage.LatencyMs <= 0)
@@ -248,7 +280,8 @@ public class AiServiceClient : IAiServiceClient
             }
 
             var statusCode = (int)response.StatusCode;
-            _logger.LogWarning("[AiServiceClient] ai-service /barcode/classify phản hồi lỗi HTTP {StatusCode}", statusCode);
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken: ct);
+            _logger.LogWarning("[AiServiceClient] ai-service /barcode/classify phản hồi lỗi HTTP {StatusCode}: {ErrorBody}", statusCode, errorBody);
             RecordFailure();
             return null;
         }
@@ -289,12 +322,8 @@ public class AiServiceClient : IAiServiceClient
         lock (_lock)
         {
             _consecutiveFailures++;
-            if (_consecutiveFailures >= 3)
-            {
-                // Ngắt mạch trong 5 phút theo quy chuẩn D118 / BR-ADM-AI-002
-                _circuitOpenUntil = DateTime.UtcNow.AddMinutes(5);
-                _logger.LogError("[AiServiceClient] Phát hiện 3 lần lỗi liên tiếp. MỞ MẠCH Circuit Breaker trong 5 phút tới {Until:u}.", _circuitOpenUntil);
-            }
+            // Bỏ ngắt mạch dưới Backend
+            _circuitOpenUntil = null;
         }
     }
 }

@@ -28,6 +28,16 @@ public class PostDetailDto
     public string? ImageUrl { get; set; }
 
     /// <summary>
+    /// Trạng thái kiểm duyệt bài viết (dành cho tác giả hoặc quản trị viên).
+    /// </summary>
+    public string? ModerationStatus { get; set; }
+
+    /// <summary>
+    /// Chế độ hiển thị bài viết (PUBLIC, PRIVATE).
+    /// </summary>
+    public string? Visibility { get; set; }
+
+    /// <summary>
     /// Thông tin tác giả bài viết.
     /// </summary>
     public PostAuthorDto Author { get; set; } = new();
@@ -46,6 +56,11 @@ public class PostDetailDto
     /// Tổng số lượt bình chọn (thả tim) của bài viết.
     /// </summary>
     public int VoteCount { get; set; }
+
+    /// <summary>
+    /// Người dùng hiện tại đã thả tim nội dung này chưa (luôn false với Khách).
+    /// </summary>
+    public bool HasVoted { get; set; }
 
     /// <summary>
     /// Tổng số bình luận của bài viết.

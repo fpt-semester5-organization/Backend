@@ -45,6 +45,25 @@ public class SubscriptionsController : BaseApiController
         CancellationToken ct)
     {
         EnsureAuthorizedMember();
+
+        // Tự động nhận diện domain của client (frontend) từ Origin / Referer header nếu request chưa có URL tường minh
+        var clientOrigin = Request.Headers["Origin"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(clientOrigin))
+        {
+            var referer = Request.Headers["Referer"].FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(referer) && System.Uri.TryCreate(referer, System.UriKind.Absolute, out var refUri))
+            {
+                clientOrigin = $"{refUri.Scheme}://{refUri.Authority}";
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(clientOrigin))
+        {
+            var origin = clientOrigin.TrimEnd('/');
+            request.ReturnUrl ??= $"{origin}/payment/success";
+            request.CancelUrl ??= $"{origin}/payment/cancel";
+        }
+
         var result = await _subscriptionService.CheckoutSubscriptionAsync(
             (int)CurrentUserId!.Value,
             CurrentUserRole ?? UserRoles.Member,
@@ -78,6 +97,48 @@ public class SubscriptionsController : BaseApiController
         EnsureAuthorizedMember();
         var result = await _subscriptionService.GetCurrentUserSubscriptionAsync((int)CurrentUserId!.Value, ct);
         return OkResponse(result, "Lấy trạng thái gói VIP thành công.");
+    }
+
+    /// <summary>
+    /// FN-SUB-04: Xem chi tiết biên lai thanh toán giao dịch nâng cấp VIP thành công.
+    /// Auth: Bearer (MEMBER | VIP | ADMIN).
+    /// </summary>
+    [HttpGet("/api/v1/subscriptions/transactions/{transactionId:long}/receipt")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    public async Task<IActionResult> GetPaymentReceipt(
+        [FromRoute] long transactionId,
+        CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+        var result = await _subscriptionService.GetPaymentReceiptAsync(
+            transactionId,
+            (int)CurrentUserId!.Value,
+            CurrentUserRole ?? UserRoles.Member,
+            ct);
+
+        return OkResponse(result, "Lấy thông tin biên lai thanh toán thành công.");
+    }
+
+    /// <summary>
+    /// FN-SUB-04: Tải biên lai thanh toán VIP dạng tệp PDF (cùng điều kiện truy cập với biên lai JSON).
+    /// Auth: Bearer (MEMBER | VIP | ADMIN).
+    /// </summary>
+    [HttpGet("/api/v1/subscriptions/transactions/{transactionId:long}/receipt.pdf")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    [Produces("application/pdf")]
+    public async Task<IActionResult> DownloadPaymentReceiptPdf(
+        [FromRoute] long transactionId,
+        CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+        var receipt = await _subscriptionService.GetPaymentReceiptAsync(
+            transactionId,
+            (int)CurrentUserId!.Value,
+            CurrentUserRole ?? UserRoles.Member,
+            ct);
+
+        var bytes = VeggieLife.BLL.Services.Subscriptions.ReceiptPdfGenerator.Generate(receipt);
+        return File(bytes, "application/pdf", VeggieLife.BLL.Services.Subscriptions.ReceiptPdfGenerator.FileName(receipt));
     }
 
     /// <summary>

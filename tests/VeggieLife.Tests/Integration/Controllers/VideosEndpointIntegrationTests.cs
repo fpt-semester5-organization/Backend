@@ -163,7 +163,6 @@ public class VideosEndpointIntegrationTests : IClassFixture<WebApplicationFactor
             {
                 RecipeId = 201,
                 UserId = 1,
-                CategoryId = 1,
                 DietarySchoolId = 1,
                 Title = "Nấm đùi gà kho tiêu",
                 Instructions = "Bước 1 kho nấm...",
@@ -490,7 +489,7 @@ public class VideosEndpointIntegrationTests : IClassFixture<WebApplicationFactor
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var savedVideo = await context.Videos.FirstOrDefaultAsync(v => v.VideoId == envelope.Data.VideoId);
         savedVideo.Should().NotBeNull();
-        savedVideo!.Status.Should().Be("PROCESSING");
+        savedVideo!.Status.Should().Be("READY");
         savedVideo.DurationSeconds.Should().Be(90);
         savedVideo.PostId.Should().Be(101);
         savedVideo.Title.Should().Be("Cách làm đậu phụ kho nấm");

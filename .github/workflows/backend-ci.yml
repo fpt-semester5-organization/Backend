@@ -27,8 +27,12 @@ jobs:
     - name: Setup Test Configuration
       run: cp src/VeggieLife.API/appsettings.Example.json src/VeggieLife.API/appsettings.json
 
+    - name: Increase inotify limit
+      run: sudo sysctl fs.inotify.max_user_instances=1024
+
     - name: Run Tests
       env:
+        DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE: "false"
         ConnectionStrings__DefaultConnection: "Server=(localdb)\\MSSQLLocalDB;Database=VeggieLifeDb;Trusted_Connection=True;TrustServerCertificate=True;"
         ConnectionStrings__Redis: "localhost:6379,abortConnect=false"
         Jwt__SecretKey: "VeggieLifeSecretKeyForDevelopmentMustBe32CharsLong!"

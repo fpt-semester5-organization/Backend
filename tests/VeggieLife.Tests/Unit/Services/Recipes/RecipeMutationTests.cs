@@ -94,8 +94,6 @@ public class RecipeMutationTests : IDisposable
 
         // 2. Danh mục món ăn
         _db.FoodCategories.AddRange(
-            new FoodCategory { CategoryId = 1, CategoryName = "Món canh", IsActive = true },
-            new FoodCategory { CategoryId = 2, CategoryName = "Món xào", IsActive = true }
         );
 
         // 3. Nguyên liệu thực phẩm
@@ -148,7 +146,6 @@ public class RecipeMutationTests : IDisposable
         var req = new CreateRecipeRequest
         {
             Title = "Nháp ngắn",
-            CategoryId = 1,
             DietarySchoolId = 7,
             Instructions = new List<string> { "Chỉ 1 bước thử nghiệm" },
             CookTimeMinutes = 10,
@@ -226,7 +223,6 @@ public class RecipeMutationTests : IDisposable
             new Recipe
             {
                 UserId = 201,
-                CategoryId = 1,
                 DietarySchoolId = 7,
                 Title = "Bài viết công thức 1 hôm nay",
                 Instructions = "[]",
@@ -238,7 +234,6 @@ public class RecipeMutationTests : IDisposable
             new Recipe
             {
                 UserId = 201,
-                CategoryId = 1,
                 DietarySchoolId = 7,
                 Title = "Bài viết công thức 2 hôm nay",
                 Instructions = "[]",
@@ -253,7 +248,6 @@ public class RecipeMutationTests : IDisposable
         var req = new CreateRecipeRequest
         {
             Title = "Công thức thứ ba vượt giới hạn trong ngày",
-            CategoryId = 1,
             DietarySchoolId = 7,
             Instructions = new List<string> { "Bước 1: Rửa rau", "Bước 2: Luộc chín" },
             CookTimeMinutes = 15,
@@ -445,7 +439,6 @@ public class RecipeMutationTests : IDisposable
         {
             RecipeId = 501,
             UserId = 101,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức gốc của 101",
             Instructions = "[\"Bước 1\", \"Bước 2\"]",
@@ -471,36 +464,52 @@ public class RecipeMutationTests : IDisposable
     }
 
     [Fact]
-    public async Task UpdateRecipe_Quarantined_Throws409ErrRecipeLocked()
+    public async Task UpdateRecipe_Quarantined_WhenValid_PassesAiAndBecomesApprovedActive()
     {
         // Arrange: Recipe đang bị cách ly
         var quarantinedRecipe = new Recipe
         {
             RecipeId = 502,
             UserId = 101,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức đang bị cách ly",
             Instructions = "[\"Bước 1\", \"Bước 2\"]",
+            CookTimeMinutes = 20,
             DifficultyLevel = "MEDIUM",
             Source = "USER",
             Status = "QUARANTINED_HIDDEN",
             CreatedAt = DateTime.UtcNow.AddDays(-1)
         };
         _db.Recipes.Add(quarantinedRecipe);
+        _db.RecipeIngredients.Add(new RecipeIngredient
+        {
+            RecipeId = 502,
+            IngredientId = 1,
+            QuantityNeeded = 100,
+            Unit = "g"
+        });
         await _db.SaveChangesAsync();
+
+        _mockModeration.Setup(m => m.CheckContentAsync(It.IsAny<ModerationCheckRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModerationCheckResponse
+            {
+                ViolationType = "NONE",
+                ViolationScore = 0.05,
+                Reasons = new List<string>()
+            });
 
         var updateReq = new UpdateRecipeRequest
         {
-            Title = "Tự sửa khi đang bị cách ly"
+            Title = "Đã sửa sạch và hợp lệ"
         };
 
-        // Act & Assert
-        var ex = await Assert.ThrowsAsync<AppException>(() =>
-            _service.UpdateRecipeAsync(502, 101, UserRoles.Member, updateReq, CancellationToken.None));
+        // Act
+        var result = await _service.UpdateRecipeAsync(502, 101, UserRoles.Member, updateReq, CancellationToken.None);
 
-        ex.StatusCode.Should().Be(409);
-        ex.ErrorCode.Should().Be(ErrorCodes.ErrRecipeLocked);
+        // Assert
+        result.Status.Should().Be("APPROVED_ACTIVE");
+        var updated = await _db.Recipes.FindAsync(502);
+        updated!.Status.Should().Be("APPROVED_ACTIVE");
     }
 
     [Fact]
@@ -511,7 +520,6 @@ public class RecipeMutationTests : IDisposable
         {
             RecipeId = 503,
             UserId = 101,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức đã duyệt giữ nguyên",
             Instructions = "[\"Bước 1\", \"Bước 2\"]",
@@ -559,7 +567,6 @@ public class RecipeMutationTests : IDisposable
         {
             RecipeId = 504,
             UserId = 101,
-            CategoryId = 1,
             DietarySchoolId = 7, // VEGAN
             Title = originalTitle,
             Instructions = originalInstructions,
@@ -620,7 +627,6 @@ public class RecipeMutationTests : IDisposable
         {
             RecipeId = 505,
             UserId = 101,
-            CategoryId = 2,
             DietarySchoolId = 7,
             Title = originalTitle,
             Instructions = "[\"Bước 1: Sốt cà chua\", \"Bước 2: Cho đậu\"]",
@@ -677,7 +683,6 @@ public class RecipeMutationTests : IDisposable
         {
             RecipeId = 506,
             UserId = 101,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Canh nấm bản gốc",
             Instructions = "[\"Bước 1: Nấu canh\", \"Bước 2: Nêm nếm\"]",
@@ -740,7 +745,6 @@ public class RecipeMutationTests : IDisposable
         {
             RecipeId = 601,
             UserId = 101,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức cần gỡ khỏi trang cá nhân",
             Instructions = "[]",
@@ -788,7 +792,6 @@ public class RecipeMutationTests : IDisposable
         {
             RecipeId = 602,
             UserId = 101,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức cần xóa mềm toàn bộ",
             Instructions = "[]",

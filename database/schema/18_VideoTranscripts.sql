@@ -18,6 +18,7 @@ BEGIN
         [Recipe_ID]             INT NULL,
         [Raw_Transcript]        NVARCHAR(MAX) NULL,
         [Extracted_Recipe_JSON] NVARCHAR(MAX) NULL,
+        [AI_Summary]            NVARCHAR(MAX) NULL,
         [STT_Model_Version]     VARCHAR(50) NULL,
         [Status]                VARCHAR(20) NOT NULL CONSTRAINT [DF_VideoTranscripts_Status] DEFAULT ('PENDING'),
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_VideoTranscripts_Created_At] DEFAULT (SYSDATETIME()),
@@ -31,5 +32,13 @@ BEGIN
 
     CREATE UNIQUE NONCLUSTERED INDEX [UQ_VideoTranscripts_Video_ID] ON [dbo].[VideoTranscripts]([Video_ID] ASC);
     CREATE NONCLUSTERED INDEX [IX_VideoTranscripts_Recipe_ID] ON [dbo].[VideoTranscripts]([Recipe_ID] ASC);
+END
+ELSE
+BEGIN
+    -- Trường hợp bảng đã tồn tại trong CSDL, tự động bổ sung cột AI_Summary nếu chưa có
+    IF COL_LENGTH(N'[dbo].[VideoTranscripts]', N'AI_Summary') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[VideoTranscripts] ADD [AI_Summary] NVARCHAR(MAX) NULL;
+    END;
 END;
 GO

@@ -44,6 +44,7 @@ public class SmtpEmailService : IEmailService
 
         var isEmailVerify = string.Equals(purpose, OtpPurposes.EmailVerify, StringComparison.OrdinalIgnoreCase);
         var isPasswordReset = string.Equals(purpose, "PASSWORD_RESET", StringComparison.OrdinalIgnoreCase);
+        var isAccountDeactivation = string.Equals(purpose, OtpPurposes.AccountDeactivation, StringComparison.OrdinalIgnoreCase);
 
         string subject;
         string actionTitle;
@@ -60,6 +61,12 @@ public class SmtpEmailService : IEmailService
             subject = "[VeggieLife] Mã OTP đặt lại mật khẩu của bạn";
             actionTitle = "Yêu cầu đặt lại mật khẩu";
             actionDescription = "Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản VeggieLife của bạn. Vui lòng nhập mã OTP bên dưới để tạo mật khẩu đăng nhập mới.";
+        }
+        else if (isAccountDeactivation)
+        {
+            subject = "[VeggieLife] Mã OTP xác nhận vô hiệu hóa tài khoản của bạn";
+            actionTitle = "Xác nhận vô hiệu hóa tài khoản";
+            actionDescription = "Chúng tôi nhận được yêu cầu vô hiệu hóa tài khoản VeggieLife của bạn. Vui lòng nhập mã OTP bên dưới để hoàn tất thao tác. Lưu ý: Bạn có 30 ngày để khôi phục tài khoản trước khi bị ẩn danh hóa vĩnh viễn.";
         }
         else
         {
@@ -118,6 +125,49 @@ public class SmtpEmailService : IEmailService
         {
             _logger.LogError(ex,
                 "[SmtpEmailService] Gặp sự cố kết nối SMTP khi gửi thông báo tới {ToEmail}: {Message}",
+                normalizedEmail, ex.Message);
+
+            if (_smtpClient.IsConfigured)
+            {
+                throw AppException.BadGateway(
+                    ErrorCodes.ErrExtEmailFailed,
+                    "Không thể gửi email thông báo qua máy chủ SMTP. Vui lòng thử lại sau.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gửi email thông báo có đính kèm tệp (biên lai PDF) trong khuôn mẫu thương hiệu.
+    /// </summary>
+    public async Task SendNotificationEmailWithAttachmentAsync(
+        string toEmail,
+        string subject,
+        string htmlBody,
+        string attachmentFileName,
+        byte[] attachmentBytes,
+        string attachmentContentType,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(toEmail))
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Địa chỉ email người nhận không được để trống.");
+        }
+
+        var normalizedEmail = toEmail.Trim().ToLowerInvariant();
+        var wrappedHtml = WrapInBrandedTemplate(subject, htmlBody);
+
+        try
+        {
+            await _smtpClient.SendEmailWithAttachmentAsync(
+                normalizedEmail, subject, wrappedHtml, attachmentFileName, attachmentBytes, attachmentContentType, ct);
+            _logger.LogInformation(
+                "[SmtpEmailService] Đã gửi email '{Subject}' kèm tệp {FileName} tới {ToEmail}.",
+                subject, attachmentFileName, normalizedEmail);
+        }
+        catch (SmtpEmailException ex)
+        {
+            _logger.LogError(ex,
+                "[SmtpEmailService] Gặp sự cố kết nối SMTP khi gửi email kèm tệp tới {ToEmail}: {Message}",
                 normalizedEmail, ex.Message);
 
             if (_smtpClient.IsConfigured)

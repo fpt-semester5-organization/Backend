@@ -79,7 +79,6 @@ public class AdminRecipeServiceTests
         var eligibleRecipe = new Recipe
         {
             RecipeId = 501,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Đậu phụ sốt nấm thuần chay chuẩn",
             Instructions = "[\"Bước 1: Sơ chế đậu phụ và nấm\", \"Bước 2: Xào chín và nêm nếm gia vị vừa ăn\"]",
@@ -155,7 +154,6 @@ public class AdminRecipeServiceTests
         var badRecipe = new Recipe
         {
             RecipeId = 502,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Món thiếu bước và thời gian",
             Instructions = "[\"Chỉ có 1 bước duy nhất\"]",
@@ -190,7 +188,6 @@ public class AdminRecipeServiceTests
         var draftRecipe = new Recipe
         {
             RecipeId = 503,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức đang ở dạng nháp",
             Instructions = "[\"B1\", \"B2\"]",
@@ -225,7 +222,6 @@ public class AdminRecipeServiceTests
         var nonVeganRecipe = new Recipe
         {
             RecipeId = 504,
-            CategoryId = 1,
             DietarySchoolId = 7, // VEGAN cấm EGG
             Title = "Công thức thuần chay có trứng gà",
             Instructions = "[\"B1\", \"B2\"]",
@@ -260,7 +256,6 @@ public class AdminRecipeServiceTests
         var fewVotesRecipe = new Recipe
         {
             RecipeId = 505,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức mới có 9 lượt thích",
             Instructions = "[\"B1\", \"B2\"]",
@@ -295,7 +290,6 @@ public class AdminRecipeServiceTests
         var reportedRecipe = new Recipe
         {
             RecipeId = 506,
-            CategoryId = 1,
             DietarySchoolId = 7,
             Title = "Công thức đang bị báo cáo vi phạm",
             Instructions = "[\"B1\", \"B2\"]",

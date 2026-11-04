@@ -77,6 +77,17 @@ public class SystemSettingServiceTests : IDisposable
             },
             new SystemSetting
             {
+                SettingKey = "LEGAL_DOCUMENTS",
+                SettingValue = "{\"user_agreement\":\"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/116_2025_QH15_666020.jpg\"}",
+                DefaultValue = "{\"user_agreement\":\"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/116_2025_QH15_666020.jpg\"}",
+                DataType = "STRING",
+                Category = "GENERAL",
+                Description = "Tài liệu pháp lý VeggieLife",
+                LegalDocumentsUrl = "{\"user_agreement\":\"https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/116_2025_QH15_666020.jpg\"}",
+                UpdatedAt = DateTime.UtcNow
+            },
+            new SystemSetting
+            {
                 SettingKey = "FEATURE_COMMUNITY_ENABLED",
                 SettingValue = "true",
                 DefaultValue = "true",
@@ -266,5 +277,102 @@ public class SystemSettingServiceTests : IDisposable
         var resetAudit = await _db.AuditLogs.FirstOrDefaultAsync(a => a.Action == "RESET_SYSTEM_SETTING" && a.TargetId == "MEAL_SWAP_LIMIT_DRAFT");
         resetAudit.Should().NotBeNull();
         resetAudit!.NewValue.Should().Contain("21");
+    }
+    [Fact]
+    public async Task GetSettingByKeyAsync_WhenLegalDocumentsSetting_ReturnsLegalDocumentsUrl()
+    {
+        // Act
+        var result = await _service.GetSettingByKeyAsync("LEGAL_DOCUMENTS");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.SettingKey.Should().Be("LEGAL_DOCUMENTS");
+        result.LegalDocumentsUrl.Should().Contain("116_2025_QH15_666020.jpg");
+        result.SettingValue.Should().Contain("116_2025_QH15_666020.jpg");
+    }
+
+    [Fact]
+    public async Task UpdateSettingAsync_WhenUpdatingLegalDocumentsUrl_UpdatesBothSettingValueAndLegalDocumentsUrl()
+    {
+        // Arrange
+        const string newUrl = "https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/13_2023_ND-CP_465185.jpg";
+        var request = new UpdateSystemSettingRequest
+        {
+            SettingValue = newUrl,
+            LegalDocumentsUrl = newUrl
+        };
+
+        // Act
+        var result = await _service.UpdateSettingAsync("LEGAL_DOCUMENTS", request, AdminId);
+
+        // Assert
+        result.SettingValue.Should().Be(newUrl);
+        result.LegalDocumentsUrl.Should().Be(newUrl);
+
+        var dbSetting = await _db.SystemSettings.FindAsync("LEGAL_DOCUMENTS");
+        dbSetting!.SettingValue.Should().Be(newUrl);
+        dbSetting.LegalDocumentsUrl.Should().Be(newUrl);
+    }
+
+    [Fact]
+    public async Task GetLegalDocumentsAsync_WhenInCache_ReturnsCachedResult()
+    {
+        // Arrange
+        var cachedData = new VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData
+        {
+            UserAgreementUrl = "https://custom.cloudinary.com/user_agreement.png",
+            PrivacyPolicyUrl = "https://custom.cloudinary.com/privacy.png",
+            TermsOfServiceUrl = "https://custom.cloudinary.com/terms.png",
+            VeganDisclaimerUrl = "https://custom.cloudinary.com/vegan.png",
+            MedicalDisclaimer = "Custom medical disclaimer",
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _mockRedis.Setup(r => r.GetAsync<VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData>("sys_setting:legal_documents:all", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cachedData);
+
+        // Act
+        var result = await _service.GetLegalDocumentsAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.UserAgreementUrl.Should().Be("https://custom.cloudinary.com/user_agreement.png");
+        result.PrivacyPolicyUrl.Should().Be("https://custom.cloudinary.com/privacy.png");
+        result.MedicalDisclaimer.Should().Be("Custom medical disclaimer");
+    }
+
+    [Fact]
+    public async Task GetLegalDocumentsAsync_WhenCacheMiss_ReadsFromDbAndPopulatesCache()
+    {
+        // Arrange
+        _mockRedis.Setup(r => r.GetAsync<VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData>("sys_setting:legal_documents:all", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData?)null);
+
+        // Act
+        var result = await _service.GetLegalDocumentsAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.UserAgreementUrl.Should().Contain("116_2025_QH15_666020.jpg");
+        result.PrivacyPolicyUrl.Should().Contain("13_2023_ND-CP_465185.jpg");
+        result.MedicalDisclaimer.Should().Contain("Khuyến nghị mang tính chất tham khảo dinh dưỡng");
+
+        _mockRedis.Verify(r => r.SetAsync("sys_setting:legal_documents:all", It.IsAny<VeggieLife.BLL.DTOs.Auth.LegalDocumentsResponseData>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateSettingAsync_WhenUpdatingLegalSetting_InvalidatesLegalDocumentsCache()
+    {
+        // Arrange
+        var request = new UpdateSystemSettingRequest
+        {
+            SettingValue = "https://example.com/new-user-agreement.png"
+        };
+
+        // Act
+        await _service.UpdateSettingAsync("LEGAL_DOCUMENTS", request, AdminId);
+
+        // Assert
+        _mockRedis.Verify(r => r.RemoveAsync("sys_setting:legal_documents:all", It.IsAny<CancellationToken>()), Times.Once);
     }
 }

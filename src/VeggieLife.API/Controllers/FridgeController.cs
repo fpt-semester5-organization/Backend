@@ -31,6 +31,47 @@ public class FridgeController : BaseApiController
     }
 
     /// <summary>
+    /// Lấy hạn mức và số ảnh tủ lạnh đã quét hôm nay của người dùng đồng bộ từ SystemSettings.
+    /// </summary>
+    [HttpGet("quota")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<VeggieLife.BLL.DTOs.Fridge.Responses.FridgeDetectionQuotaDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetQuota(CancellationToken ct)
+    {
+        var guestId = ResolveGuestId();
+        var role = CurrentUserRole ?? (guestId != null ? UserRoles.Guest : UserRoles.Member);
+        int? userId = CurrentUserId.HasValue ? (int)CurrentUserId.Value : null;
+
+        var result = await _fridgeService.GetFridgeQuotaAsync(userId, guestId, role, ct);
+        return OkResponse(result, "Lấy hạn mức quét tủ lạnh thành công.");
+    }
+
+    private string? ResolveGuestId()
+    {
+        if (CurrentUserId.HasValue)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrEmpty(CurrentGuestUuid))
+        {
+            return CurrentGuestUuid;
+        }
+
+        if (Request?.Headers != null && Request.Headers.TryGetValue("X-Guest-UUID", out var headerValue) && !string.IsNullOrWhiteSpace(headerValue))
+        {
+            return headerValue.ToString().Trim();
+        }
+
+        if (Request?.Cookies != null && Request.Cookies.TryGetValue("guest_uuid", out var cookieValue) && !string.IsNullOrWhiteSpace(cookieValue))
+        {
+            return cookieValue.Trim();
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// FN-VIS-01: Nhận diện nguyên liệu qua ảnh (Gemini Vision).
     /// Nhận diện nguyên liệu thực vật và ước lượng độ tươi (FRESH / NON-FRESH) từ ảnh tủ lạnh/rổ rau.
     /// Thành viên: lưu vào tủ lạnh ảo; thường 10 ảnh/ngày, VIP 30 ảnh/ngày.
@@ -48,7 +89,8 @@ public class FridgeController : BaseApiController
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> CreateFridgeDetection(
         [FromForm] CreateFridgeDetectionForm form,
-        CancellationToken ct)
+        [FromQuery] bool autoSave = false,
+        CancellationToken ct = default)
     {
         if (User?.Identity?.IsAuthenticated != true)
         {
@@ -82,9 +124,31 @@ public class FridgeController : BaseApiController
             userId,
             userRole,
             guestUuid,
+            autoSave,
             ct);
 
         return OkResponse(result, "Đã nhận diện nguyên liệu.");
+    }
+
+    [NonAction]
+    public Task<IActionResult> CreateFridgeDetection(
+        CreateFridgeDetectionForm form,
+        CancellationToken ct)
+        => CreateFridgeDetection(form, false, ct);
+
+    /// <summary>
+    /// FN-VIS-01: Lấy phiên nhận diện tủ lạnh gần nhất của người dùng đã lưu trong CSDL.
+    /// Giúp người dùng khi mở lại màn hình lấy trực tiếp dữ liệu từ database mà không cần gọi lại AI.
+    /// </summary>
+    [HttpGet("sessions/latest")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<LatestFridgeSessionDto?>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetLatestFridgeSession(CancellationToken ct = default)
+    {
+        var userId = EnsureMemberUser();
+        var session = await _fridgeService.GetLatestFridgeSessionAsync(userId, ct);
+        return OkResponse(session, session != null ? "Lấy phiên nhận diện gần nhất thành công." : "Chưa có phiên nhận diện nào.");
     }
 
     /// <summary>
@@ -168,6 +232,7 @@ public class FridgeController : BaseApiController
     /// loại món vi phạm trường phái hoặc dị ứng.
     /// </summary>
     [HttpGet("recipe-suggestions")]
+    [HttpGet("recipes/suggestions")]
     [Authorize]
     [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<FridgeRecipeSuggestionDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]

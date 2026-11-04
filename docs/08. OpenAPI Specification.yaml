@@ -62,6 +62,39 @@ components:
       - statusCode
       - message
       - data
+    LegalDocumentsResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: Tra cứu tài liệu pháp lý thành công.
+        data:
+          $ref: '#/components/schemas/LegalDocumentsData'
+    LegalDocumentsData:
+      type: object
+      properties:
+        userAgreementUrl:
+          type: string
+          description: Đường dẫn ảnh văn bản Bản Cam Kết Và Thỏa Thuận Đăng Ký Người Dùng.
+        privacyPolicyUrl:
+          type: string
+          description: Đường dẫn ảnh văn bản Chính Sách Bảo Mật Dữ Liệu VeggieLife.
+        termsOfServiceUrl:
+          type: string
+          description: Đường dẫn ảnh văn bản Điều Khoản Sử Dụng Dịch Vụ VeggieLife.
+        veganDisclaimerUrl:
+          type: string
+          description: Đường dẫn ảnh văn bản Quy Chuẩn Ẩm Thực Chay Và Miễn Trừ Y Tế VeggieLife.
+        medicalDisclaimer:
+          type: string
+          description: Khuyến nghị miễn trừ y khoa chuẩn hệ thống theo quy định D108.
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
     GetGuestQuotaResponse:
       type: object
       properties:
@@ -1980,7 +2013,7 @@ components:
         startDate:
           type: string
           format: date
-          description: YYYY-MM-DD, là ngày Thứ Hai, không trong quá khứ
+          description: YYYY-MM-DD, có thể bắt đầu vào bất kỳ ngày nào trong tuần, không ở quá 7 ngày trong quá khứ
         budgetTier:
           type: string
           enum:
@@ -3648,8 +3681,87 @@ components:
                   createdAt:
                     type: string
                     format: date-time
+                  planName:
+                    type: string
+                  orderCode:
+                    type: string
+                  completedAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  receiptUrl:
+                    type: string
+                    nullable: true
+                  canViewReceipt:
+                    type: boolean
       required:
       - statusCode
+
+    PaymentReceiptResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: Lấy thông tin biên lai thanh toán thành công.
+        data:
+          type: object
+          properties:
+            receiptNumber:
+              type: string
+              example: REC-20261103-000101
+            transactionId:
+              type: integer
+              format: int64
+              example: 101
+            orderCode:
+              type: string
+              example: ORD-123456
+            gateway:
+              type: string
+              example: VIETQR
+            status:
+              type: string
+              example: SUCCESS
+            paymentDate:
+              type: string
+              format: date-time
+            userId:
+              type: integer
+              example: 101
+            fullName:
+              type: string
+              example: Nguyễn Văn Chay
+            email:
+              type: string
+              example: member@veggielife.vn
+            planId:
+              type: integer
+              example: 1
+            planName:
+              type: string
+              example: VIP 1 Tháng
+            durationDays:
+              type: integer
+              example: 30
+            amountVnd:
+              type: number
+              example: 49000
+            vipStartsAt:
+              type: string
+              format: date-time
+            vipEndsAt:
+              type: string
+              format: date-time
+            note:
+              type: string
+              example: Thanh toán kích hoạt gói VIP VIP 1 Tháng (30 ngày)
+      required:
+      - statusCode
+      - message
+      - data
       - message
       - data
     ListAdminUsersResponse:
@@ -4424,6 +4536,14 @@ components:
     UpdateAdminSubscriptionPlanRequest:
       type: object
       properties:
+        planName:
+          type: string
+          maxLength: 100
+          description: Tên gói VIP
+        durationDays:
+          type: integer
+          minimum: 1
+          description: Thời hạn gói (ngày)
         priceVnd:
           type: integer
           minimum: 1
@@ -4931,6 +5051,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /auth/legal-documents:
+    get:
+      tags:
+      - AUTH
+      operationId: getLegalDocuments
+      summary: FN-AUTH-04 Tra cứu danh mục tài liệu & thỏa thuận pháp lý
+      description: 'Lấy các liên kết hình ảnh Cloudinary độ phân giải cao của 4 văn bản pháp lý (Bản cam kết người dùng, Chính sách bảo mật, Điều khoản dịch vụ, Quy chuẩn thuần chay & Miễn trừ y tế) phục vụ người dùng xem khi đăng ký tài khoản.
+        
+        Auth: Public (AllowAnonymous).'
+      x-fn-id: FN-AUTH-04
+      x-status: Approved
+      security: []
+      responses:
+        '200':
+          description: Tra cứu tài liệu pháp lý thành công.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegalDocumentsResponse'
+              example:
+                statusCode: 200
+                message: Tra cứu tài liệu pháp lý thành công.
+                data:
+                  userAgreementUrl: https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Ban_Cam_Ket_Va_Thoa_Thuan_Dang_Ky_Nguoi_Dung.png
+                  privacyPolicyUrl: https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Chinh_Sach_Bao_Mat_Du_Lieu_VeggieLife.png
+                  termsOfServiceUrl: https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Dieu_Khoan_Su_Dung_Dich_Vu_VeggieLife.png
+                  veganDisclaimerUrl: https://res.cloudinary.com/swrsuenp/image/upload/veggielife/legal/Quy_Chuan_Am_Thuc_Chay_Va_Mien_Tru_Y_Te_VeggieLife.png
+                  medicalDisclaimer: Khuyến nghị mang tính chất tham khảo dinh dưỡng, vui lòng tham vấn ý kiến bác sĩ chuyên khoa đối với các bệnh lý nền.
+                  updatedAt: '2026-10-31T00:00:00Z'
   /auth/register:
     post:
       tags:
@@ -8110,6 +8259,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /meal-plans/custom-days:
+    post:
+      tags:
+      - MEAL
+      operationId: createMealPlanCustomDays
+      summary: FN-MEAL-01 Sinh thực đơn linh hoạt số ngày bằng AI
+      description: 'Sinh thực đơn linh hoạt số ngày (1 đến 30 ngày) x 3 bữa từ hồ sơ sức khỏe, trường phái, dị ứng và mức ngân sách. Thực đơn ở trạng thái DRAFT.
+
+        Auth: Bearer (MEMBER | VIP).'
+      x-fn-id: FN-MEAL-01
+      x-status: Approved
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMealPlanRequest'
+      responses:
+        '201':
+          description: Đã tạo thực đơn nháp.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateMealPlanResponse'
+        '400':
+          description: 'ERR_VALIDATION: Dữ liệu không hợp lệ.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_QUOTA_MEAL_PLAN_EXCEEDED: Hết hạn mức tạo thực đơn.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /meal-plans/{id}:
     get:
       tags:
@@ -8411,6 +8604,64 @@ paths:
                 $ref: '#/components/schemas/Error'
         '403':
           description: 'ERR_FORBIDDEN: Không có quyền truy cập.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'ERR_MEAL_PLAN_NOT_FOUND: Bữa ăn không tồn tại hoặc không thuộc về bạn.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /meal-plans/slots/{slotId}/swap-by-note:
+    post:
+      tags:
+      - MEAL
+      operationId: swapMealSlotByNote
+      summary: FN-MEAL-03 Đổi món theo ghi chú/khẩu vị người dùng bằng AI
+      description: 'Gom 100 món ứng viên, đóng gói toàn bộ công thức gửi qua AI để chọn món tối ưu nhất theo ghi chú.
+
+        Auth: Bearer (MEMBER | VIP).'
+      x-fn-id: FN-MEAL-03
+      x-status: Approved
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: slotId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+        description: '> 0'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwapMealSlotByNoteRequest'
+      responses:
+        '200':
+          description: Đã đổi món theo yêu cầu.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateMealPlanSlotResponse'
+        '400':
+          description: 'ERR_VALIDATION: Ghi chú đổi món không hợp lệ.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_QUOTA_MEAL_SWAP_EXCEEDED: Hết hạn mức đổi món.'
           content:
             application/json:
               schema:
@@ -10375,6 +10626,59 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /subscriptions/transactions/{transactionId}/receipt:
+    get:
+      tags:
+      - SUB
+      operationId: getPaymentReceipt
+      summary: FN-SUB-04 Xem chi tiết biên lai thanh toán giao dịch nâng cấp VIP thành công
+      description: 'Lấy thông tin chi tiết biên lai thanh toán điện tử cho giao dịch đã hoàn tất (SUCCESS). Người dùng chỉ được xem biên lai của chính mình; Quản trị viên (ADMIN) có thể xem biên lai của bất kỳ giao dịch nào.
+
+        Auth: Bearer (MEMBER | VIP | ADMIN).'
+      x-fn-id: FN-SUB-04
+      x-status: Approved
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: transactionId
+        in: path
+        required: true
+        description: Định danh giao dịch thanh toán
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: Lấy thông tin biên lai thanh toán thành công.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentReceiptResponse'
+        '400':
+          description: 'ERR_VALIDATION: Giao dịch chưa hoàn tất thanh toán thành công, không thể lập biên lai.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu hoặc token không hợp lệ.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_FORBIDDEN: Không có quyền truy cập biên lai của giao dịch này.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'ERR_PAY_ORDER_NOT_FOUND: Không tìm thấy thông tin giao dịch thanh toán.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /payments/{gateway}/ipn:
     post:
       tags:
@@ -12159,6 +12463,63 @@ paths:
               $ref: '#/components/schemas/UpdateAdminSubscriptionPlanRequest'
             example:
               priceVnd: 45000
+    delete:
+      tags:
+      - ADM
+      operationId: deleteAdminSubscriptionPlan
+      summary: FN-ADM-13 Xóa gói VIP
+      description: 'Xóa hoàn toàn gói VIP nếu chưa có giao dịch phát sinh, hoặc tự động chuyển sang ẩn gói nếu đã có giao dịch phát sinh để bảo lưu lịch sử kế toán. Auth: Bearer (ADMIN).'
+      x-fn-id: FN-ADM-13
+      x-status: Approved
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+        description: '> 0'
+      responses:
+        '200':
+          description: Đã xóa gói VIP thành công.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  statusCode:
+                    type: integer
+                  message:
+                    type: string
+              example:
+                statusCode: 200
+                message: Đã xóa gói VIP thành công.
+        '400':
+          description: 'ERR_VALIDATION: Gói này đã phát sinh giao dịch thanh toán, đã tự động chuyển sang trạng thái Ẩn gói.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: 'ERR_AUTH_INVALID_TOKEN: Thiếu, sai chữ ký hoặc hết hạn JWT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'ERR_ADM_FORBIDDEN: Claim role khác ADMIN.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'ERR_ADM_NOT_FOUND: Gói VIP không tồn tại.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /admin/payments/{id}/reconcile:
     post:
       tags:

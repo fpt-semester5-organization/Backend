@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Hosting;
 using VeggieLife.BLL.Common.Constants;
+using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.Auth;
 using VeggieLife.BLL.Services.Auth;
 using VeggieLife.BLL.Services.Email;
@@ -69,6 +70,21 @@ public class AuthController : BaseApiController
     }
 
     /// <summary>
+    /// Tra cứu các tài liệu pháp lý bắt buộc (Bản cam kết người dùng, Chính sách bảo mật dữ liệu, Điều khoản dịch vụ, Quy chuẩn thuần chay &amp; Miễn trừ y tế) phục vụ người dùng xem khi đăng ký tài khoản (FN-AUTH-04).
+    /// </summary>
+    /// <param name="ct">Cancellation Token.</param>
+    /// <returns>HTTP 200 OK cùng các liên kết văn bản pháp lý định dạng hình ảnh PNG độ phân giải cao.</returns>
+    [HttpGet("legal-documents")]
+    [HttpGet("/api/v1/legal-documents")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<LegalDocumentsResponseData>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetLegalDocuments(CancellationToken ct)
+    {
+        var result = await _authService.GetLegalDocumentsAsync(ct);
+        return OkResponse(result, "Tra cứu tài liệu pháp lý thành công.");
+    }
+
+    /// <summary>
     /// Đăng ký tài khoản người dùng mới bằng Email và Mật khẩu (FN-AUTH-04).
     /// </summary>
     /// <param name="request">Thông tin đăng ký gồm Họ tên, Email, Mật khẩu.</param>
@@ -123,7 +139,7 @@ public class AuthController : BaseApiController
     [AllowAnonymous]
     public async Task<IActionResult> LoginWithGoogle([FromBody] LoginWithGoogleRequest request, CancellationToken ct)
     {
-        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var clientIp = ResolveClientIp();
         var userAgent = Request.Headers.UserAgent.ToString();
 
         // Nhận diện GuestUuid từ request, cookie hoặc header nếu có để hợp nhất ngữ cảnh (BR-GUEST-AUTH-01)
@@ -158,7 +174,7 @@ public class AuthController : BaseApiController
     [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken ct)
     {
-        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var clientIp = ResolveClientIp();
         var userAgent = Request.Headers.UserAgent.ToString();
 
         // Nhận diện GuestUuid từ request hoặc cookie nếu có để hợp nhất ngữ cảnh (BR-GUEST-AUTH-01)
@@ -198,7 +214,7 @@ public class AuthController : BaseApiController
             refreshToken = headerToken.ToString().Trim();
         }
 
-        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var clientIp = ResolveClientIp();
         var userAgent = Request.Headers.UserAgent.ToString();
 
         var result = await _authService.RefreshTokenAsync(refreshToken, clientIp, userAgent, ct);
@@ -308,6 +324,22 @@ public class AuthController : BaseApiController
         var userId = CurrentUserId ?? 0;
         await _authService.ChangePasswordAsync(userId, request, refreshToken, ct);
         return OkResponse<object?>(null, "Đổi mật khẩu thành công.");
+    }
+
+    /// <summary>
+    /// FN-AUTH-14: Thiết lập mật khẩu lần đầu cho tài khoản OAuth chưa có mật khẩu.
+    /// </summary>
+    /// <param name="request">Mật khẩu mới và mật khẩu xác nhận.</param>
+    /// <param name="ct">Cancellation Token.</param>
+    /// <returns>HTTP 200 OK.</returns>
+    [HttpPost("set-password")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    [ProducesResponseType(typeof(ApiResponse<object?>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> SetPassword([FromBody] SetPasswordRequest request, CancellationToken ct)
+    {
+        var userId = CurrentUserId ?? 0;
+        await _authService.SetPasswordAsync(userId, request, ct);
+        return OkResponse<object?>(null, "Thiết lập mật khẩu thành công.");
     }
 
     private void SetRefreshTokenCookie(string refreshToken)

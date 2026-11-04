@@ -27,4 +27,17 @@ public interface ISmtpEmailClient
         string htmlBody,
         string? plainTextBody = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Gửi thư HTML kèm một tệp đính kèm (ví dụ biên lai PDF). Mặc định gửi thư không đính kèm.
+    /// </summary>
+    Task SendEmailWithAttachmentAsync(
+        string toEmail,
+        string subject,
+        string htmlBody,
+        string attachmentFileName,
+        byte[] attachmentBytes,
+        string attachmentContentType,
+        CancellationToken ct = default)
+        => SendEmailAsync(toEmail, subject, htmlBody, null, ct);
 }

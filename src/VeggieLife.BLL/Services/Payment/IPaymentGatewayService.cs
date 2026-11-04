@@ -39,6 +39,17 @@ public interface IPaymentGatewayService
         CancellationToken ct = default);
 
     /// <summary>
+    /// Khởi tạo yêu cầu thanh toán VietQR động kèm mã giao dịch đối soát và URL chuyển hướng tùy biến.
+    /// </summary>
+    Task<PaymentCheckoutResult> CreateVietQrPaymentAsync(
+        long transactionId,
+        decimal amountVnd,
+        string orderInfo,
+        string? returnUrl,
+        string? cancelUrl,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Xác thực chữ ký số HMAC-SHA256 trên webhook IPN từ cổng thanh toán.
     /// </summary>
     bool VerifySignature(IDictionary<string, string> requestData, string secureHash);

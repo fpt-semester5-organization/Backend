@@ -11,7 +11,7 @@ namespace VeggieLife.BLL.Services.Community;
 /// Giao diện dịch vụ quản lý bình luận cộng đồng đa tầng dưới bài viết và công thức nấu ăn.
 /// Triển khai các chức năng:
 /// - FN-COMM-01: Xem bình luận dạng cây (tối đa 2 cấp hiển thị) của bài viết và công thức đã duyệt.
-/// - FN-COMM-02: Bình luận mới hoặc trả lời bình luận, chống spam (15 giây cooldown, tối đa 5 bình luận trùng lặp - BR-USR-04), kiểm duyệt AI (BR-USR-03).
+/// - FN-COMM-02: Bình luận mới hoặc trả lời bình luận, chống spam (tối đa 5 bình luận trùng lặp - BR-USR-04), kiểm duyệt AI (BR-USR-03).
 /// - FN-COMM-03: Sửa hoặc xóa mềm bình luận của mình, ẩn dây chuyền các bình luận con (Cascade Soft-Delete - BR-ADM-CMT-001).
 /// </summary>
 public interface ICommentService
@@ -28,6 +28,7 @@ public interface ICommentService
         int postId,
         int page = 1,
         int size = 20,
+        bool isAdmin = false,
         CancellationToken ct = default);
 
     /// <summary>
@@ -42,6 +43,7 @@ public interface ICommentService
         int recipeId,
         int page = 1,
         int size = 20,
+        bool isAdmin = false,
         CancellationToken ct = default);
 
     /// <summary>

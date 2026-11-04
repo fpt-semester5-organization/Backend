@@ -5,7 +5,6 @@ namespace VeggieLife.BLL.DTOs.Fridge.Responses;
 
 /// <summary>
 /// DTO đại diện cho một nguyên liệu được phát hiện từ ảnh tủ lạnh (FN-VIS-01).
-/// Nếu không khớp nguyên liệu hệ thống: inventoryId và ingredientId sẽ mang giá trị null.
 /// </summary>
 public class DetectedFridgeIngredientDto
 {
@@ -30,8 +29,48 @@ public class DetectedFridgeIngredientDto
     public string FreshnessStatus { get; set; } = "FRESH";
 
     /// <summary>
+    /// Định lượng/số lượng hiển thị bằng tiếng Việt do AI ước tính (ví dụ: "3 quả (~450g)", "1 bó (~500g)").
+    /// </summary>
+    public string? Quantity { get; set; }
+
+    /// <summary>
+    /// Số lượng ước tính dạng số.
+    /// </summary>
+    public decimal? Amount { get; set; }
+
+    /// <summary>
+    /// Đơn vị tính (quả, củ, bó, miếng, g, kg...).
+    /// </summary>
+    public string? Unit { get; set; }
+
+    /// <summary>
     /// Tọa độ hộp bao [ymin, xmin, ymax, xmax] trong thang đo 0..1000 chuẩn hóa từ Gemini Vision.
     /// </summary>
     [JsonPropertyName("box2d")]
     public List<int>? Box2D { get; set; }
+
+    /// <summary>
+    /// Nhóm thực phẩm (Rau củ, Trái cây, Sữa & Chế phẩm, Nước uống...).
+    /// </summary>
+    public string? FoodGroup { get; set; }
+
+    /// <summary>
+    /// Có nguồn gốc động vật không (thịt, cá, trứng, sữa...).
+    /// </summary>
+    public bool IsAnimalProduct { get; set; }
+
+    /// <summary>
+    /// Có phải là thịt đỏ (bò, heo, cừu...) không.
+    /// </summary>
+    public bool IsRedMeat { get; set; }
+
+    /// <summary>
+    /// Độ tin cậy từ mô hình AI (0..1).
+    /// </summary>
+    public double? Confidence { get; set; }
+
+    /// <summary>
+    /// URL ảnh thu nhỏ hoặc ảnh cắt cận cảnh thumbnail của nguyên liệu.
+    /// </summary>
+    public string? ThumbnailUrl { get; set; }
 }

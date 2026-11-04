@@ -11,6 +11,31 @@ public class RecipeSummaryDto
     public int RecipeId { get; set; }
 
     /// <summary>
+    /// Mã định danh món ăn (Food) mà công thức này thuộc về.
+    /// </summary>
+    public int? FoodId { get; set; }
+
+    /// <summary>
+    /// Tên món ăn (Food) mà công thức này thuộc về.
+    /// </summary>
+    public string? FoodName { get; set; }
+
+    /// <summary>
+    /// Đường dẫn ảnh đại diện món ăn (Food).
+    /// </summary>
+    public string? FoodImageUrl { get; set; }
+
+    /// <summary>
+    /// Mã danh mục món ăn (Category).
+    /// </summary>
+    public int? CategoryId { get; set; }
+
+    /// <summary>
+    /// Tên danh mục món ăn (Category).
+    /// </summary>
+    public string? CategoryName { get; set; }
+
+    /// <summary>
     /// Loại nội dung: RECIPE hoặc VIDEO.
     /// </summary>
     public string Type { get; set; } = "RECIPE";
@@ -46,6 +71,11 @@ public class RecipeSummaryDto
     public int VoteCount { get; set; }
 
     /// <summary>
+    /// Người dùng hiện tại đã thả tim nội dung này chưa (luôn false với Khách).
+    /// </summary>
+    public bool HasVoted { get; set; }
+
+    /// <summary>
     /// Huy hiệu xác nhận chuẩn chay từ Quản trị viên (Admin).
     /// </summary>
     public bool IsVerified { get; set; }
@@ -54,6 +84,11 @@ public class RecipeSummaryDto
     /// Mã định danh video liên kết nếu loại nội dung là VIDEO (BUG-FL05-10).
     /// </summary>
     public int? VideoId { get; set; }
+
+    /// <summary>
+    /// Đường dẫn phát video đính kèm nếu có.
+    /// </summary>
+    public string? VideoUrl { get; set; }
 }
 
 /// <summary>
@@ -62,4 +97,3 @@ public class RecipeSummaryDto
 public class RecipeListItemDto : RecipeSummaryDto
 {
 }
-

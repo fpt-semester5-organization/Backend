@@ -21,4 +21,5 @@ public static class OtpPurposes
 {
     public const string EmailVerify = "EMAIL_VERIFY";
     public const string PasswordReset = "PASSWORD_RESET";
+    public const string AccountDeactivation = "ACCOUNT_DEACTIVATION";
 }

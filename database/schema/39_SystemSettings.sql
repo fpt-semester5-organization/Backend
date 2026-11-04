@@ -1,7 +1,7 @@
 -- ============================================================
 -- File: 39_SystemSettings.sql
 -- Bảng Thực Thể: SystemSettings (3.39)
--- Mục đích nghiệp vụ: Lưu trữ các tham số cấu hình động toàn hệ thống (Hạn mức đổi món, hạn mức AI, ngưỡng ngân sách...)
+-- Mục đích nghiệp vụ: Lưu trữ các tham số cấu hình động toàn hệ thống (Hạn mức đổi món, hạn mức AI, ngưỡng ngân sách, URL tài liệu pháp lý...)
 -- Phục vụ quản trị tập trung linh hoạt từ Admin Dashboard theo chuẩn Enterprise.
 -- ============================================================
 
@@ -9,11 +9,12 @@ IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[Sy
 BEGIN
     CREATE TABLE dbo.SystemSettings (
         Setting_Key VARCHAR(60) NOT NULL,
-        Setting_Value NVARCHAR(500) NOT NULL,
-        Default_Value NVARCHAR(500) NOT NULL,
+        Setting_Value NVARCHAR(2000) NOT NULL,
+        Default_Value NVARCHAR(2000) NOT NULL,
         Data_Type VARCHAR(20) NOT NULL CONSTRAINT DF_SystemSettings_Data_Type DEFAULT 'INT',
         Category VARCHAR(30) NOT NULL,
         Description NVARCHAR(255) NULL,
+        Legal_Documents_Url NVARCHAR(MAX) NULL,
         Updated_At DATETIME2(7) NOT NULL CONSTRAINT DF_SystemSettings_Updated_At DEFAULT SYSDATETIME(),
         Updated_By INT NULL,
 

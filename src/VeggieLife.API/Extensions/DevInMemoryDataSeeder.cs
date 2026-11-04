@@ -67,15 +67,38 @@ public static class DevInMemoryDataSeeder
         db.FoodCategories.AddRange(soupCategory, braisedCategory, stirFryCategory, riceCategory, hiddenCategory);
 
         // 3. Nguyên liệu thực phẩm (Ingredients)
-        var tofuSilken = new Ingredient { IngredientId = 39, IngredientName = "Đậu hũ non", StandardUnit = "g", DefaultStallType = "PLANT_PROTEIN", FoodGroup = "PLANT", CaloriesPer100g = 76m };
-        var mushroomStraw = new Ingredient { IngredientId = 90, IngredientName = "Nấm rơm tươi", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 32m };
-        var mushroomShiitake = new Ingredient { IngredientId = 84, IngredientName = "Nấm hương tươi", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 34m };
-        var mushroomKingOyster = new Ingredient { IngredientId = 82, IngredientName = "Nấm đùi gà", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 35m };
-        var mushroomEnoki = new Ingredient { IngredientId = 85, IngredientName = "Nấm kim châm tươi", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 37m };
-        var tofuFried = new Ingredient { IngredientId = 38, IngredientName = "Đậu hũ chiên vàng", StandardUnit = "g", DefaultStallType = "PLANT_PROTEIN", FoodGroup = "PLANT", CaloriesPer100g = 271m };
-        var sweetCorn = new Ingredient { IngredientId = 5, IngredientName = "Bắp ngọt tươi", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 86m };
-        var butterDairy = new Ingredient { IngredientId = 10, IngredientName = "Bơ lạt từ sữa bò", StandardUnit = "g", DefaultStallType = "DAIRY", FoodGroup = "DAIRY", CaloriesPer100g = 717m };
-        db.Ingredients.AddRange(tofuSilken, mushroomStraw, mushroomShiitake, mushroomKingOyster, mushroomEnoki, tofuFried, sweetCorn, butterDairy);
+        var ingredients = new List<Ingredient>
+        {
+            new() { IngredientId = 1, IngredientName = "Cà chua chín đỏ (Cà chua)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 18m },
+            new() { IngredientId = 2, IngredientName = "Cà rốt củ tươi (Cà rốt)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 41m },
+            new() { IngredientId = 3, IngredientName = "Dưa leo tươi (Dưa chuột)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 15m },
+            new() { IngredientId = 4, IngredientName = "Bắp cải tím (Bắp cải tím)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 31m },
+            new() { IngredientId = 5, IngredientName = "Bắp ngọt tươi (Ngô ngọt / Bắp ngô)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 86m },
+            new() { IngredientId = 6, IngredientName = "Xà lách lụa tươi (Xà lách)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 15m },
+            new() { IngredientId = 7, IngredientName = "Hành lá tươi (Hành lá / Hành hoa)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 32m },
+            new() { IngredientId = 8, IngredientName = "Rau muống tươi (Rau muống)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 19m },
+            new() { IngredientId = 9, IngredientName = "Khoai tây tươi (Khoai tây)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 77m },
+            new() { IngredientId = 10, IngredientName = "Bơ lạt từ sữa bò", StandardUnit = "g", DefaultStallType = "DAIRY", FoodGroup = "DAIRY", CaloriesPer100g = 717m },
+            new() { IngredientId = 11, IngredientName = "Bí đỏ hạt đậu (Bí ngô / Bí đỏ)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 26m },
+            new() { IngredientId = 12, IngredientName = "Bông cải xanh (Broccoli / Súp lơ xanh)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 34m },
+            new() { IngredientId = 13, IngredientName = "Bắp cải trắng (Bắp cải)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 25m },
+            new() { IngredientId = 14, IngredientName = "Đậu nành Nhật (Edamame / Đậu nành non)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 122m },
+            new() { IngredientId = 15, IngredientName = "Trứng cút tươi (Trứng cút)", StandardUnit = "quả", DefaultStallType = "PRODUCE", FoodGroup = "EGG", CaloriesPer100g = 158m },
+            new() { IngredientId = 16, IngredientName = "Trứng gà tươi (Trứng gà)", StandardUnit = "quả", DefaultStallType = "PRODUCE", FoodGroup = "EGG", CaloriesPer100g = 143m },
+            new() { IngredientId = 17, IngredientName = "Ớt chuông đỏ (Ớt chuông)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 31m },
+            new() { IngredientId = 18, IngredientName = "Hành tây củ trắng (Hành tây)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 40m },
+            new() { IngredientId = 19, IngredientName = "Tỏi củ tươi (Tỏi)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 149m },
+            new() { IngredientId = 20, IngredientName = "Gừng củ tươi (Gừng)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 80m },
+            new() { IngredientId = 21, IngredientName = "Chanh quả tươi (Chanh)", StandardUnit = "quả", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 29m },
+            new() { IngredientId = 22, IngredientName = "Nấm đùi gà (King Oyster)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 35m },
+            new() { IngredientId = 38, IngredientName = "Đậu hũ chiên vàng (Đậu phụ chiên / Đậu phụ)", StandardUnit = "g", DefaultStallType = "PLANT_PROTEIN", FoodGroup = "PLANT", CaloriesPer100g = 271m },
+            new() { IngredientId = 39, IngredientName = "Đậu hũ non (Đậu phụ non)", StandardUnit = "g", DefaultStallType = "PLANT_PROTEIN", FoodGroup = "PLANT", CaloriesPer100g = 76m },
+            new() { IngredientId = 82, IngredientName = "Nấm đùi gà", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 35m },
+            new() { IngredientId = 84, IngredientName = "Nấm hương tươi (Shiitake)", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 34m },
+            new() { IngredientId = 85, IngredientName = "Nấm kim châm tươi", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 37m },
+            new() { IngredientId = 90, IngredientName = "Nấm rơm tươi", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT", CaloriesPer100g = 32m },
+        };
+        db.Ingredients.AddRange(ingredients);
 
         // 4. Người dùng mẫu (Users) - Mật khẩu chung: Veggie@2026
         var passwordHash = BCrypt.Net.BCrypt.HashPassword("Veggie@2026");
@@ -136,7 +159,6 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 101,
             UserId = 1,
-            CategoryId = 3,
             DietarySchoolId = 7, // VEGAN
             Title = "Canh nấm đậu phụ rong biển",
             Description = "Món canh thanh đạm bổ dưỡng mát lành giải nhiệt cơ thể.",
@@ -158,7 +180,6 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 102,
             UserId = 1,
-            CategoryId = 9,
             DietarySchoolId = 1, // BUDDHIST
             Title = "Nấm kho tiêu hạt sen đậm đà",
             Description = "Nấm kho sánh quyện đậm đà đưa cơm chuẩn vị chay Phật giáo.",
@@ -180,7 +201,6 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 103,
             UserId = 2,
-            CategoryId = 14,
             DietarySchoolId = 7, // VEGAN
             Title = "Mì xào nấm rau củ giòn ngọt",
             Description = "Món mì xào giòn thơm kèm video hướng dẫn từng bước.",
@@ -202,7 +222,6 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 104,
             UserId = 2,
-            CategoryId = 3,
             DietarySchoolId = 2, // LACTO
             Title = "Súp ngô ngọt kem tươi dinh dưỡng",
             Description = "Súp thơm mùi bơ sữa và ngọt thanh tự nhiên từ bắp ngọt.",
@@ -224,7 +243,6 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 105,
             UserId = 2,
-            CategoryId = 3,
             DietarySchoolId = 7,
             Title = "Canh bí đỏ nháp đang soạn",
             Description = "Bản nháp chưa gửi duyệt.",
@@ -245,7 +263,6 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 106,
             UserId = 2,
-            CategoryId = 9,
             DietarySchoolId = 7,
             Title = "Công thức vi phạm cách ly",
             Description = "Bị cách ly kiểm duyệt.",
@@ -354,6 +371,34 @@ public static class DevInMemoryDataSeeder
                 Unit = "g"
             }
         );
+
+        // 13. Dữ liệu mẫu AIQuotaLogs phục vụ FN-ADM-16 (LLMOps Dashboard)
+        if (!db.AiquotaLogs.Any())
+        {
+            var now = DateTime.UtcNow;
+            db.AiquotaLogs.AddRange(
+                new AiquotaLog { UserId = 2, FeatureCode = "AI_CHAT", TokensConsumed = 120000, CostEstimateUsd = 4.2m, RequestStatus = "SUCCESS", ExecutionTimeMs = 600, CreatedAt = now.AddDays(-2) },
+                new AiquotaLog { UserId = 2, FeatureCode = "MEAL_PLAN_GEN", TokensConsumed = 30000, CostEstimateUsd = 1.2m, RequestStatus = "SUCCESS", ExecutionTimeMs = 1200, CreatedAt = now.AddDays(-2) },
+                new AiquotaLog { UserId = 2, FeatureCode = "AI_FRIDGE", TokensConsumed = 45000, CostEstimateUsd = 1.8m, RequestStatus = "SUCCESS", ExecutionTimeMs = 800, CreatedAt = now.AddDays(-1) },
+                new AiquotaLog { UserId = 2, FeatureCode = "AI_BARCODE", TokensConsumed = 15000, CostEstimateUsd = 0.6m, RequestStatus = "SUCCESS", ExecutionTimeMs = 350, CreatedAt = now.AddDays(-1) },
+                new AiquotaLog { UserId = 2, FeatureCode = "AI_CHAT", TokensConsumed = 80000, CostEstimateUsd = 2.75m, RequestStatus = "SUCCESS", ExecutionTimeMs = 700, CreatedAt = now.AddHours(-3) },
+                new AiquotaLog { UserId = 2, FeatureCode = "CONTENT_MODERATION", TokensConsumed = 20000, CostEstimateUsd = 0.85m, RequestStatus = "SUCCESS", ExecutionTimeMs = 400, CreatedAt = now.AddHours(-1) }
+            );
+        }
+
+        // 14. Cấu hình hệ thống (SystemSettings) bao gồm các liên kết tài liệu pháp lý ảnh số hóa
+        if (!db.SystemSettings.Any())
+        {
+            const string legalJson = "{\"user_agreement\":\"https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg\",\"privacy_policy\":\"https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg\",\"terms_of_service\":\"https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg\",\"vegan_disclaimer\":\"https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg\"}";
+
+            db.SystemSettings.AddRange(
+                new SystemSetting { SettingKey = "LEGAL_DOCUMENTS", SettingValue = legalJson, DefaultValue = legalJson, DataType = "STRING", Category = "GENERAL", Description = "Danh mục tài liệu pháp lý VeggieLife", LegalDocumentsUrl = legalJson, UpdatedAt = DateTime.UtcNow },
+                new SystemSetting { SettingKey = "LEGAL_USER_AGREEMENT_URL", SettingValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg", DefaultValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg", DataType = "STRING", Category = "GENERAL", Description = "Thỏa thuận người dùng (Luật 116/2025/QH15)", LegalDocumentsUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718600/veggielife/legal/116_2025_QH15_666020.jpg", UpdatedAt = DateTime.UtcNow },
+                new SystemSetting { SettingKey = "LEGAL_PRIVACY_POLICY_URL", SettingValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg", DefaultValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg", DataType = "STRING", Category = "GENERAL", Description = "Chính sách bảo mật dữ liệu (NĐ 13/2023/NĐ-CP)", LegalDocumentsUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718345/veggielife/legal/13_2023_ND-CP_465185.jpg", UpdatedAt = DateTime.UtcNow },
+                new SystemSetting { SettingKey = "LEGAL_TERMS_OF_SERVICE_URL", SettingValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg", DefaultValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg", DataType = "STRING", Category = "GENERAL", Description = "Điều khoản dịch vụ & quyền lợi NTD (Luật 19/2023/QH15)", LegalDocumentsUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718645/veggielife/legal/19_2023_QH15_500102.jpg", UpdatedAt = DateTime.UtcNow },
+                new SystemSetting { SettingKey = "LEGAL_VEGAN_DISCLAIMER_URL", SettingValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg", DefaultValue = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg", DataType = "STRING", Category = "GENERAL", Description = "Quy chuẩn Trí tuệ nhân tạo và Miễn trừ (NĐ 142/2026/NĐ-CP)", LegalDocumentsUrl = "https://res.cloudinary.com/swrsuenp/image/upload/v1793718667/veggielife/legal/142_2026_ND-CP_696080.jpg", UpdatedAt = DateTime.UtcNow }
+            );
+        }
 
         db.SaveChanges();
     }

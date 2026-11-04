@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using VeggieLife.BLL.DTOs.Ai;
+using VeggieLife.BLL.Services.AI;
 
 namespace VeggieLife.BLL.Services.Moderation;
 
@@ -24,12 +25,15 @@ public class SimulatedContentModerationService : IContentModerationService
 
     private static readonly string[] HateKeywords = new[]
     {
-        "chửi", "hate", "xúc phạm", "đồ ngu", "phản động", "thù địch", "đánh chết", "lăng mạ", "lũ ngu", "phá nát"
+        "chửi", "hate", "xúc phạm", "đồ ngu", "phản động", "thù địch", "đánh chết", "lăng mạ", "lũ ngu", "phá nát",
+        "thấy gớm", "gớm quá", "gớm ghiếc", "nhìn gớm", "gớm", "thấy ghê", "ghê quá", "ghê tởm", "nhìn ghê",
+        "kinh tởm", "tởm quá", "tởm lợm", "nhìn tởm", "tởm", "bẩn thỉu", "dơ bẩn", "dơ dáy",
+        "chó ăn", "heo ăn", "lợn ăn", "như rác", "rác rưởi", "đồ khốn", "mất dạy", "vô học", "khốn nạn"
     };
 
     private static readonly string[] SpamKeywords = new[]
     {
-        "spam", "mua ngay", "quảng cáo", "khuyến mãi sốc", "kiếm tiền online", "đầu tư sinh lời"
+        "spam", "mua ngay", "quảng cáo", "khuyến mãi sốc", "kiếm tiền online", "đầu tư sinh lời", "đa cấp", "bán hàng đa cấp", "làm giàu nhanh", "tiền ảo", "cho vay", "cờ bạc"
     };
 
     public SimulatedContentModerationService(ILogger<SimulatedContentModerationService> logger)
@@ -127,12 +131,89 @@ public class SimulatedContentModerationService : IContentModerationService
         }
 
         // 5. Vi phạm thịt động vật / mặn (VIO_MEAT)
-        // Chuẩn hóa cụm "trứng gà", "trứng vịt" để không bị nhận nhầm thành thịt gia cầm
-        var textForMeatCheck = System.Text.RegularExpressions.Regex.Replace(
-            fullText,
+        var textForMeatCheck = fullText;
+
+        // 5.1. Chuẩn hóa gia cầm trong trứng ("trứng gà", "trứng vịt", "trứng cút") để không bị nhận nhầm thành thịt gia cầm
+        textForMeatCheck = System.Text.RegularExpressions.Regex.Replace(
+            textForMeatCheck,
             @"(?<!\p{L})trứng\s+(gà|vịt|cút)(?!\p{L})",
             "trứng",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        // 5.2. Chuẩn hóa các loại thực vật / thảo mộc / nấm có chứa tên động vật (nấm đùi gà, đậu gà, rau diếp cá, lá giấp cá)
+        textForMeatCheck = System.Text.RegularExpressions.Regex.Replace(
+            textForMeatCheck,
+            @"(?<!\p{L})nấm\s+đùi\s+gà(?!\p{L})",
+            "nấm tươi",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        textForMeatCheck = System.Text.RegularExpressions.Regex.Replace(
+            textForMeatCheck,
+            @"(?<!\p{L})đậu\s+gà(?!\p{L})",
+            "đậu hạt",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        textForMeatCheck = System.Text.RegularExpressions.Regex.Replace(
+            textForMeatCheck,
+            @"(?<!\p{L})(rau\s+)?(diếp|giấp)\s+cá(?!\p{L})",
+            "rau thơm",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        // 5.3. Chuẩn hóa đạm thực vật, thịt thực vật / nhân tạo (plant-based meat)
+        textForMeatCheck = System.Text.RegularExpressions.Regex.Replace(
+            textForMeatCheck,
+            @"(?<!\p{L})(thịt|meat|pork|beef|chicken|gà|bò|heo|cá|tôm|mực)\s+(nguồn\s+gốc\s+)?(thực\s+vật|nhân\s+tạo|đậu\s+nành)(?!\p{L})",
+            "thực vật",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        textForMeatCheck = System.Text.RegularExpressions.Regex.Replace(
+            textForMeatCheck,
+            @"(?<!\p{L})(đạm\s+thực\s+vật|đạm\s+đậu\s+nành)(?!\p{L})",
+            "thực vật",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        // 5.4. Chuẩn hóa món chay / nguyên liệu mô phỏng món mặn có hậu tố 'chay' hoặc 'thuần chay'
+        // Ví dụ: "bún bò Huế chay", "bò lát chay", "sườn non chay", "chả cá chay", "gà xé phay chay", "thịt kho tàu chay"
+        textForMeatCheck = System.Text.RegularExpressions.Regex.Replace(
+            textForMeatCheck,
+            @"(?<!\p{L})(thịt|meat|pork|beef|chicken|gà|bò|heo|cá|tôm|mực)\b((?!\b(và|với|cùng|kèm|hoặc|hay|từ|trong|của)\b)[^\r\n,.;:!?]){0,30}?\s+(thuần\s+)?chay(?!\p{L})",
+            "món chay",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        // 5.5. Chuẩn hóa tiền tố 'chay' đi liền trước tên thịt / món
+        // Ví dụ: "chay mặn", "món chay bò kho"
+        textForMeatCheck = System.Text.RegularExpressions.Regex.Replace(
+            textForMeatCheck,
+            @"(?<!\p{L})(thuần\s+)?chay\s+((?!và|với|cùng|kèm)[^\r\n,.;:!?]){0,15}?\b(thịt|meat|pork|beef|chicken|gà|bò|heo|cá|tôm|mực)(?!\p{L})",
+            "món chay",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        // 5.6. Trích xuất tên món chính từ tiêu đề khi tiêu đề định danh món chay (ví dụ: 'Bún bò Huế chay ...' -> trích xuất 'bún bò huế')
+        // để cho phép nhắc lại tên món trong phần mô tả / hướng dẫn mà không bị nhận nhầm là thịt động vật thật.
+        if (!string.IsNullOrWhiteSpace(request.Title))
+        {
+            var titleMatch = System.Text.RegularExpressions.Regex.Match(
+                request.Title,
+                @"\b([\p{L}\s]+?)\s+(thuần\s+)?chay\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (titleMatch.Success && titleMatch.Groups[1].Value.Trim().Length >= 3)
+            {
+                var dishPrefix = titleMatch.Groups[1].Value.Trim();
+                textForMeatCheck = System.Text.RegularExpressions.Regex.Replace(
+                    textForMeatCheck,
+                    $@"(?<!\p{{L}}){System.Text.RegularExpressions.Regex.Escape(dishPrefix)}(?!\p{{L}})",
+                    "món ăn",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            }
+        }
+
+        // 5.7. Khi ngữ cảnh tiêu đề / công thức đã khai báo là món CHAY (Title chứa 'chay' / 'thuần chay' hoặc trường phái VEGAN),
+        // cho phép nhắc lại các tên món truyền thống phổ biến trong phần mô tả / hướng dẫn
+        if (fullText.Contains("chay") || string.Equals(request.DietarySchoolCode, "VEGAN", System.StringComparison.OrdinalIgnoreCase))
+        {
+            textForMeatCheck = System.Text.RegularExpressions.Regex.Replace(
+                textForMeatCheck,
+                @"(?<!\p{L})(bún\s+bò(\s+huế|\s+nam\s+bộ)?|phở\s+(bò|gà)|bò\s+(kho|né|lúc\s+lắc|bít\s+tết|sốt\s+vang)|bún\s+chả\s+cá|chả\s+cá|bánh\s+canh\s+cá(\s+lóc)?|thịt\s+kho\s+tàu|cơm\s+tấm\s+sườn)(?!\p{L})",
+                "món ăn",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        }
 
         var detectedMeat = MeatKeywords.FirstOrDefault(k => ContainsWord(textForMeatCheck, k));
         if (detectedMeat != null)
@@ -189,7 +270,7 @@ public class SimulatedContentModerationService : IContentModerationService
             ViolationType = isQuarantined ? response.ViolationType : null,
             Note = response.Reasons.Count > 0 ? string.Join("; ", response.Reasons) : "Nội dung an toàn, đạt chuẩn kiểm duyệt.",
             TokensConsumed = response.Usage.PromptTokens + response.Usage.CompletionTokens,
-            CostEstimateUsd = 0.0001m,
+            CostEstimateUsd = AiCostCalculator.Calculate(response.Usage.PromptTokens, response.Usage.CompletionTokens),
             ExecutionTimeMs = response.Usage.LatencyMs,
             Usage = response.Usage,
             Audit = response.Audit

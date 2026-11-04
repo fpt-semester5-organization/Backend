@@ -6,12 +6,17 @@ namespace VeggieLife.BLL.DTOs.Profile.Requests;
 public class DeleteCurrentUserRequest
 {
     /// <summary>
-    /// Mật khẩu hiện tại để xác thực lại danh tính (bắt buộc đối với tài khoản đăng ký bằng mật khẩu).
+    /// Mã xác thực OTP 6 số gửi tới email của tài khoản để xác nhận vô hiệu hóa.
+    /// </summary>
+    public string? Otp { get; set; }
+
+    /// <summary>
+    /// Mật khẩu hiện tại để xác thực lại danh tính (dành cho tài khoản sử dụng mật khẩu).
     /// </summary>
     public string? ConfirmPassword { get; set; }
 
     /// <summary>
-    /// Google ID Token để xác thực lại danh tính (bắt buộc đối với tài khoản chỉ dùng Google OAuth).
+    /// Google ID Token để xác thực lại danh tính (dành cho tài khoản chỉ dùng Google OAuth).
     /// </summary>
     public string? GoogleIdToken { get; set; }
 

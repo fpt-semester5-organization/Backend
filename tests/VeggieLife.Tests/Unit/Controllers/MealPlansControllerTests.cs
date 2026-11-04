@@ -162,7 +162,7 @@ public class MealPlansControllerTests
             .ReturnsAsync((items, meta));
 
         // Act
-        var actionResult = await _controller.ListMealPlans(page: 1, size: 10, CancellationToken.None);
+        var actionResult = await _controller.ListMealPlans(page: 1, size: 10, status: null, ct: CancellationToken.None);
 
         // Assert
         var objectResult = actionResult as ObjectResult;
@@ -598,46 +598,127 @@ public class MealPlansControllerTests
     }
 
     [Fact]
-    public async Task ExportMealPlan_VipUser_ShouldReturn200FileContentResult()
+    public async Task CreateMealPlanCustomDays_ValidRequest_ShouldReturn201Created()
     {
         // Arrange
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, "45"),
-            new(ClaimTypes.Role, UserRoles.Vip)
+            new(ClaimTypes.Role, UserRoles.Member)
         };
         _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
 
-        var dummyPdf = new byte[] { 0x25, 0x50, 0x44, 0x46, 0x01, 0x02 };
-        _mockService.Setup(s => s.ExportMealPlanPdfAsync(45, 45, UserRoles.Vip, "PLAN,SHOPPING", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(dummyPdf);
+        var request = new CreateMealPlanRequest
+        {
+            StartDate = "2026-11-02",
+            BudgetTier = "STANDARD",
+            DurationDays = 5
+        };
+
+        var responseData = new CreateMealPlanResponseData
+        {
+            PlanId = 101,
+            PlanName = "Thực đơn 5 ngày (02/11)",
+            StartDate = "2026-11-02",
+            EndDate = "2026-11-06",
+            DurationDays = 5,
+            Slots = new List<MealSlotDto>()
+        };
+
+        _mockService.Setup(s => s.CreateMealPlanAsync(45, UserRoles.Member, request, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
 
         // Act
-        var actionResult = await _controller.ExportMealPlan(45, "PLAN,SHOPPING", CancellationToken.None);
+        var actionResult = await _controller.CreateMealPlanCustomDays(request, CancellationToken.None);
 
         // Assert
-        var fileResult = actionResult as FileContentResult;
-        fileResult.Should().NotBeNull();
-        fileResult!.ContentType.Should().Be("application/pdf");
-        fileResult.FileDownloadName.Should().Be("veggielife-meal-plan-45.pdf");
-        fileResult.FileContents.Should().Equal(dummyPdf);
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status201Created);
+
+        var apiResponse = objectResult.Value as ApiResponse<CreateMealPlanResponseData>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data!.PlanId.Should().Be(101);
+        apiResponse.Data.DurationDays.Should().Be(5);
     }
 
     [Fact]
-    public async Task ExportMealPlan_GuestUser_ShouldThrowForbidden()
+    public async Task SwapMealSlotByNote_ValidRequest_ShouldReturn200OK()
     {
         // Arrange
         var claims = new List<Claim>
         {
-            new(ClaimTypes.NameIdentifier, "999"),
-            new(ClaimTypes.Role, UserRoles.Guest)
+            new(ClaimTypes.NameIdentifier, "45"),
+            new(ClaimTypes.Role, UserRoles.Member)
         };
         _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
 
-        // Act & Assert
-        var act = () => _controller.ExportMealPlan(45, "PLAN,SHOPPING", CancellationToken.None);
-        var ex = await act.Should().ThrowAsync<AppException>();
-        ex.Which.StatusCode.Should().Be(403);
-        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrGuestPersonalizationRestricted);
+        var request = new SwapMealSlotByNoteRequest
+        {
+            Note = "Muốn ăn món thanh đạm"
+        };
+
+        var responseData = new UpdateMealPlanSlotResponseData
+        {
+            Slot = new MealSlotDto
+            {
+                SlotId = 10,
+                Recipe = new MealSlotRecipeDto { RecipeId = 99, Title = "Canh nấm đậu hũ" }
+            },
+            SwapsRemaining = 20,
+            MaxSwapsAllowed = 21
+        };
+
+        _mockService.Setup(s => s.SwapMealSlotByNoteAsync(10, 45, UserRoles.Member, request, 101, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var actionResult = await _controller.SwapMealSlotByNote(10, 101, request, CancellationToken.None);
+
+        // Assert
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var apiResponse = objectResult.Value as ApiResponse<UpdateMealPlanSlotResponseData>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data!.Slot.Recipe!.RecipeId.Should().Be(99);
+        apiResponse.Data.SwapsRemaining.Should().Be(20);
+    }
+
+    [Fact]
+    public async Task CancelMealPlan_AuthenticatedMember_ShouldReturn200Ok()
+    {
+        // Arrange
+        var userId = 46;
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(ClaimTypes.Role, UserRoles.Member)
+        };
+        _controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+
+        var responseData = new MealPlanDetailDto
+        {
+            PlanId = 101,
+            PlanName = "Thực đơn mẫu đã hủy",
+            PlanStatus = "CANCELLED"
+        };
+
+        _mockService.Setup(s => s.CancelMealPlanAsync(101, userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseData);
+
+        // Act
+        var actionResult = await _controller.CancelMealPlan(101, CancellationToken.None);
+
+        // Assert
+        var objectResult = actionResult as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        var apiResponse = objectResult.Value as ApiResponse<MealPlanDetailDto>;
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data!.PlanId.Should().Be(101);
+        apiResponse.Data.PlanStatus.Should().Be("CANCELLED");
     }
 }

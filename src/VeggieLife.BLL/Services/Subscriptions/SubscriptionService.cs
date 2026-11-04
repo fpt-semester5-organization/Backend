@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -29,19 +29,22 @@ public class SubscriptionService : ISubscriptionService
     private readonly IPaymentGatewayService _paymentGateway;
     private readonly IEmailService _emailService;
     private readonly ILogger<SubscriptionService> _logger;
+    private readonly VeggieLife.BLL.Services.Settings.ISystemSettingService? _settingService;
 
     public SubscriptionService(
         AppDbContext db,
         IRedisService redis,
         IPaymentGatewayService paymentGateway,
         IEmailService emailService,
-        ILogger<SubscriptionService> logger)
+        ILogger<SubscriptionService> logger,
+        VeggieLife.BLL.Services.Settings.ISystemSettingService? settingService = null)
     {
         _db = db;
         _redis = redis;
         _paymentGateway = paymentGateway;
         _emailService = emailService;
         _logger = logger;
+        _settingService = settingService;
     }
 
     /// <summary>
@@ -79,6 +82,25 @@ public class SubscriptionService : ISubscriptionService
             })
             .ToListAsync(ct);
 
+        var freeChat = _settingService != null
+            ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_FREE", 20, ct)
+            : 20;
+        var vipChat = _settingService != null
+            ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_VIP", 200, ct)
+            : 200;
+        var freeMeal = _settingService != null
+            ? await _settingService.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_FREE", 1, ct)
+            : 1;
+        var vipMeal = _settingService != null
+            ? await _settingService.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_VIP", 3, ct)
+            : 3;
+        var freeFridge = _settingService != null
+            ? await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_FREE", 10, ct)
+            : 10;
+        var vipFridge = _settingService != null
+            ? await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_VIP", 30, ct)
+            : 30;
+
         var response = new ListSubscriptionPlansResponseDto
         {
             Plans = plans,
@@ -86,15 +108,15 @@ public class SubscriptionService : ISubscriptionService
             {
                 Free = new BenefitDetailDto
                 {
-                    MealPlansPerWeek = 1,
-                    ChatPerDay = 20,
-                    FridgePhotosPerDay = 10
+                    MealPlansPerWeek = freeMeal,
+                    ChatPerDay = freeChat,
+                    FridgePhotosPerDay = freeFridge
                 },
                 Vip = new BenefitDetailDto
                 {
-                    MealPlansPerWeek = 3,
-                    ChatPerDay = null, // Không giới hạn (hoặc 200 câu/ngày theo BR-PAY-SUB-01)
-                    FridgePhotosPerDay = 30
+                    MealPlansPerWeek = vipMeal,
+                    ChatPerDay = vipChat,
+                    FridgePhotosPerDay = vipFridge
                 }
             }
         };
@@ -238,7 +260,7 @@ public class SubscriptionService : ISubscriptionService
                     0,
                     plan.Price,
                     $"Nâng cấp {plan.PlanName} ({orderCode})",
-                    "/payment/callback",
+                    request.ReturnUrl ?? "/payment/callback",
                     ct);
             }
             else
@@ -247,6 +269,8 @@ public class SubscriptionService : ISubscriptionService
                     0,
                     plan.Price,
                     orderCode,
+                    request.ReturnUrl,
+                    request.CancelUrl,
                     ct);
             }
         }
@@ -476,6 +500,7 @@ public class SubscriptionService : ISubscriptionService
         transaction.SignatureHash = request.Signature;
         transaction.StartsAt = startsAt;
         transaction.EndsAt = endsAt;
+        transaction.ReceiptUrl = $"/api/v1/subscriptions/transactions/{transaction.TransactionId}/receipt";
 
         // Cập nhật vai trò người dùng thành VIP (giữ nguyên nếu là ADMIN)
         var user = transaction.User;
@@ -518,10 +543,24 @@ public class SubscriptionService : ISubscriptionService
             {
                 if (!string.IsNullOrEmpty(user.Email))
                 {
-                    await _emailService.SendOtpEmailAsync(
+                    var customerName = !string.IsNullOrWhiteSpace(user.FullName) ? user.FullName : user.Email;
+                    var receiptHtml = $@"
+<p>Xin chào <strong>{customerName}</strong>,</p>
+<p>Bạn đã nâng cấp thành công gói VIP <strong>{transaction.Plan.PlanName}</strong> trên hệ thống VeggieLife.</p>
+<table style=""width: 100%; border-collapse: collapse; margin: 16px 0;"">
+    <tr><td style=""padding: 8px; border: 1px solid #e2e8f0;""><strong>Mã giao dịch:</strong></td><td style=""padding: 8px; border: 1px solid #e2e8f0;"">#{transaction.TransactionId}</td></tr>
+    <tr><td style=""padding: 8px; border: 1px solid #e2e8f0;""><strong>Mã đơn hàng:</strong></td><td style=""padding: 8px; border: 1px solid #e2e8f0;"">{transaction.PartnerTransactionCode}</td></tr>
+    <tr><td style=""padding: 8px; border: 1px solid #e2e8f0;""><strong>Số tiền:</strong></td><td style=""padding: 8px; border: 1px solid #e2e8f0;"">{transaction.AmountVnd:N0} VNĐ</td></tr>
+    <tr><td style=""padding: 8px; border: 1px solid #e2e8f0;""><strong>Cổng thanh toán:</strong></td><td style=""padding: 8px; border: 1px solid #e2e8f0;"">{gw}</td></tr>
+    <tr><td style=""padding: 8px; border: 1px solid #e2e8f0;""><strong>Thời hạn quyền lợi VIP:</strong></td><td style=""padding: 8px; border: 1px solid #e2e8f0;"">Từ {startsAt:dd/MM/yyyy HH:mm} đến {endsAt:dd/MM/yyyy HH:mm} UTC</td></tr>
+</table>
+<p>Cảm ơn bạn đã lựa chọn gói dịch vụ của VeggieLife!</p>";
+
+                    await SendReceiptEmailAsync(
+                        transaction,
                         user.Email,
-                        $"Giao dịch #{transaction.TransactionId} thành công",
-                        "PAYMENT_RECEIPT");
+                        $"[VeggieLife] Biên lai thanh toán nâng cấp VIP #{transaction.TransactionId}",
+                        receiptHtml);
                 }
             }
             catch (Exception ex)
@@ -532,7 +571,7 @@ public class SubscriptionService : ISubscriptionService
     }
 
     /// <summary>
-    /// Tiếp nhận và xử lý Webhook tự động từ PayOS VietQR Napas247 (xác thực chữ ký ChecksumKey HMAC-SHA256, tự động kích hoạt VIP).
+    /// Tiếp nhận và xử lý Webhook tự động từ VietQR Napas247 (xác thực chữ ký ChecksumKey HMAC-SHA256, tự động kích hoạt VIP).
     /// </summary>
     public async Task HandlePayOsWebhookAsync(
         PayOS.Models.Webhooks.Webhook webhook,
@@ -665,10 +704,24 @@ public class SubscriptionService : ISubscriptionService
             return;
         }
 
+        await ActivateVipFromPayOsAsync(transaction, webhook.Data.Reference, webhook.Signature ?? string.Empty, now, ct);
+    }
+
+    /// <summary>
+    /// Đánh dấu giao dịch PayOS thành công, kích hoạt hoặc gia hạn VIP, ghi AuditLog, xóa cache và gửi email biên lai.
+    /// Dùng chung cho webhook PayOS và bước đối soát chủ động khi webhook không tới.
+    /// </summary>
+    private async Task ActivateVipFromPayOsAsync(
+        PaymentTransaction transaction,
+        string? reference,
+        string signature,
+        DateTime now,
+        CancellationToken ct)
+    {
         // 8. Cập nhật trạng thái SUCCESS
         transaction.TransactionStatus = "SUCCESS";
         transaction.CompletedAt = now;
-        transaction.SignatureHash = webhook.Signature ?? string.Empty;
+        transaction.SignatureHash = signature;
 
         // 9. Kích hoạt hoặc gia hạn VIP (BR-PAY-SUB-01, BR-PAY-SUB-02)
         var user = transaction.User;
@@ -691,6 +744,7 @@ public class SubscriptionService : ISubscriptionService
         endsAt = new DateTime(endsAt.Year, endsAt.Month, endsAt.Day, 23, 59, 59, DateTimeKind.Utc);
         transaction.StartsAt = startsAt;
         transaction.EndsAt = endsAt;
+        transaction.ReceiptUrl = $"/api/v1/subscriptions/transactions/{transaction.TransactionId}/receipt";
 
         // 10. Ghi AuditLog
         _db.AuditLogs.Add(new AuditLog
@@ -707,9 +761,9 @@ public class SubscriptionService : ISubscriptionService
                 planId = plan.PlanId,
                 vipStartsAt = startsAt,
                 vipEndsAt = endsAt,
-                reference = webhook.Data.Reference
+                reference = reference
             }),
-            Note = $"Thanh toán PayOS VietQR tự động thành công cho đơn {transaction.PartnerTransactionCode}. Kích hoạt VIP đến {endsAt:yyyy-MM-dd HH:mm:ss} UTC.",
+            Note = $"Thanh toán VietQR tự động thành công cho đơn {transaction.PartnerTransactionCode}. Kích hoạt VIP đến {endsAt:yyyy-MM-dd HH:mm:ss} UTC.",
             CreatedAt = now
         });
 
@@ -733,10 +787,24 @@ public class SubscriptionService : ISubscriptionService
             {
                 if (!string.IsNullOrEmpty(user.Email))
                 {
-                    await _emailService.SendOtpEmailAsync(
+                    var customerName = !string.IsNullOrWhiteSpace(user.FullName) ? user.FullName : user.Email;
+                    var receiptHtml = $@"
+<p>Xin chào <strong>{customerName}</strong>,</p>
+<p>Bạn đã nâng cấp thành công gói VIP <strong>{plan.PlanName}</strong> trên hệ thống VeggieLife.</p>
+<table style=""width: 100%; border-collapse: collapse; margin: 16px 0;"">
+    <tr><td style=""padding: 8px; border: 1px solid #e2e8f0;""><strong>Mã giao dịch:</strong></td><td style=""padding: 8px; border: 1px solid #e2e8f0;"">#{transaction.TransactionId}</td></tr>
+    <tr><td style=""padding: 8px; border: 1px solid #e2e8f0;""><strong>Mã đơn hàng:</strong></td><td style=""padding: 8px; border: 1px solid #e2e8f0;"">{transaction.PartnerTransactionCode}</td></tr>
+    <tr><td style=""padding: 8px; border: 1px solid #e2e8f0;""><strong>Số tiền:</strong></td><td style=""padding: 8px; border: 1px solid #e2e8f0;"">{transaction.AmountVnd:N0} VNĐ</td></tr>
+    <tr><td style=""padding: 8px; border: 1px solid #e2e8f0;""><strong>Cổng thanh toán:</strong></td><td style=""padding: 8px; border: 1px solid #e2e8f0;"">VietQR</td></tr>
+    <tr><td style=""padding: 8px; border: 1px solid #e2e8f0;""><strong>Thời hạn quyền lợi VIP:</strong></td><td style=""padding: 8px; border: 1px solid #e2e8f0;"">Từ {startsAt:dd/MM/yyyy HH:mm} đến {endsAt:dd/MM/yyyy HH:mm} UTC</td></tr>
+</table>
+<p>Cảm ơn bạn đã lựa chọn gói dịch vụ của VeggieLife!</p>";
+
+                    await SendReceiptEmailAsync(
+                        transaction,
                         user.Email,
-                        $"Giao dịch #{transaction.TransactionId} thành công qua PayOS VietQR",
-                        "PAYMENT_RECEIPT");
+                        $"[VeggieLife] Biên lai thanh toán nâng cấp VIP #{transaction.TransactionId}",
+                        receiptHtml);
                 }
             }
             catch (Exception ex)
@@ -747,6 +815,109 @@ public class SubscriptionService : ISubscriptionService
     }
 
     /// <summary>
+    /// Đối soát chủ động với PayOS khi webhook không tới: hỏi PayOS trạng thái đơn đang chờ gần nhất của người dùng,
+    /// nếu đã PAID đủ tiền thì kích hoạt VIP như webhook. Giới hạn một lần hỏi mỗi vài giây cho mỗi đơn.
+    /// </summary>
+    private async Task TryReconcilePendingPayOsAsync(int userId, CancellationToken ct)
+    {
+        try
+        {
+            var payOsClient = _paymentGateway.GetPayOSClient();
+            if (payOsClient == null) return;
+
+            var now = DateTime.UtcNow;
+            var graceStart = now.AddMinutes(-30);
+            var transaction = await _db.PaymentTransactions
+                .Include(pt => pt.Plan)
+                .Include(pt => pt.User)
+                .Where(pt => pt.UserId == userId
+                    && pt.GatewayProvider == "VIETQR"
+                    && (pt.TransactionStatus == "PENDING" || pt.TransactionStatus == "EXPIRED")
+                    && pt.CreatedAt >= graceStart)
+                .OrderByDescending(pt => pt.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+            if (transaction == null) return;
+
+            var throttleKey = $"payos_reconcile:{transaction.TransactionId}";
+            if (await _redis.ExistsAsync(throttleKey, ct)) return;
+            await _redis.SetAsync(throttleKey, 1, TimeSpan.FromSeconds(4), ct);
+
+            var digits = new string(transaction.PartnerTransactionCode.Where(char.IsDigit).ToArray());
+            if (!long.TryParse(digits, out var orderCode)) return;
+
+            var link = await payOsClient.PaymentRequests.GetAsync(orderCode);
+            if (link == null || link.Status != PayOS.Models.V2.PaymentRequests.PaymentLinkStatus.Paid) return;
+            if (link.AmountPaid < (long)transaction.AmountVnd)
+            {
+                _logger.LogError("[TryReconcilePendingPayOsAsync] Số tiền PayOS ghi nhận {Paid} nhỏ hơn đơn {OrderCode} ({Expected}).",
+                    link.AmountPaid, transaction.PartnerTransactionCode, transaction.AmountVnd);
+                return;
+            }
+
+            _logger.LogInformation("[TryReconcilePendingPayOsAsync] PayOS báo đơn {OrderCode} đã thanh toán, kích hoạt VIP khi chưa nhận webhook.",
+                transaction.PartnerTransactionCode);
+            await ActivateVipFromPayOsAsync(transaction, link.Id, string.Empty, now, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[TryReconcilePendingPayOsAsync] Không đối soát được đơn PayOS của user {UserId}", userId);
+        }
+    }
+
+    /// <summary>
+    /// Gửi email biên lai kèm tệp PDF; nếu dựng PDF lỗi thì gửi thư HTML thường để không mất thông báo.
+    /// </summary>
+    private async Task SendReceiptEmailAsync(PaymentTransaction transaction, string toEmail, string subject, string html)
+    {
+        byte[]? pdf = null;
+        string fileName = "bien-lai.pdf";
+        try
+        {
+            var receipt = BuildReceiptDto(transaction);
+            pdf = ReceiptPdfGenerator.Generate(receipt);
+            fileName = ReceiptPdfGenerator.FileName(receipt);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[SendReceiptEmailAsync] Không dựng được PDF biên lai cho giao dịch {TransactionId}, gửi thư không đính kèm.",
+                transaction.TransactionId);
+        }
+
+        if (pdf != null)
+        {
+            await _emailService.SendNotificationEmailWithAttachmentAsync(toEmail, subject, html, fileName, pdf, "application/pdf");
+        }
+        else
+        {
+            await _emailService.SendNotificationEmailAsync(toEmail, subject, html);
+        }
+    }
+
+    private static PaymentReceiptDto BuildReceiptDto(PaymentTransaction tx)
+    {
+        var fullName = !string.IsNullOrWhiteSpace(tx.User.FullName) ? tx.User.FullName : tx.User.Email;
+        return new PaymentReceiptDto
+        {
+            ReceiptNumber = $"REC-{tx.CreatedAt:yyyyMMdd}-{tx.TransactionId:D6}",
+            TransactionId = tx.TransactionId,
+            OrderCode = tx.PartnerTransactionCode,
+            Gateway = tx.GatewayProvider,
+            Status = tx.TransactionStatus,
+            PaymentDate = tx.CompletedAt ?? tx.CreatedAt,
+            UserId = tx.UserId,
+            FullName = fullName,
+            Email = tx.User.Email,
+            PlanId = tx.PlanId,
+            PlanName = tx.Plan.PlanName,
+            DurationDays = tx.Plan.DurationDays,
+            AmountVnd = tx.AmountVnd,
+            VipStartsAt = tx.StartsAt,
+            VipEndsAt = tx.EndsAt,
+            Note = $"Thanh toán kích hoạt gói VIP {tx.Plan.PlanName} ({tx.Plan.DurationDays} ngày)"
+        };
+    }
+
+    /// <summary>
     /// FN-SUB-04: Lấy trạng thái gói VIP hiện tại và toàn bộ lịch sử giao dịch của người dùng.
     /// VIP hết hạn thì isVip = false (BR-PAY-SUB-02). Cache Redis vip_status:{userId} với TTL 5m.
     /// </summary>
@@ -754,6 +925,9 @@ public class SubscriptionService : ISubscriptionService
         int userId,
         CancellationToken ct = default)
     {
+        // Webhook có thể trượt (chưa khai URL, mạng lỗi): hỏi PayOS cho đơn đang chờ trước khi đọc cache trạng thái
+        await TryReconcilePendingPayOsAsync(userId, ct);
+
         var cacheKey = $"vip_status:{userId}";
 
         try
@@ -808,7 +982,13 @@ public class SubscriptionService : ISubscriptionService
             Gateway = pt.GatewayProvider,
             AmountVnd = (long)pt.AmountVnd,
             Status = pt.TransactionStatus,
-            CreatedAt = pt.CreatedAt
+            CreatedAt = pt.CreatedAt,
+            PlanName = pt.Plan?.PlanName ?? string.Empty,
+            OrderCode = pt.PartnerTransactionCode,
+            CompletedAt = pt.CompletedAt,
+            ReceiptUrl = string.Equals(pt.TransactionStatus, "SUCCESS", StringComparison.OrdinalIgnoreCase)
+                ? $"/api/v1/subscriptions/transactions/{pt.TransactionId}/receipt"
+                : null
         }).ToList();
 
         var result = new CurrentUserSubscriptionResponseDto
@@ -877,6 +1057,60 @@ public class SubscriptionService : ISubscriptionService
         {
             Cancelled = true,
             Message = "Đã hủy đơn chờ thanh toán thành công. Bạn có thể tiến hành tạo đơn mới."
+        };
+    }
+
+    /// <summary>
+    /// Lấy chi tiết thông tin biên lai thanh toán giao dịch nâng cấp VIP thành công (FN-SUB-04).
+    /// </summary>
+    public async Task<PaymentReceiptDto> GetPaymentReceiptAsync(
+        long transactionId,
+        int currentUserId,
+        string currentUserRole,
+        CancellationToken ct = default)
+    {
+        var tx = await _db.PaymentTransactions
+            .AsNoTracking()
+            .Include(p => p.User)
+            .Include(p => p.Plan)
+            .FirstOrDefaultAsync(p => p.TransactionId == transactionId, ct);
+
+        if (tx == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrPayOrderNotFound, "Không tìm thấy thông tin giao dịch thanh toán.");
+        }
+
+        var isAdmin = string.Equals(currentUserRole, UserRoles.Admin, StringComparison.OrdinalIgnoreCase);
+        if (!isAdmin && tx.UserId != currentUserId)
+        {
+            throw AppException.Forbidden(ErrorCodes.ErrForbidden, "Bạn không có quyền truy cập biên lai của giao dịch này.");
+        }
+
+        if (!string.Equals(tx.TransactionStatus, "SUCCESS", StringComparison.OrdinalIgnoreCase))
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Giao dịch chưa hoàn tất thanh toán thành công, không thể lập biên lai.");
+        }
+
+        var fullName = !string.IsNullOrWhiteSpace(tx.User.FullName) ? tx.User.FullName : tx.User.Email;
+
+        return new PaymentReceiptDto
+        {
+            ReceiptNumber = $"REC-{tx.CreatedAt:yyyyMMdd}-{tx.TransactionId:D6}",
+            TransactionId = tx.TransactionId,
+            OrderCode = tx.PartnerTransactionCode,
+            Gateway = tx.GatewayProvider,
+            Status = tx.TransactionStatus,
+            PaymentDate = tx.CompletedAt ?? tx.CreatedAt,
+            UserId = tx.UserId,
+            FullName = fullName,
+            Email = tx.User.Email,
+            PlanId = tx.PlanId,
+            PlanName = tx.Plan.PlanName,
+            DurationDays = tx.Plan.DurationDays,
+            AmountVnd = tx.AmountVnd,
+            VipStartsAt = tx.StartsAt,
+            VipEndsAt = tx.EndsAt,
+            Note = $"Thanh toán kích hoạt gói VIP {tx.Plan.PlanName} ({tx.Plan.DurationDays} ngày)"
         };
     }
 }

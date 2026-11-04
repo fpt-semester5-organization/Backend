@@ -21,6 +21,8 @@ public partial class FridgeInventory
 
     public string Unit { get; set; } = "phần";
 
+    public string? ThumbnailUrl { get; set; }
+
     public virtual Ingredient Ingredient { get; set; } = null!;
 
     public virtual FridgeSession? Session { get; set; }

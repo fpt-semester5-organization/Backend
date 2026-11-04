@@ -29,4 +29,9 @@ public class PostVideoDto
     /// Thời lượng video tính bằng giây.
     /// </summary>
     public int DurationSeconds { get; set; }
+
+    /// <summary>
+    /// Trạng thái sẵn sàng của video (READY, PROCESSING, BANNED).
+    /// </summary>
+    public string Status { get; set; } = "READY";
 }

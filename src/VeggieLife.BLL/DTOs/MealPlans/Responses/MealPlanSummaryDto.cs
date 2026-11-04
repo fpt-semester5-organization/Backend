@@ -9,4 +9,5 @@ public class MealPlanSummaryDto
     public string PlanName { get; set; } = null!;
     public string StartDate { get; set; } = null!;
     public string PlanStatus { get; set; } = null!;
+    public int DurationDays { get; set; } = 7;
 }

@@ -54,23 +54,24 @@ public class CommentService : ICommentService
         int postId,
         int page = 1,
         int size = 20,
+        bool isAdmin = false,
         CancellationToken ct = default)
     {
         // 1. Kiểm tra tham số đầu vào
         ValidatePagingParams(postId, page, size, "Mã bài viết");
 
-        // 2. Kiểm tra bài viết đích: Phải tồn tại và ở trạng thái APPROVED_ACTIVE (BR-INT-LIKE-02)
+        // 2. Kiểm tra bài viết đích: Phải tồn tại và ở trạng thái APPROVED_ACTIVE (hoặc admin đang thẩm tra) (BR-INT-LIKE-02)
         var post = await _db.Posts.AsNoTracking().FirstOrDefaultAsync(p => p.PostId == postId, ct);
-        if (post == null || post.ModerationStatus != "APPROVED_ACTIVE")
+        if (post == null || (post.ModerationStatus != "APPROVED_ACTIVE" && !isAdmin))
         {
             throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc không ở trạng thái hiển thị.");
         }
 
-        // 3. Truy vấn các bình luận gốc (ParentCommentId == null), chỉ lấy ACTIVE và chưa xóa mềm
+        // 3. Truy vấn các bình luận gốc (ParentCommentId == null), chỉ lấy ACTIVE và chưa xóa mềm (admin có thể xem cả bình luận bị flag/ẩn để thẩm tra)
         var rootQuery = _db.Comments
             .AsNoTracking()
             .Include(c => c.User)
-            .Where(c => c.PostId == postId && c.ParentCommentId == null && c.Status == "ACTIVE" && !c.IsSoftDeleted);
+            .Where(c => c.PostId == postId && c.ParentCommentId == null && (isAdmin ? true : (c.Status == "ACTIVE" && !c.IsSoftDeleted)));
 
         var total = await rootQuery.CountAsync(ct);
 
@@ -95,8 +96,7 @@ public class CommentService : ICommentService
             .Where(c => c.PostId == postId &&
                         c.ParentCommentId.HasValue &&
                         rootIds.Contains(c.ParentCommentId.Value) &&
-                        c.Status == "ACTIVE" &&
-                        !c.IsSoftDeleted)
+                        (isAdmin ? true : (c.Status == "ACTIVE" && !c.IsSoftDeleted)))
             .OrderBy(c => c.CreatedAt)
             .ToListAsync(ct);
 
@@ -143,14 +143,15 @@ public class CommentService : ICommentService
         int recipeId,
         int page = 1,
         int size = 20,
+        bool isAdmin = false,
         CancellationToken ct = default)
     {
         // 1. Kiểm tra tham số đầu vào
         ValidatePagingParams(recipeId, page, size, "Mã công thức");
 
-        // 2. Kiểm tra công thức đích: Phải tồn tại và ở trạng thái APPROVED_ACTIVE (BR-INT-LIKE-02)
+        // 2. Kiểm tra công thức đích: Phải tồn tại và ở trạng thái APPROVED_ACTIVE (hoặc admin đang thẩm tra) (BR-INT-LIKE-02)
         var recipe = await _db.Recipes.AsNoTracking().FirstOrDefaultAsync(r => r.RecipeId == recipeId, ct);
-        if (recipe == null || recipe.Status != "APPROVED_ACTIVE")
+        if (recipe == null || (recipe.Status != "APPROVED_ACTIVE" && !isAdmin))
         {
             throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc không ở trạng thái hiển thị.");
         }
@@ -162,7 +163,7 @@ public class CommentService : ICommentService
             return (new List<CommentDto>(), new PagedMeta(page, size, 0));
         }
 
-        return await ListPostCommentsAsync(repPost.PostId, page, size, ct);
+        return await ListPostCommentsAsync(repPost.PostId, page, size, isAdmin, ct);
     }
 
     /// <summary>
@@ -212,10 +213,7 @@ public class CommentService : ICommentService
         var trimmedContent = request.Content.Trim();
 
         // 4. Chống spam (BR-USR-04):
-        // a) Giãn cách tối thiểu 15 giây giữa 2 bình luận liên tiếp
-        await EnforceCooldownAsync(userId, ct);
-
-        // b) Không quá 05 bình luận trùng nội dung trong cùng 1 bài
+        // Không quá 05 bình luận trùng nội dung trong cùng 1 bài
         await EnforceDuplicateLimitAsync(userId, postId, trimmedContent, ct);
 
         // 5. Quét AI tự động (BR-USR-03)
@@ -518,18 +516,6 @@ public class CommentService : ICommentService
         }
     }
 
-    private async Task EnforceCooldownAsync(int userId, CancellationToken ct)
-    {
-        var cooldownKey = $"comment_cooldown:{userId}";
-        var inCooldown = await _redisService.ExistsAsync(cooldownKey, ct);
-        if (inCooldown)
-        {
-            throw AppException.TooManyRequests(
-                ErrorCodes.ErrCommentTooFast,
-                "Chưa đủ 15 giây giữa 2 bình luận.");
-        }
-    }
-
     private async Task EnforceDuplicateLimitAsync(int userId, int postId, string content, CancellationToken ct)
     {
         // 1. Kiểm tra số lượng bình luận trùng nội dung trong CSDL
@@ -561,10 +547,6 @@ public class CommentService : ICommentService
 
     private async Task RecordCommentActivityAsync(int userId, int postId, string content, CancellationToken ct)
     {
-        // Cooldown 15 giây
-        var cooldownKey = $"comment_cooldown:{userId}";
-        await _redisService.SetAsync(cooldownKey, "1", TimeSpan.FromSeconds(15), ct);
-
         // Tăng bộ đếm bình luận trùng nội dung
         var hash = ComputeContentHash(content);
         var dupKey = $"comment_dup:{userId}:{postId}:{hash}";
