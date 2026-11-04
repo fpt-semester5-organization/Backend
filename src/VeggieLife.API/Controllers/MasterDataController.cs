@@ -1,4 +1,4 @@
-using System.Threading;
+﻿using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -57,11 +57,16 @@ public class MasterDataController : BaseApiController
     [HttpGet("ingredients")]
     public async Task<IActionResult> ListIngredients(
         [FromQuery] string? keyword,
+        [FromQuery] string? search = null,
         [FromQuery] int page = 1,
         [FromQuery] int size = 20,
+        [FromQuery] int? pageSize = null,
         CancellationToken ct = default)
     {
-        var (items, meta) = await _masterDataService.GetIngredientsAsync(keyword, page, size, ct);
+        var kw = !string.IsNullOrWhiteSpace(keyword) ? keyword : search;
+        var s = pageSize.HasValue && pageSize.Value > 0 ? pageSize.Value : size;
+        var (items, meta) = await _masterDataService.GetIngredientsAsync(kw, page, s, ct);
         return PagedResponse(items, meta, "OK");
     }
 }
+

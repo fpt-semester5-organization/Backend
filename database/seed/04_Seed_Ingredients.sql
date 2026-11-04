@@ -1,4 +1,4 @@
--- ============================================================
+﻿-- ============================================================
 -- File: 04_Seed_Ingredients.sql
 -- Thư mục: database/seed/
 -- Mục đích: Nạp sẵn từ điển 100 nguyên liệu thực phẩm chuẩn hóa kèm:
@@ -139,6 +139,8 @@ USING (
         (N'Hạt mè đen (Vừng đen)', N'g', 'DRY_GOODS', 570.0, 0, 'PLANT'),
         (N'Gạo thơm lài miên', N'g', 'DRY_GOODS', 356.0, 0, 'PLANT'),
         (N'Gạo lứt đỏ huyết rồng', N'g', 'DRY_GOODS', 345.0, 0, 'PLANT'),
+        (N'Cơm trắng (Cơm nguội)', N'g', 'DRY_GOODS', 130.0, 0, 'PLANT'),
+        (N'Cơm gạo lứt', N'g', 'DRY_GOODS', 110.0, 0, 'PLANT'),
         (N'Yến mạch cán dẹt Úc', N'g', 'DRY_GOODS', 389.0, 0, 'PLANT'),
         (N'Hạt diêm mạch (Quinoa trắng)', N'g', 'DRY_GOODS', 368.0, 0, 'PLANT'),
         (N'Bún gạo khô', N'g', 'DRY_GOODS', 350.0, 0, 'PLANT'),
@@ -188,3 +190,4 @@ WHEN NOT MATCHED BY TARGET THEN
 
 PRINT N'   -> Hoàn tất nạp 100 Nguyên Liệu Thực Phẩm thành công!';
 GO
+

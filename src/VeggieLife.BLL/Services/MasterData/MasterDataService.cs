@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -193,7 +193,16 @@ public class MasterDataService : IMasterDataService
 
         if (!string.IsNullOrWhiteSpace(trimmedKeyword))
         {
-            query = query.Where(i => i.IngredientName.Contains(trimmedKeyword));
+            if (_db.Database.IsSqlServer())
+            {
+                query = query.Where(i => EF.Functions.Like(
+                    EF.Functions.Collate(i.IngredientName, "SQL_Latin1_General_CP1_CI_AI"),
+                    $"%{trimmedKeyword}%"));
+            }
+            else
+            {
+                query = query.Where(i => i.IngredientName.Contains(trimmedKeyword));
+            }
         }
 
         var total = await query.CountAsync(ct);
@@ -235,3 +244,4 @@ public class MasterDataService : IMasterDataService
         public PagedMeta Meta { get; set; } = new();
     }
 }
+
