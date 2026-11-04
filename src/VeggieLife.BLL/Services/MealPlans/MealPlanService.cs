@@ -1649,27 +1649,27 @@ public class MealPlanService : IMealPlanService
                 HistoryId = h.SwapHistoryId,
                 SlotId = h.SlotId,
                 OldRecipeId = h.OldRecipeId,
-                OldRecipeTitle = h.OldRecipe.Title,
-                OldRecipeImageUrl = h.OldRecipe.ImageUrl,
-                OldRecipeCalories = h.OldRecipe.CaloriesKcal,
-                OldRecipe = new MealSlotRecipeDto
+                OldRecipeTitle = h.OldRecipe != null ? h.OldRecipe.Title : string.Empty,
+                OldRecipeImageUrl = h.OldRecipe != null ? h.OldRecipe.ImageUrl : null,
+                OldRecipeCalories = h.OldRecipe != null ? h.OldRecipe.CaloriesKcal : 0m,
+                OldRecipe = h.OldRecipe != null ? new MealSlotRecipeDto
                 {
                     RecipeId = h.OldRecipe.RecipeId,
                     Title = h.OldRecipe.Title,
                     CaloriesKcal = h.OldRecipe.CaloriesKcal,
                     ImageUrl = h.OldRecipe.ImageUrl
-                },
+                } : null,
                 NewRecipeId = h.NewRecipeId,
-                NewRecipeTitle = h.NewRecipe.Title,
-                NewRecipeImageUrl = h.NewRecipe.ImageUrl,
-                NewRecipeCalories = h.NewRecipe.CaloriesKcal,
-                NewRecipe = new MealSlotRecipeDto
+                NewRecipeTitle = h.NewRecipe != null ? h.NewRecipe.Title : string.Empty,
+                NewRecipeImageUrl = h.NewRecipe != null ? h.NewRecipe.ImageUrl : null,
+                NewRecipeCalories = h.NewRecipe != null ? h.NewRecipe.CaloriesKcal : 0m,
+                NewRecipe = h.NewRecipe != null ? new MealSlotRecipeDto
                 {
                     RecipeId = h.NewRecipe.RecipeId,
                     Title = h.NewRecipe.Title,
                     CaloriesKcal = h.NewRecipe.CaloriesKcal,
                     ImageUrl = h.NewRecipe.ImageUrl
-                },
+                } : null,
                 SwapReason = h.SwapReason,
                 CaloriesDelta = h.CaloriesDelta,
                 SwappedAt = h.SwappedAt
@@ -1962,6 +1962,11 @@ public class MealPlanService : IMealPlanService
         var newRecipeId = selectedRecipe.RecipeId;
 
         slot.RecipeId = newRecipeId;
+        if (!string.IsNullOrWhiteSpace(request.Note))
+        {
+            var trimmedNote = request.Note.Trim();
+            slot.Notes = trimmedNote.Length > 200 ? trimmedNote.Substring(0, 200) : trimmedNote;
+        }
         plan.SwapsRemaining--;
 
         var caloriesDelta = Math.Round(selectedRecipe.CaloriesKcal - oldRecipe.CaloriesKcal, 1);

@@ -631,9 +631,9 @@ public class RecipeService : IRecipeService
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Số trang (page) phải lớn hơn hoặc bằng 1.");
         }
 
-        if (filter.Size < 1 || filter.Size > 20)
+        if (filter.Size < 1 || filter.Size > 100)
         {
-            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Kích thước trang (size) phải từ 1 đến 20.");
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Kích thước trang (size) phải từ 1 đến 100.");
         }
     }
 
