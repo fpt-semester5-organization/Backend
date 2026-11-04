@@ -179,7 +179,7 @@ public class PostService : IPostService
                 Title = p.Title,
                 AuthorName = p.User.FullName,
                 AuthorAvatarUrl = p.User.AvatarUrl,
-                ImageUrl = p.ImageUrl ?? p.Videos.Where(v => v.Status == "READY" || v.Status == "PROCESSING").Select(v => v.ThumbnailUrl).FirstOrDefault(),
+                ImageUrl = p.ImageUrl ?? p.Videos.Where(v => v.Status == "READY" || v.Status == "PROCESSING").OrderByDescending(v => v.VideoId).Select(v => v.ThumbnailUrl).FirstOrDefault(),
                 VoteCount = p.Votes.Count,
                 CommentCount = p.Comments.Count(c => !c.IsSoftDeleted),
                 CreatedAt = p.CreatedAt,
@@ -187,8 +187,8 @@ public class PostService : IPostService
                 Visibility = isAuthorQuery ? p.Visibility : null,
                 HasVideo = p.Videos.Any(v => v.Status == "READY" || v.Status == "PROCESSING"),
                 Type = p.Videos.Any(v => v.Status == "READY" || v.Status == "PROCESSING") ? "VIDEO" : (p.RecipeId.HasValue ? "RECIPE" : "POST"),
-                VideoId = p.Videos.Where(v => v.Status == "READY" || v.Status == "PROCESSING").Select(v => (int?)v.VideoId).FirstOrDefault(),
-                VideoUrl = p.Videos.Where(v => v.Status == "READY" || v.Status == "PROCESSING").Select(v => v.VideoUrl).FirstOrDefault()
+                VideoId = p.Videos.Where(v => v.Status == "READY" || v.Status == "PROCESSING").OrderByDescending(v => v.VideoId).Select(v => (int?)v.VideoId).FirstOrDefault(),
+                VideoUrl = p.Videos.Where(v => v.Status == "READY" || v.Status == "PROCESSING").OrderByDescending(v => v.VideoId).Select(v => v.VideoUrl).FirstOrDefault()
             })
             .ToListAsync(ct);
 
@@ -255,7 +255,7 @@ public class PostService : IPostService
         // 4. Video đính kèm: Tác giả hoặc Admin được phép xem mọi trạng thái video (kể cả BANNED/PROCESSING để biết nguyên nhân vi phạm và sửa/xóa)
         var videos = post.Videos
             .Where(v => (isAuthor || isAdmin) ? v.Status != "DELETED" : v.Status == "READY")
-            .OrderBy(v => v.VideoId)
+            .OrderByDescending(v => v.VideoId)
             .Select(v => new PostVideoDto
             {
                 VideoId = v.VideoId,
@@ -627,20 +627,24 @@ public class PostService : IPostService
         if (request.ImageUrl != null)
         {
             var newImageUrl = string.IsNullOrWhiteSpace(request.ImageUrl) ? null : request.ImageUrl.Trim();
-            if (newImageUrl != post.ImageUrl)
+            if (newImageUrl == null)
+            {
+                // Người dùng xóa tệp phương tiện (ảnh/video) của bài viết
+                post.ImageUrl = null;
+                titleOrContentChanged = true;
+                imageChanged = true;
+                var attachedVideos = await _db.Videos.Where(v => v.PostId == post.PostId && v.Status != "DELETED").ToListAsync(ct);
+                foreach (var v in attachedVideos)
+                {
+                    v.Status = "DELETED";
+                    v.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+            else if (newImageUrl != post.ImageUrl)
             {
                 post.ImageUrl = newImageUrl;
                 titleOrContentChanged = true;
                 imageChanged = true;
-                if (newImageUrl == null)
-                {
-                    // Người dùng xóa tệp phương tiện (ảnh/video) của bài viết
-                    var attachedVideos = await _db.Videos.Where(v => v.PostId == post.PostId).ToListAsync(ct);
-                    foreach (var v in attachedVideos)
-                    {
-                        v.Status = "DELETED";
-                    }
-                }
             }
         }
 

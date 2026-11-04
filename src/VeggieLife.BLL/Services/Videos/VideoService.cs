@@ -172,6 +172,16 @@ public class VideoService : IVideoService
                 targetPost.ImageUrl = safeImageUrl;
                 targetPost.UpdatedAt = DateTime.UtcNow;
 
+                // Khi tải ảnh thay thế cho bài viết đã có video, đánh dấu DELETED các video cũ
+                var existingAttachedVideos = await _context.Videos
+                    .Where(v => v.PostId == targetPost.PostId && v.Status != "DELETED")
+                    .ToListAsync(ct);
+                foreach (var v in existingAttachedVideos)
+                {
+                    v.Status = "DELETED";
+                    v.UpdatedAt = DateTime.UtcNow;
+                }
+
                 // Quét kiểm duyệt AI đối với bài viết nếu không phải DRAFT (BR-USR-03, BR-ADM-CNT-002)
                 if (targetPost.ModerationStatus != "DRAFT")
                 {
@@ -287,14 +297,24 @@ public class VideoService : IVideoService
 
         var durationSeconds = (int)Math.Round(videoUploadResult.DurationSeconds ?? 0);
 
-        // Gán ảnh thu nhỏ của video làm ảnh đại diện bài viết / công thức nếu chưa có ảnh
-        if (targetPost != null && string.IsNullOrEmpty(targetPost.ImageUrl))
+        // Cập nhật ảnh đại diện bài viết / công thức theo ảnh thu nhỏ của video mới
+        if (targetPost != null)
         {
             targetPost.ImageUrl = thumbnailUrl;
             targetPost.UpdatedAt = DateTime.UtcNow;
+
+            // Đánh dấu DELETED các video trước đó của bài viết để video mới thay thế
+            var existingAttachedVideos = await _context.Videos
+                .Where(v => v.PostId == targetPost.PostId && v.Status != "DELETED")
+                .ToListAsync(ct);
+            foreach (var v in existingAttachedVideos)
+            {
+                v.Status = "DELETED";
+                v.UpdatedAt = DateTime.UtcNow;
+            }
         }
 
-        if (targetRecipe != null && string.IsNullOrEmpty(targetRecipe.ImageUrl))
+        if (targetRecipe != null)
         {
             targetRecipe.ImageUrl = thumbnailUrl;
             targetRecipe.UpdatedAt = DateTime.UtcNow;

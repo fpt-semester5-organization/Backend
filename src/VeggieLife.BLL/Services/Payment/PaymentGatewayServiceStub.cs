@@ -78,10 +78,21 @@ public class PaymentGatewayServiceStub : IPaymentGatewayService
         return Task.FromResult(result);
     }
 
+    public Task<PaymentCheckoutResult> CreateVietQrPaymentAsync(
+        long transactionId,
+        decimal amountVnd,
+        string orderInfo,
+        CancellationToken ct = default)
+    {
+        return CreateVietQrPaymentAsync(transactionId, amountVnd, orderInfo, null, null, ct);
+    }
+
     public async Task<PaymentCheckoutResult> CreateVietQrPaymentAsync(
         long transactionId,
         decimal amountVnd,
         string orderInfo,
+        string? returnUrl,
+        string? cancelUrl,
         CancellationToken ct = default)
     {
         var partnerTransId = $"VQR_{transactionId}_{DateTime.UtcNow.Ticks}";
@@ -115,18 +126,35 @@ public class PaymentGatewayServiceStub : IPaymentGatewayService
                 var desc = $"VL {orderCodeNum}";
                 if (desc.Length > 25) desc = desc[..25];
 
+                // URL chuyển hướng sau khi thanh toán trên PayOS (cấu hình qua appsettings hoặc fallback localhost:3000 của frontend)
+                var finalReturnUrl = !string.IsNullOrWhiteSpace(returnUrl)
+                    ? returnUrl
+                    : _configuration["Payment:PayOS:ReturnUrl"];
+                if (string.IsNullOrWhiteSpace(finalReturnUrl))
+                {
+                    finalReturnUrl = "http://localhost:3000/payment/success";
+                }
+
+                var finalCancelUrl = !string.IsNullOrWhiteSpace(cancelUrl)
+                    ? cancelUrl
+                    : _configuration["Payment:PayOS:CancelUrl"];
+                if (string.IsNullOrWhiteSpace(finalCancelUrl))
+                {
+                    finalCancelUrl = "http://localhost:3000/payment/cancel";
+                }
+
                 var request = new CreatePaymentLinkRequest
                 {
                     OrderCode = orderCodeNum,
                     Amount = (long)amountVnd,
                     Description = desc,
-                    CancelUrl = "https://veggielife.vn/payment/cancel",
-                    ReturnUrl = "https://veggielife.vn/payment/success"
+                    CancelUrl = finalCancelUrl,
+                    ReturnUrl = finalReturnUrl
                 };
 
                 var payOsRes = await _payOSClient.PaymentRequests.CreateAsync(request);
-                _logger.LogInformation("[PaymentGatewayServiceStub] Đã tạo thành công link thanh toán PayOS: PaymentLinkId={PaymentLinkId}, OrderCode={OrderCode}, CheckoutUrl={CheckoutUrl}",
-                    payOsRes.PaymentLinkId, orderCodeNum, payOsRes.CheckoutUrl);
+                _logger.LogInformation("[PaymentGatewayServiceStub] Đã tạo thành công link thanh toán PayOS: PaymentLinkId={PaymentLinkId}, OrderCode={OrderCode}, CheckoutUrl={CheckoutUrl}, ReturnUrl={ReturnUrl}, CancelUrl={CancelUrl}",
+                    payOsRes.PaymentLinkId, orderCodeNum, payOsRes.CheckoutUrl, finalReturnUrl, finalCancelUrl);
 
                 return new PaymentCheckoutResult
                 {
