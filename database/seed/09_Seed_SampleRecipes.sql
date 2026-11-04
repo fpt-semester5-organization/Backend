@@ -84,12 +84,11 @@ USING (
         N'["Cách ly"]', 
         5, 30, 2, 200.0, 'HARD', 0, 
         NULL, 'QUARANTINED_HIDDEN', 0, 'USER', SYSDATETIME())
-) AS source (Recipe_ID, User_ID, Category_ID, Dietary_School_ID, Title, Description, Instructions, Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level, Is_Verified, Image_Url, Status, View_Count, Source, Created_At)
+) AS source (Recipe_ID, User_ID, Temp_Category_ID, Dietary_School_ID, Title, Description, Instructions, Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level, Is_Verified, Image_Url, Status, View_Count, Source, Created_At)
 ON target.Recipe_ID = source.Recipe_ID
 WHEN MATCHED THEN
     UPDATE SET 
         User_ID = source.User_ID,
-        Category_ID = source.Category_ID,
         Dietary_School_ID = source.Dietary_School_ID,
         Title = source.Title,
         Description = source.Description,
@@ -105,8 +104,8 @@ WHEN MATCHED THEN
         View_Count = source.View_Count,
         Source = source.Source
 WHEN NOT MATCHED THEN
-    INSERT (Recipe_ID, User_ID, Category_ID, Dietary_School_ID, Title, Description, Instructions, Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level, Is_Verified, Image_Url, Status, View_Count, Source, Created_At)
-    VALUES (source.Recipe_ID, source.User_ID, source.Category_ID, source.Dietary_School_ID, source.Title, source.Description, source.Instructions, source.Prep_Time_Minutes, source.Cook_Time_Minutes, source.Servings, source.Calories_Kcal, source.Difficulty_Level, source.Is_Verified, source.Image_Url, source.Status, source.View_Count, source.Source, source.Created_At);
+    INSERT (Recipe_ID, User_ID, Dietary_School_ID, Title, Description, Instructions, Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level, Is_Verified, Image_Url, Status, View_Count, Source, Created_At)
+    VALUES (source.Recipe_ID, source.User_ID, source.Dietary_School_ID, source.Title, source.Description, source.Instructions, source.Prep_Time_Minutes, source.Cook_Time_Minutes, source.Servings, source.Calories_Kcal, source.Difficulty_Level, source.Is_Verified, source.Image_Url, source.Status, source.View_Count, source.Source, source.Created_At);
 
 SET IDENTITY_INSERT dbo.Recipes OFF;
 

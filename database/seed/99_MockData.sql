@@ -131,7 +131,8 @@ USING (
         (102, 'member102.fpt102@gmail.com', '$2a$11$GBRajsAbFfn4G4UI7bhu.O8MGs4mXfn/clcozGAZ0npIHYrlShxwO', N'Phan Văn Tuấn', '0810223233', 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=400&q=80', 'MEMBER', 0, NULL, DATEADD(HOUR, -18, @Now), DATEADD(DAY, -78, @Now), 'ACTIVE', 0),
         (103, 'member103.fpt103@gmail.com', '$2a$11$GBRajsAbFfn4G4UI7bhu.O8MGs4mXfn/clcozGAZ0npIHYrlShxwO', N'Đặng Anh Bình', '0810323265', 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80', 'MEMBER', 0, NULL, DATEADD(HOUR, -21, @Now), DATEADD(DAY, -77, @Now), 'ACTIVE', 0),
         (104, 'member104.fpt104@gmail.com', '$2a$11$GBRajsAbFfn4G4UI7bhu.O8MGs4mXfn/clcozGAZ0npIHYrlShxwO', N'Hồ Hữu Huy', '0810423296', 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80', 'MEMBER', 0, NULL, DATEADD(HOUR, -24, @Now), DATEADD(DAY, -76, @Now), 'ACTIVE', 0),
-        (105, 'member105.fpt105@gmail.com', '$2a$11$GBRajsAbFfn4G4UI7bhu.O8MGs4mXfn/clcozGAZ0npIHYrlShxwO', N'Nguyễn Văn Phong', '0810523328', 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=400&q=80', 'MEMBER', 0, NULL, DATEADD(HOUR, -27, @Now), DATEADD(DAY, -75, @Now), 'PENDING_ACTIVATION', 0)
+        (105, 'member105.fpt105@gmail.com', '$2a$11$GBRajsAbFfn4G4UI7bhu.O8MGs4mXfn/clcozGAZ0npIHYrlShxwO', N'Nguyễn Văn Phong', '0810523328', 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=400&q=80', 'MEMBER', 0, NULL, DATEADD(HOUR, -27, @Now), DATEADD(DAY, -75, @Now), 'PENDING_ACTIVATION', 0),
+        (106, 'member106.tester@gmail.com', '$2a$11$GBRajsAbFfn4G4UI7bhu.O8MGs4mXfn/clcozGAZ0npIHYrlShxwO', N'Nguyễn Thị Thử Nghiệm', '0810623329', 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80', 'MEMBER', 0, NULL, DATEADD(HOUR, -30, @Now), DATEADD(DAY, -74, @Now), 'ACTIVE', 0)
 
 ) AS source (User_ID, Email, Password_Hash, Full_Name, Phone_Number, Avatar_Url, Role, Failed_Login_Count, Locked_Until, Last_Login_At, Created_At, Account_Status, Count_ViolationReports)
 ON target.User_ID = source.User_ID
@@ -693,7 +694,7 @@ USING (
         (204, 5, 15, 1, N'Chao ớt sa tế cay nồng chấm lẩu', N'Chao đậu môn lên men dẻo quánh đánh nhuyễn với đường cát và sa tế ớt hiểm cay xé.', N'["Bước 1: Sơ chế và làm sạch nguyên liệu thực vật tươi cho món Chao ớt sa tế cay nồng chấm lẩu.", "Bước 2: Nấu chín các nguyên liệu trên lửa vừa trong 20 phút, nêm gia vị thuần chay vừa ăn.", "Bước 3: Trình bày món Chao ớt sa tế cay nồng chấm lẩu ra đĩa hoặc tô, rắc ngò gai hoặc mè rang và thưởng thức nóng."]', 25, 20, 4, 180.0, 'MEDIUM', 1, 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80', 'APPROVED_ACTIVE', 1745, 'USER', DATEADD(DAY, -6, SYSDATETIME())),
         (205, 6, 15, 1, N'Sốt mayonnaise thuần chay từ đậu nành', N'Không dùng trứng gà, sốt sánh mịn từ sữa đậu nành đánh bông cùng dầu hạt cải và giấm táo.', N'["Bước 1: Sơ chế và làm sạch nguyên liệu thực vật tươi cho món Sốt mayonnaise thuần chay từ đậu nành.", "Bước 2: Nấu chín các nguyên liệu trên lửa vừa trong 25 phút, nêm gia vị thuần chay vừa ăn.", "Bước 3: Trình bày món Sốt mayonnaise thuần chay từ đậu nành ra đĩa hoặc tô, rắc ngò gai hoặc mè rang và thưởng thức nóng."]', 10, 25, 3, 220.0, 'HARD', 1, 'https://images.unsplash.com/photo-1476718406336-bb5a9690ee2a?auto=format&fit=crop&w=800&q=80', 'APPROVED_ACTIVE', 1760, 'USER', DATEADD(DAY, -7, SYSDATETIME()))
 
-) AS source (Recipe_ID, User_ID, Category_ID, Dietary_School_ID, Title, Description, Instructions, Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level, Is_Verified, Image_Url, Status, View_Count, Source, Created_At)
+) AS source (Recipe_ID, User_ID, Temp_Category_ID, Dietary_School_ID, Title, Description, Instructions, Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level, Is_Verified, Image_Url, Status, View_Count, Source, Created_At)
 ON target.Recipe_ID = source.Recipe_ID
 WHEN MATCHED THEN
     UPDATE SET
@@ -705,8 +706,8 @@ WHEN MATCHED THEN
         target.Status = source.Status,
         target.View_Count = source.View_Count
 WHEN NOT MATCHED THEN
-    INSERT (Recipe_ID, User_ID, Category_ID, Dietary_School_ID, Title, Description, Instructions, Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level, Is_Verified, Image_Url, Status, View_Count, Source, Created_At)
-    VALUES (source.Recipe_ID, source.User_ID, source.Category_ID, source.Dietary_School_ID, source.Title, source.Description, source.Instructions, source.Prep_Time_Minutes, source.Cook_Time_Minutes, source.Servings, source.Calories_Kcal, source.Difficulty_Level, source.Is_Verified, source.Image_Url, source.Status, source.View_Count, source.Source, source.Created_At);
+    INSERT (Recipe_ID, User_ID, Dietary_School_ID, Title, Description, Instructions, Prep_Time_Minutes, Cook_Time_Minutes, Servings, Calories_Kcal, Difficulty_Level, Is_Verified, Image_Url, Status, View_Count, Source, Created_At)
+    VALUES (source.Recipe_ID, source.User_ID, source.Dietary_School_ID, source.Title, source.Description, source.Instructions, source.Prep_Time_Minutes, source.Cook_Time_Minutes, source.Servings, source.Calories_Kcal, source.Difficulty_Level, source.Is_Verified, source.Image_Url, source.Status, source.View_Count, source.Source, source.Created_At);
 SET IDENTITY_INSERT dbo.Recipes OFF;
 GO
 

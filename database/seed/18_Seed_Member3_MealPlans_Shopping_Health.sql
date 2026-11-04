@@ -32,6 +32,16 @@ PRINT N'========================================================================
 
 DECLARE @Now DATETIME2(7) = SYSDATETIME();
 
+-- Đảm bảo User 106 tồn tại trước khi nạp dữ liệu Member 3
+IF NOT EXISTS (SELECT 1 FROM dbo.Users WHERE User_ID = 106)
+BEGIN
+    SET IDENTITY_INSERT dbo.Users ON;
+    INSERT INTO dbo.Users (User_ID, Email, Password_Hash, Full_Name, Phone_Number, Avatar_Url, Role, Failed_Login_Count, Locked_Until, Last_Login_At, Created_At, Account_Status, Count_ViolationReports)
+    VALUES (106, 'member106.tester@gmail.com', '$2a$11$GBRajsAbFfn4G4UI7bhu.O8MGs4mXfn/clcozGAZ0npIHYrlShxwO', N'Nguyễn Thị Thử Nghiệm', '0810623329', 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80', 'MEMBER', 0, NULL, DATEADD(HOUR, -30, @Now), DATEADD(DAY, -74, @Now), 'ACTIVE', 0);
+    SET IDENTITY_INSERT dbo.Users OFF;
+END;
+
+
 -- ============================================================================
 -- PHẦN 1: HỒ SƠ THỂ TRẠNG & SỨC KHỎE (HEALTHPROFILES)
 -- ============================================================================
