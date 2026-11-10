@@ -166,7 +166,7 @@ public class UsersController : BaseApiController
     }
 
     /// <summary>
-    /// FN-PROF-07: Vô hiệu hóa tài khoản cá nhân (ân hạn 30 ngày trước khi ẩn danh hóa vĩnh viễn).
+    /// FN-PROF-07: Vô hiệu hóa tài khoản cá nhân (thời gian chờ xóa 30 ngày (có thể khôi phục) trước khi ẩn danh hóa vĩnh viễn).
     /// </summary>
     [HttpDelete("me")]
     [Authorize(Policy = PolicyNames.RequireMember)]

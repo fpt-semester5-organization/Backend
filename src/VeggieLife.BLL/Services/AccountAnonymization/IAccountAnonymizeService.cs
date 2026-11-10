@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 namespace VeggieLife.BLL.Services.AccountAnonymization;
 
 /// <summary>
-/// Dịch vụ quét và ẩn danh hóa dữ liệu cá nhân các tài khoản đã quá hạn ân hạn 30 ngày (FN-PROF-07, BR-ADM-USR-003, BR-ADM-USR-004, task S7-K7).
+/// Dịch vụ quét và ẩn danh hóa dữ liệu cá nhân các tài khoản đã quá thời gian chờ xóa 30 ngày (có thể khôi phục) (FN-PROF-07, BR-ADM-USR-003, BR-ADM-USR-004, task S7-K7).
 /// </summary>
 public interface IAccountAnonymizeService
 {

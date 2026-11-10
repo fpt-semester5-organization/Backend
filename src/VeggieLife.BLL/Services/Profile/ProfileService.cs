@@ -582,13 +582,19 @@ public class ProfileService : IProfileService
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Cân nặng phải trong khoảng từ 20 đến 300 kg.");
         }
 
-        // 2. Ngày ghi nhận cân nặng không được ở tương lai
+        // 2. Kiểm tra ngày ghi nhận cân nặng: Cố định thời gian thực (hôm nay UTC), không cho phép ghi hoặc sửa ngày quá khứ/tương lai
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var entryDate = request.LoggedDate ?? today;
-        if (entryDate > today)
+        if (request.LoggedDate.HasValue && request.LoggedDate.Value < today)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Không được ghi nhận cân nặng cho ngày trong quá khứ.");
+        }
+
+        if (request.LoggedDate.HasValue && request.LoggedDate.Value > today)
         {
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Ngày ghi nhận cân nặng không được ở tương lai.");
         }
+
+        var entryDate = today;
 
         if (request.Note != null && request.Note.Length > 255)
         {
@@ -702,7 +708,7 @@ public class ProfileService : IProfileService
     }
 
     /// <summary>
-    /// FN-PROF-07: Vô hiệu hóa tài khoản cá nhân có thời gian ân hạn 30 ngày.
+    /// FN-PROF-07: Vô hiệu hóa tài khoản cá nhân có thời gian chờ xóa 30 ngày (có thể khôi phục).
     /// Yêu cầu xác thực lại (mật khẩu hoặc Google ID Token), chuyển trạng thái sang SOFT_DELETED, thu hồi mọi phiên, gửi email xác nhận.
     /// </summary>
     public async Task<DeleteCurrentUserResponseData> DeleteCurrentUserAsync(
@@ -816,7 +822,7 @@ public class ProfileService : IProfileService
             TargetTable = "Users",
             TargetId = user.UserId.ToString(),
             Note = string.IsNullOrWhiteSpace(request.Reason)
-                ? "Người dùng yêu cầu vô hiệu hóa tài khoản (ân hạn 30 ngày)."
+                ? "Người dùng yêu cầu vô hiệu hóa tài khoản (thời gian chờ xóa 30 ngày (có thể khôi phục))."
                 : request.Reason.Trim(),
             CreatedAt = DateTime.UtcNow
         });
