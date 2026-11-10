@@ -1,7 +1,7 @@
 namespace VeggieLife.BLL.DTOs.Profile.Requests;
 
 /// <summary>
-/// DTO yêu cầu vô hiệu hóa tài khoản cá nhân có thời gian ân hạn 30 ngày (FN-PROF-07).
+/// DTO yêu cầu vô hiệu hóa tài khoản cá nhân có thời gian chờ xóa 30 ngày (có thể khôi phục) (FN-PROF-07).
 /// </summary>
 public class DeleteCurrentUserRequest
 {

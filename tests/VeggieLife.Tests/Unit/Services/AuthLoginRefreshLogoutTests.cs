@@ -375,7 +375,7 @@ public class AuthLoginRefreshLogoutTests
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("ValidPassword@2026", workFactor: 4),
             Role = UserRoles.Member,
             AccountStatus = AccountStatuses.SoftDeleted,
-            UpdatedAt = DateTime.UtcNow.AddDays(-10), // Trong 30 ngày ân hạn
+            UpdatedAt = DateTime.UtcNow.AddDays(-10), // Trong thời gian chờ xóa 30 ngày (có thể khôi phục)
             CreatedAt = DateTime.UtcNow.AddDays(-20)
         };
         db.Users.Add(user);
@@ -390,6 +390,37 @@ public class AuthLoginRefreshLogoutTests
 
         Assert.Equal(409, ex.StatusCode);
         Assert.Equal(ErrorCodes.ErrAuthAccountPendingDeletion, ex.ErrorCode);
+        Assert.Equal("Tài khoản đang trong thời gian chờ xóa 30 ngày (có thể khôi phục). Vui lòng xác nhận khôi phục tài khoản để tiếp tục đăng nhập.", ex.Message);
+    }
+
+    [Fact]
+    public async Task Login_WhenAccountSoftDeleted_Beyond30Days_Throws403WithFriendlyMessage()
+    {
+        var (db, service, _, _) = CreateTestHarness();
+
+        var user = new User
+        {
+            Email = "overdue@veggielife.vn",
+            FullName = "Người Dùng Quá Hạn",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("ValidPassword@2026", workFactor: 4),
+            Role = UserRoles.Member,
+            AccountStatus = AccountStatuses.SoftDeleted,
+            UpdatedAt = DateTime.UtcNow.AddDays(-31), // Quá 30 ngày
+            CreatedAt = DateTime.UtcNow.AddDays(-60)
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<AppException>(() => service.LoginAsync(new LoginRequest
+        {
+            Email = "overdue@veggielife.vn",
+            Password = "ValidPassword@2026",
+            RestoreAccount = false
+        }));
+
+        Assert.Equal(403, ex.StatusCode);
+        Assert.Equal(ErrorCodes.ErrAuthAccountBanned, ex.ErrorCode);
+        Assert.Equal("Tài khoản đã vượt quá thời gian chờ xóa 30 ngày (có thể khôi phục) và đã bị xóa vĩnh viễn.", ex.Message);
     }
 
     [Fact]
