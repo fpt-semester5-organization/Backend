@@ -90,6 +90,7 @@ public class RedisService : IRedisService
                 memOptions.AbsoluteExpirationRelativeToNow = expiry;
             }
             _memoryCache.Set(key, value, memOptions);
+            _memoryKeys[key] = 0;
         }
 
         // 2. Ghi vÃ o Redis náº¿u khÃ´ng trong thá»i gian cooldown
@@ -117,7 +118,24 @@ public class RedisService : IRedisService
     {
         if (_memoryCache != null)
         {
-            _memoryCache.Remove(key);
+            if (key.Contains('*'))
+            {
+                // Khóa theo mẫu (vd post_list:*): gỡ mọi khóa In-Memory có cùng tiền tố
+                var prefix = key[..key.IndexOf('*')];
+                foreach (var memoryKey in _memoryKeys.Keys)
+                {
+                    if (memoryKey.StartsWith(prefix, StringComparison.Ordinal))
+                    {
+                        _memoryCache.Remove(memoryKey);
+                        _memoryKeys.TryRemove(memoryKey, out _);
+                    }
+                }
+            }
+            else
+            {
+                _memoryCache.Remove(key);
+                _memoryKeys.TryRemove(key, out _);
+            }
         }
 
         if (!IsInCooldown)
@@ -134,7 +152,7 @@ public class RedisService : IRedisService
                             var server = _multiplexer.GetServer(ep);
                             if (server.IsConnected)
                             {
-                                var keys = System.Linq.Enumerable.ToArray(server.Keys(pattern: key));
+                                var keys = System.Linq.Enumerable.ToArray(server.Keys(pattern: "*" + key));
                                 if (keys.Length > 0)
                                 {
                                     var db = _multiplexer.GetDatabase();

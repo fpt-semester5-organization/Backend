@@ -61,6 +61,11 @@ public class RecipeDetailDto
     public int VoteCount { get; set; }
 
     /// <summary>
+    /// Người dùng hiện tại đã thả tim nội dung này chưa (luôn false với Khách).
+    /// </summary>
+    public bool HasVoted { get; set; }
+
+    /// <summary>
     /// Cờ xác nhận công thức thuần chay đã được Quản trị viên duyệt (Verified).
     /// </summary>
     public bool IsVerified { get; set; }

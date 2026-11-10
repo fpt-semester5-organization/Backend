@@ -95,6 +95,7 @@ public class PostService : IPostService
                 await SaveGuestSearchHistoryAsync(guestId, normalizedKeyword, ct);
             }
 
+            await MarkVotedAsync(cachedData.Items, currentUserId, ct);
             return (cachedData.Items, cachedMeta);
         }
 
@@ -132,11 +133,6 @@ public class PostService : IPostService
         else if (filter.AuthorId.HasValue)
         {
             query = query.Where(p => p.UserId == filter.AuthorId.Value && p.ModerationStatus == "APPROVED_ACTIVE" && p.Visibility == "PUBLIC");
-        }
-        else if (currentUserId.HasValue)
-        {
-            query = query.Where(p => (p.ModerationStatus == "APPROVED_ACTIVE" && p.Visibility == "PUBLIC")
-                || (p.UserId == currentUserId.Value && p.ModerationStatus != "QUARANTINED_HIDDEN"));
         }
         else
         {
@@ -201,6 +197,7 @@ public class PostService : IPostService
         await _redis.SetAsync(cacheKey, cacheToStore, PostListCacheTtl, ct);
 
         // 6. Tráº£ vá» káº¿t quáº£ kÃ¨m PagedMeta (BR-GUEST-01)
+        await MarkVotedAsync(items, currentUserId, ct);
         var meta = new PagedMeta(filter.Page, filter.Size, total, isGuest ? 5 : null);
         return (items, meta);
     }
@@ -305,6 +302,7 @@ public class PostService : IPostService
             Videos = videos,
             Recipes = recipes,
             VoteCount = post.Votes.Count,
+            HasVoted = currentUserId.HasValue && post.Votes.Any(v => v.UserId == currentUserId.Value),
             CommentCount = post.Comments.Count(c => !c.IsSoftDeleted),
             MemberActions = memberActions
         };
@@ -968,6 +966,35 @@ public class PostService : IPostService
     /// <summary>
     /// Lá»›p bá»c ná»™i bá»™ phá»¥c vá»¥ viá»‡c lÆ°u trá»¯ káº¿t quáº£ phÃ¢n trang tÃ¬m kiáº¿m vÃ o cache Redis.
     /// </summary>
+    /// <summary>
+    /// Làm mới VoteCount từ CSDL (danh sách cache 5 phút nên số tim dễ cũ) và đánh dấu HasVoted
+    /// theo người dùng hiện tại (không đưa vào cache dùng chung).
+    /// </summary>
+    private async Task MarkVotedAsync(IEnumerable<PostSummaryDto> items, int? currentUserId, CancellationToken ct)
+    {
+        var list = items.ToList();
+        if (list.Count == 0) return;
+        var ids = list.Select(i => i.PostId).ToList();
+        var counts = await _db.Votes
+            .AsNoTracking()
+            .Where(v => ids.Contains(v.PostId))
+            .GroupBy(v => v.PostId)
+            .Select(g => new { PostId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.PostId, x => x.Count, ct);
+        var votedIds = currentUserId.HasValue
+            ? (await _db.Votes
+                .AsNoTracking()
+                .Where(v => v.UserId == currentUserId.Value && ids.Contains(v.PostId))
+                .Select(v => v.PostId)
+                .ToListAsync(ct)).ToHashSet()
+            : new HashSet<int>();
+        foreach (var item in list)
+        {
+            item.VoteCount = counts.TryGetValue(item.PostId, out var c) ? c : 0;
+            item.HasVoted = votedIds.Contains(item.PostId);
+        }
+    }
+
     private class PostSearchResultCache
     {
         public List<PostSummaryDto> Items { get; set; } = new();

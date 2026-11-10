@@ -30,6 +30,17 @@ public class MealPlanService : IMealPlanService
     private static readonly string[] DaysOfWeek = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
     private static readonly string[] MealTypes = ["BREAKFAST", "LUNCH", "DINNER"];
     private static readonly HashSet<string> AllowedBudgetTiers = new(StringComparer.OrdinalIgnoreCase) { "ECONOMICAL", "STANDARD", "PREMIUM" };
+
+    /// <summary>Độ dài tối đa của MealSlotSwapHistories.Swap_Reason (NVARCHAR(255)).</summary>
+    private const int SwapReasonMaxLength = 255;
+
+    /// <summary>Cắt lý do đổi món (ghi chú người dùng hoặc giải thích do AI viết) cho vừa cột Swap_Reason để không lỗi truncation khi lưu.</summary>
+    private static string? LimitSwapReason(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason)) return reason;
+        var trimmed = reason.Trim();
+        return trimmed.Length <= SwapReasonMaxLength ? trimmed : trimmed[..(SwapReasonMaxLength - 1)] + "…";
+    }
     private static readonly HashSet<string> RedMeatFoodGroups = new(StringComparer.OrdinalIgnoreCase) { "MEAT", "RED_MEAT", "BEEF", "PORK", "MAM" };
 
     private static string MapDayOfWeek(DayOfWeek dayOfWeek) => dayOfWeek switch
@@ -1617,7 +1628,7 @@ public class MealPlanService : IMealPlanService
             SlotId = slot.SlotId,
             OldRecipeId = oldRecipeId,
             NewRecipeId = newRecipeId,
-            SwapReason = swapReason,
+            SwapReason = LimitSwapReason(swapReason),
             CaloriesDelta = caloriesDelta,
             SwappedAt = DateTime.UtcNow
         };
@@ -1976,7 +1987,7 @@ public class MealPlanService : IMealPlanService
             SlotId = slot.SlotId,
             OldRecipeId = oldRecipeId,
             NewRecipeId = newRecipeId,
-            SwapReason = resolvedReason ?? request.Note,
+            SwapReason = LimitSwapReason(resolvedReason ?? request.Note),
             CaloriesDelta = caloriesDelta,
             SwappedAt = DateTime.UtcNow
         };

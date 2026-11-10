@@ -137,6 +137,49 @@ public class SmtpEmailService : IEmailService
     }
 
     /// <summary>
+    /// Gửi email thông báo có đính kèm tệp (biên lai PDF) trong khuôn mẫu thương hiệu.
+    /// </summary>
+    public async Task SendNotificationEmailWithAttachmentAsync(
+        string toEmail,
+        string subject,
+        string htmlBody,
+        string attachmentFileName,
+        byte[] attachmentBytes,
+        string attachmentContentType,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(toEmail))
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Địa chỉ email người nhận không được để trống.");
+        }
+
+        var normalizedEmail = toEmail.Trim().ToLowerInvariant();
+        var wrappedHtml = WrapInBrandedTemplate(subject, htmlBody);
+
+        try
+        {
+            await _smtpClient.SendEmailWithAttachmentAsync(
+                normalizedEmail, subject, wrappedHtml, attachmentFileName, attachmentBytes, attachmentContentType, ct);
+            _logger.LogInformation(
+                "[SmtpEmailService] Đã gửi email '{Subject}' kèm tệp {FileName} tới {ToEmail}.",
+                subject, attachmentFileName, normalizedEmail);
+        }
+        catch (SmtpEmailException ex)
+        {
+            _logger.LogError(ex,
+                "[SmtpEmailService] Gặp sự cố kết nối SMTP khi gửi email kèm tệp tới {ToEmail}: {Message}",
+                normalizedEmail, ex.Message);
+
+            if (_smtpClient.IsConfigured)
+            {
+                throw AppException.BadGateway(
+                    ErrorCodes.ErrExtEmailFailed,
+                    "Không thể gửi email thông báo qua máy chủ SMTP. Vui lòng thử lại sau.");
+            }
+        }
+    }
+
+    /// <summary>
     /// Xây dựng khuôn mẫu HTML responsive hiện đại cho email chứa mã OTP.
     /// </summary>
     private static string BuildOtpEmailHtml(string actionTitle, string actionDescription, string otpCode)

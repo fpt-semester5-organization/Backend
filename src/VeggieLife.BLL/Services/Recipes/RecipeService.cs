@@ -68,7 +68,8 @@ public class RecipeService : IRecipeService
         RecipeFilterRequest filter,
         bool isGuest,
         string? guestId,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        int? currentUserId = null)
     {
         // 1. Kiểm tra tham số hợp lệ (Validation)
         ValidateFilterRequest(filter);
@@ -108,6 +109,7 @@ public class RecipeService : IRecipeService
                 await SaveGuestSearchHistoryAsync(guestId, normalizedKeyword, ct);
             }
 
+            await MarkRecipesVotedAsync(cachedData.Items, currentUserId, ct);
             return (cachedData.Items, cachedMeta);
         }
 
@@ -226,8 +228,38 @@ public class RecipeService : IRecipeService
         await _redis.SetAsync(cacheKey, cacheToStore, RecipeSearchCacheTtl, ct);
 
         // 6. Trả về kết quả kèm PagedMeta (BR-GUEST-01)
+        await MarkRecipesVotedAsync(items, currentUserId, ct);
         var meta = new PagedMeta(filter.Page, filter.Size, total, isGuest ? 5 : null);
         return (items, meta);
+    }
+
+    /// <summary>
+    /// Làm mới VoteCount từ CSDL (danh sách cache nên số tim dễ cũ) và đánh dấu HasVoted
+    /// theo người dùng hiện tại (không đưa vào cache dùng chung).
+    /// </summary>
+    private async Task MarkRecipesVotedAsync(IEnumerable<RecipeSummaryDto> items, int? currentUserId, CancellationToken ct)
+    {
+        var list = items.ToList();
+        if (list.Count == 0) return;
+        var ids = list.Select(i => i.RecipeId).ToList();
+        var counts = await _db.Votes
+            .AsNoTracking()
+            .Where(v => v.Post.RecipeId != null && ids.Contains(v.Post.RecipeId.Value))
+            .GroupBy(v => v.Post.RecipeId!.Value)
+            .Select(g => new { RecipeId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.RecipeId, x => x.Count, ct);
+        var voted = currentUserId.HasValue
+            ? (await _db.Votes
+                .AsNoTracking()
+                .Where(v => v.UserId == currentUserId.Value && v.Post.RecipeId != null && ids.Contains(v.Post.RecipeId.Value))
+                .Select(v => v.Post.RecipeId!.Value)
+                .ToListAsync(ct)).ToHashSet()
+            : new HashSet<int>();
+        foreach (var item in list)
+        {
+            item.VoteCount = counts.TryGetValue(item.RecipeId, out var c) ? c : 0;
+            item.HasVoted = voted.Contains(item.RecipeId);
+        }
     }
 
     /// <summary>
@@ -385,6 +417,7 @@ public class RecipeService : IRecipeService
             CookTimeMinutes = recipe.CookTimeMinutes,
             CaloriesKcal = recipe.CaloriesKcal,
             VoteCount = voteCount,
+            HasVoted = currentUserId.HasValue && recipe.Posts.SelectMany(p => p.Votes).Any(v => v.UserId == currentUserId.Value),
             IsVerified = recipe.IsVerified,
             Description = recipe.Description,
             Servings = recipe.Servings,

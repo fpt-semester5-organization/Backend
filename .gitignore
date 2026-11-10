@@ -78,3 +78,10 @@ check-srs/
 *check-srs*
 
 
+
+## Seed60: file sinh tự động (chỉ giữ 2 file loader cần), cache Python, thông tin đăng nhập test
+database/seed/timeline/out/*
+!database/seed/timeline/out/seed60_all.sql
+!database/seed/timeline/out/update_ingredient_images.sql
+__pycache__/
+*.local.md

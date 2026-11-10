@@ -116,6 +116,7 @@ public class CommunityInteractionService : ICommunityInteractionService, IIntera
         {
             await _redis.SetAsync($"vote_count:post:{postId}", voteCount, TimeSpan.FromHours(1), ct);
             await _redis.RemoveAsync($"post_detail:{postId}", ct);
+            await _redis.RemoveAsync("post_list:*", ct);
         }
         catch (Exception ex)
         {
@@ -217,6 +218,8 @@ public class CommunityInteractionService : ICommunityInteractionService, IIntera
         {
             await _redis.SetAsync($"vote_count:recipe:{recipeId}", voteCount, TimeSpan.FromHours(1), ct);
             await _redis.RemoveAsync($"recipe_detail:{recipeId}", ct);
+            await _redis.RemoveAsync("recipe_search:*", ct);
+            await _redis.RemoveAsync("post_list:*", ct);
         }
         catch (Exception ex)
         {

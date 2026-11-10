@@ -120,6 +120,28 @@ public class SubscriptionsController : BaseApiController
     }
 
     /// <summary>
+    /// FN-SUB-04: Tải biên lai thanh toán VIP dạng tệp PDF (cùng điều kiện truy cập với biên lai JSON).
+    /// Auth: Bearer (MEMBER | VIP | ADMIN).
+    /// </summary>
+    [HttpGet("/api/v1/subscriptions/transactions/{transactionId:long}/receipt.pdf")]
+    [Authorize(Policy = PolicyNames.RequireMember)]
+    [Produces("application/pdf")]
+    public async Task<IActionResult> DownloadPaymentReceiptPdf(
+        [FromRoute] long transactionId,
+        CancellationToken ct)
+    {
+        EnsureAuthorizedMember();
+        var receipt = await _subscriptionService.GetPaymentReceiptAsync(
+            transactionId,
+            (int)CurrentUserId!.Value,
+            CurrentUserRole ?? UserRoles.Member,
+            ct);
+
+        var bytes = VeggieLife.BLL.Services.Subscriptions.ReceiptPdfGenerator.Generate(receipt);
+        return File(bytes, "application/pdf", VeggieLife.BLL.Services.Subscriptions.ReceiptPdfGenerator.FileName(receipt));
+    }
+
+    /// <summary>
     /// Kiểm tra tính hợp lệ của tài khoản đăng nhập và từ chối khách vãng lai gọi tính năng cá nhân hóa (FN-AUTH-03).
     /// </summary>
     private void EnsureAuthorizedMember()

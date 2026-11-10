@@ -63,7 +63,7 @@ public class RecipesControllerTests
         };
         var meta = new PagedMeta(1, 10, 1, signUpPromptAtItem: 5);
 
-        _mockService.Setup(s => s.ListRecipesAsync(filter, true, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.ListRecipesAsync(filter, true, It.IsAny<string?>(), It.IsAny<CancellationToken>(), It.IsAny<int?>()))
             .ReturnsAsync((sampleList, meta));
 
         // Act

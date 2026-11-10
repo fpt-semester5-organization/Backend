@@ -20,7 +20,8 @@ public interface IRecipeService
         RecipeFilterRequest filter,
         bool isGuest,
         string? guestId,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        int? currentUserId = null);
 
     /// <summary>
     /// Xem chi tiết đầy đủ một công thức nấu ăn đã được duyệt (FN-POST-02).

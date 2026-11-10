@@ -61,7 +61,7 @@ public class MasterDataControllerTests
         _mockService.Setup(s => s.GetIngredientsAsync("đậu", 1, 20, It.IsAny<CancellationToken>()))
             .ReturnsAsync((items, meta));
 
-        var actionResult = await _controller.ListIngredients("đậu", 1, 20, CancellationToken.None);
+        var actionResult = await _controller.ListIngredients("đậu", search: null, page: 1, size: 20, pageSize: null, ct: CancellationToken.None);
 
         var okResult = actionResult as OkObjectResult;
         okResult.Should().NotBeNull();

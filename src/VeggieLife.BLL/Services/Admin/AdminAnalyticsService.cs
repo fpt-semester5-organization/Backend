@@ -62,13 +62,7 @@ public class AdminAnalyticsService : IAdminAnalyticsService
         // Múi giờ Việt Nam (UTC+7) chuẩn cho toàn bộ người dùng và hệ thống VeggieLife
         var vietnamOffset = TimeSpan.FromHours(7);
         DateTime? fromUtc = fromDate.HasValue ? fromDate.Value.Date - vietnamOffset : null;
-        DateTime? toUtc = null;
-        if (toDate.HasValue)
-        {
-            var toUtcLocal = toDate.Value.Date.AddDays(1) - vietnamOffset;
-            var toUtcUtc = toDate.Value.Date.AddDays(1);
-            toUtc = toUtcLocal > toUtcUtc ? toUtcLocal : toUtcUtc;
-        }
+        DateTime? toUtc = toDate.HasValue ? toDate.Value.Date.AddDays(1) - vietnamOffset : null;
 
         // 1. Thống kê Users: COUNT Users theo ngày tạo và Account_Status
         var totalUsers = await _db.Users.AsNoTracking().CountAsync(ct);
