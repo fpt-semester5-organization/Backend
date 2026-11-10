@@ -230,6 +230,26 @@ public class SubscriptionService : ISubscriptionService
             }
         }
 
+        // 4.1. Chặn mua trùng gói: Khóa nút mua và gán nhãn "Đang sử dụng" cho gói VIP hiện tại.
+        // Backend kiểm tra nếu người dùng đang có gói VIP cùng loại còn hiệu lực (EndsAt > now),
+        // từ chối tạo đơn mới tránh mất tiền oan cho user. Các gói VIP chu kỳ khác vẫn cho phép mua để cộng dồn hạn.
+        var activeSamePlanTx = await _db.PaymentTransactions
+            .Include(pt => pt.Plan)
+            .Where(pt => pt.UserId == userId &&
+                         pt.PlanId == request.PlanId &&
+                         pt.TransactionStatus == "SUCCESS" &&
+                         pt.EndsAt > now)
+            .OrderByDescending(pt => pt.EndsAt)
+            .FirstOrDefaultAsync(ct);
+
+        if (activeSamePlanTx != null)
+        {
+            var planName = activeSamePlanTx.Plan?.PlanName ?? plan.PlanName;
+            throw AppException.Conflict(
+                ErrorCodes.ErrVipSamePlanActive,
+                $"Bạn đang sử dụng gói VIP '{planName}' (còn hiệu lực đến {activeSamePlanTx.EndsAt:dd/MM/yyyy HH:mm} UTC). Vui lòng không mua trùng gói để tránh mất tiền oan.");
+        }
+
         // 5. Tính thời gian bắt đầu và kết thúc dự kiến của kỳ VIP:
         // Nếu người dùng VIP còn hạn: nối tiếp từ Ends_At lớn nhất, ngược lại bắt đầu từ hiện tại
         var maxSuccessEndsAt = await _db.PaymentTransactions
