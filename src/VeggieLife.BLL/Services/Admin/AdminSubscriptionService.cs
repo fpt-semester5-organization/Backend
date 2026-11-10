@@ -543,19 +543,26 @@ public class AdminSubscriptionService : IAdminSubscriptionService
                 (pt.User != null && pt.User.FullName.Contains(keyword)));
         }
 
+        // Múi giờ Việt Nam (UTC+7) chuẩn cho đối soát và giám sát dòng tiền VeggieLife
+        var vietnamOffset = TimeSpan.FromHours(7);
         if (fromDate.HasValue)
         {
-            var fromUtc = fromDate.Value.Date;
+            var fromUtc = fromDate.Value.Date - vietnamOffset;
             query = query.Where(pt => pt.CreatedAt >= fromUtc);
         }
 
         if (toDate.HasValue)
         {
-            var toUtc = toDate.Value.Date.AddDays(1);
+            var toUtc = toDate.Value.Date.AddDays(1) - vietnamOffset;
             query = query.Where(pt => pt.CreatedAt < toUtc);
         }
 
         var total = await query.CountAsync(ct);
+
+        // Giám sát dòng tiền Admin: Tính tổng doanh thu các giao dịch SUCCESS theo bộ lọc thời gian & điều kiện hiện tại
+        var totalRevenue = (long)await query
+            .Where(pt => pt.TransactionStatus == "SUCCESS")
+            .SumAsync(pt => (decimal?)pt.AmountVnd ?? 0m, ct);
 
         var pagedList = await query
             .OrderByDescending(pt => pt.CreatedAt)
@@ -606,7 +613,10 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             };
         }).ToList();
 
-        var meta = new PagedMeta(filter.Page, filter.Size, total);
+        var meta = new PagedMeta(filter.Page, filter.Size, total)
+        {
+            TotalRevenueVnd = totalRevenue
+        };
         return (items, meta);
     }
 

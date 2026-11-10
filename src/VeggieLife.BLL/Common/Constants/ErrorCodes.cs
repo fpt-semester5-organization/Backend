@@ -106,6 +106,7 @@ public static class ErrorCodes
     public const string ErrPayOrderRefunded = "ERR_PAY_ORDER_REFUNDED";
     public const string ErrPlanDuplicate = "ERR_PLAN_DUPLICATE";
     public const string ErrPlanNotFound = "ERR_PLAN_NOT_FOUND";
+    public const string ErrVipSamePlanActive = "ERR_VIP_SAME_PLAN_ACTIVE";
 
     // === 10. Lỗi Media & Video (Media) ===
     public const string ErrMediaFileTooLarge = "ERR_MEDIA_FILE_TOO_LARGE";

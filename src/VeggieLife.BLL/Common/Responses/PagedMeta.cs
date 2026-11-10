@@ -17,6 +17,12 @@ public class PagedMeta
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? SignUpPromptAtItem { get; set; }
 
+    /// <summary>
+    /// Tổng doanh thu các giao dịch thành công (VND) theo bộ lọc hiện tại của Quản trị viên (FN-ADM-13).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? TotalRevenueVnd { get; set; }
+
     public PagedMeta()
     {
     }
