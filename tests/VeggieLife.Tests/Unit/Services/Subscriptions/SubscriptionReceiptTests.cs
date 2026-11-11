@@ -59,7 +59,6 @@ public class SubscriptionReceiptTests
         public Task<long> IncrementAsync(string key, long value = 1, TimeSpan? expiry = null, CancellationToken ct = default) => Task.FromResult(1L);
         public Task<TimeSpan?> GetTtlAsync(string key, CancellationToken ct = default) => Task.FromResult<TimeSpan?>(TimeSpan.FromMinutes(5));
         public Task<(bool Allowed, long Current, long Remaining)> TryConsumeQuotaAsync(string key, int maxLimit, TimeSpan? expiry = null, CancellationToken ct = default) => Task.FromResult((true, 1L, (long)(maxLimit - 1)));
-        public Task<(bool Allowed, bool IsBanned, long CurrentCount, TimeSpan? RetryAfter)> CheckIpRateLimitAsync(string clientIp, int maxRequestsPerMinute = 10, int banDurationMinutes = 10, CancellationToken ct = default) => Task.FromResult((true, false, 1L, (TimeSpan?)null));
         public Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default) => Task.CompletedTask;
     }
 

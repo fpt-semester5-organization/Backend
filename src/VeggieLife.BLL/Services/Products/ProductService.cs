@@ -39,6 +39,23 @@ public class ProductService : IProductService
         @"(?i)(?:^|[^\p{L}\p{N}])(sữa|whey|casein|trứng|mật\s+ong|gelatin|thịt|cá|tôm|mực|mỡ\s+heo|mỡ\s+bò|mỡ\s+động\s+vật|nước\s+mắm|chiết\s+xuất\s+thịt|carmine|cochineal|e120|shellac|e904|rennet|tallow|lard)(?:$|[^\p{L}\p{N}])",
         RegexOptions.Compiled);
 
+    // Từ khóa động vật tiếng Anh/Pháp/Tây Ban Nha/Ý/Đức (OFF thường chỉ có thành phần ngoại ngữ).
+    // Loại trừ các cụm thực vật: coconut/soy/oat/almond/rice milk, lait/leche de coco, cocoa/peanut/shea butter,
+    // milk thistle, cream of tartar.
+    private static readonly Regex ForeignAnimalKeywordRegex = new(
+        @"(?i)(?<!(coconut|soy|soya|oat|almond|rice|plant|nut|cashew)[\s-]*)\b(milk|lait|leche|latte|milch|melk)\b(?![\s-]*(thistle|de\s+coco))" +
+        @"|\b(lactose|lactoserum|lactosérum|lactosuero|siero\s+di\s+latte|molke|wei|cheese|fromage|queso|formaggio|käse|crème|panna|sahne)\b" +
+        @"|\bcream\b(?!\s+of\s+tartar)" +
+        @"|(?<!(cocoa|cacao|peanut|shea|nut|almond)[\s-]*)\b(butter|beurre|mantequilla|burro)\b" +
+        @"|\b(eggs?|œufs?|oeufs?|huevos?|uova|uovo|eier?|honey|miel|miele|honig|gelatine|gélatine|gelatina|beef|pork|chicken|bacon|ham|fish|anchov(y|ies)|shrimp|prawn|lard|saindoux|manteca|strutto|schmalz|meat|viande|carne|fleisch)\b",
+        RegexOptions.Compiled);
+
+    // allergens_tags của OFF chỉ ra thành phần gốc động vật (sữa, trứng, cá, giáp xác, nhuyễn thể)
+    private static readonly HashSet<string> AnimalAllergenTags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "milk", "eggs", "fish", "crustaceans", "molluscs"
+    };
+
     public ProductService(
         AppDbContext context,
         IOpenFoodFactsClient openFoodFactsClient,
@@ -113,9 +130,12 @@ public class ProductService : IProductService
                 .ThenInclude(pa => pa.Allergen)
             .FirstOrDefaultAsync(p => p.Barcode == cleanBarcode, ct);
 
+        // Kết quả "Cần xem lại" (DOUBTFUL) chưa được Admin xác minh thì không dùng cache: tra lại OFF/AI mỗi lần
+        // để không giữ một kết luận thiếu dữ liệu suốt 30 ngày.
         bool isFresh = product != null
             && product.LastSyncedAt >= DateTime.UtcNow.AddDays(-30)
-            && (product.AdminVerified || !string.IsNullOrWhiteSpace(product.ImageUrl));
+            && (product.AdminVerified || !string.IsNullOrWhiteSpace(product.ImageUrl))
+            && (product.AdminVerified || !string.Equals(product.VeganVerdict, "DOUBTFUL", StringComparison.OrdinalIgnoreCase));
 
         if (isFresh)
         {
@@ -440,14 +460,18 @@ public class ProductService : IProductService
         var textToCheck = offProduct?.IngredientsText ?? product?.IngredientsText;
         if (!string.IsNullOrWhiteSpace(textToCheck))
         {
-            if (AnimalKeywordRegex.IsMatch(textToCheck))
+            if (AnimalKeywordRegex.IsMatch(textToCheck) || ForeignAnimalKeywordRegex.IsMatch(textToCheck))
             {
                 hasAnimalIngredients = true;
             }
         }
 
+        // Dị ứng gốc động vật do OFF khai báo (allergens_tags) là bằng chứng có cấu trúc, đáng tin hơn chuỗi thành phần
+        bool hasAnimalAllergen = offProduct?.AllergensTags?.Any(t => AnimalAllergenTags.Contains(t)) == true;
+
         bool offNonVegan = offProduct?.IngredientsAnalysisTags?.Contains("en:non-vegan") == true ||
-                           string.Equals(offProduct?.VeganVerdict, "NON_VEGAN", StringComparison.OrdinalIgnoreCase);
+                           string.Equals(offProduct?.VeganVerdict, "NON_VEGAN", StringComparison.OrdinalIgnoreCase) ||
+                           hasAnimalAllergen;
 
         string calculatedVerdict;
         if (hasNonVeganAdditive || hasAnimalIngredients || offNonVegan)

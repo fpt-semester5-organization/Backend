@@ -81,8 +81,6 @@ public class UserBanRevocationIntegrationTests : IClassFixture<WebApplicationFac
         public Task<(bool Allowed, long Current, long Remaining)> TryConsumeQuotaAsync(string key, int maxLimit, TimeSpan? expiry = null, CancellationToken ct = default)
             => Task.FromResult((true, 1L, (long)maxLimit - 1));
 
-        public Task<(bool Allowed, bool IsBanned, long CurrentCount, TimeSpan? RetryAfter)> CheckIpRateLimitAsync(string clientIp, int maxRequestsPerMinute = 10, int banDurationMinutes = 10, CancellationToken ct = default)
-            => Task.FromResult((true, false, 1L, (TimeSpan?)null));
     }
 
     private readonly WebApplicationFactory<Program> _factory;

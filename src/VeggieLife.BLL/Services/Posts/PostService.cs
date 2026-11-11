@@ -889,8 +889,36 @@ public class PostService : IPostService
     /// </summary>
     private async Task CheckDailyPostLimitAsync(int userId, CancellationToken ct)
     {
-        // Đã hủy bỏ kiểm tra giới hạn bài đăng trong ngày theo yêu cầu để người dùng thao tác kiểm thử không bị chặn 429
-        await Task.CompletedTask;
+        var user = await _db.Users.FindAsync(new object[] { userId }, ct);
+        if (user == null)
+        {
+            throw AppException.Unauthorized(ErrorCodes.ErrAuthInvalidToken, "Người dùng không tồn tại hoặc phiên đăng nhập không hợp lệ.");
+        }
+
+        var isNewAccount = (DateTime.UtcNow - user.CreatedAt).TotalDays < 3.0;
+        var dailyLimit = isNewAccount ? 2 : 10;
+
+        var todayStart = DateTime.UtcNow.Date;
+        var todayEnd = todayStart.AddDays(1);
+
+        var postsToday = await _db.Posts
+            .CountAsync(p => p.UserId == userId
+                && p.CreatedAt >= todayStart
+                && p.CreatedAt < todayEnd
+                && p.ModerationStatus != "DRAFT", ct);
+
+        var recipesToday = await _db.Recipes
+            .CountAsync(r => r.UserId == userId
+                && r.CreatedAt >= todayStart
+                && r.CreatedAt < todayEnd
+                && r.Status != "DRAFT", ct);
+
+        if (postsToday + recipesToday >= dailyLimit)
+        {
+            throw AppException.TooManyRequests(
+                ErrorCodes.ErrPostDailyLimitExceeded,
+                $"Tài khoản đã đạt giới hạn tối đa {dailyLimit} nội dung đăng tải trong ngày (BR-USR-04).");
+        }
     }
 
     /// <summary>

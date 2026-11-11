@@ -1671,8 +1671,27 @@ public class RecipeService : IRecipeService
 
     private async Task CheckDailyLimitAsync(int userId, CancellationToken ct)
     {
-        // Đã hủy bỏ kiểm tra giới hạn bài đăng trong ngày theo yêu cầu để người dùng thao tác kiểm thử không bị chặn 429
-        await Task.CompletedTask;
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId, ct);
+        if (user == null)
+        {
+            throw AppException.Unauthorized(ErrorCodes.ErrAuthInvalidToken, "Không tìm thấy người dùng.");
+        }
+
+        var todayUtc = DateTime.UtcNow.Date;
+        var accountAgeDays = (DateTime.UtcNow - user.CreatedAt).TotalDays;
+        var maxLimit = accountAgeDays < 3.0 ? 2 : 10;
+
+        var postsCount = await _db.Posts
+            .CountAsync(p => p.UserId == userId && p.CreatedAt >= todayUtc && p.ModerationStatus != "DRAFT", ct);
+
+        var recipesCount = await _db.Recipes
+            .CountAsync(r => r.UserId == userId && r.CreatedAt >= todayUtc && r.Status != "DRAFT", ct);
+
+        if (postsCount + recipesCount >= maxLimit)
+        {
+            throw new AppException(429, ErrorCodes.ErrPostDailyLimitExceeded,
+                $"Tài khoản đã đạt giới hạn tối đa {maxLimit} nội dung đăng tải trong ngày (BR-USR-04).");
+        }
     }
 
     private static void ValidateRecipeStructure(CreateRecipeRequest request)

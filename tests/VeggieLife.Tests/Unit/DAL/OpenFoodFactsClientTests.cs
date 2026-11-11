@@ -266,4 +266,47 @@ public class OpenFoodFactsClientTests
         // Assert
         result.Should().BeNull();
     }
+
+    [Fact]
+    public void ParseOpenFoodFactsResponse_TruncatedDefaultIngredients_UsesMoreCompleteLatinLanguage()
+    {
+        // Arrange: Nutella — ingredients_text tiếng Anh chỉ còn "sugar, palm oil"
+        var json = """
+        {
+            "status": 1,
+            "product": {
+                "product_name": "Nutella",
+                "ingredients_text": "sugar, palm oil",
+                "ingredients_text_en": "sugar, palm oil",
+                "ingredients_text_fr": "Sucre, huile de palme, NOISETTES 13%, cacao maigre 7,4%, LAIT écrémé en poudre 6,6%, LACTOSERUM en poudre",
+                "ingredients_text_ar": "سكر ، زيت نخيل ، بندق 13٪ ، كاكاو قليل الدهن 7.4٪ ، مسحوق حليب منزوع الدسم 6.6٪ ، مسحوق WHEY ، مستحلبات ليسيثين الصويا"
+            }
+        }
+        """;
+
+        // Act
+        var result = OpenFoodFactsClient.ParseOpenFoodFactsResponse("3017620422003", json);
+
+        // Assert: chọn bản tiếng Pháp đầy đủ (chữ Latinh) thay vì bản tiếng Anh bị cụt hay bản tiếng Ả Rập
+        result!.IngredientsText.Should().StartWith("Sucre, huile de palme");
+    }
+
+    [Fact]
+    public void ParseOpenFoodFactsResponse_VietnameseIngredientsPresent_KeepsVietnamese()
+    {
+        var json = """
+        {
+            "status": 1,
+            "product": {
+                "product_name": "Mì chay",
+                "ingredients_text_vi": "Bột mì, dầu cọ, muối, rau củ sấy",
+                "ingredients_text_en": "Wheat flour, palm oil, salt, dried vegetables"
+            }
+        }
+        """;
+
+        var result = OpenFoodFactsClient.ParseOpenFoodFactsResponse("8930000000020", json);
+
+        result!.IngredientsText.Should().Be("Bột mì, dầu cọ, muối, rau củ sấy");
+    }
 }

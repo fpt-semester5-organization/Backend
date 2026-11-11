@@ -24,6 +24,11 @@ namespace VeggieLife.BLL.Services.Venues;
 /// </summary>
 public class VenueService : IVenueService
 {
+    // BR-USR-11: Thành viên không thấy quán có điểm đánh giá dưới 2.5 sao; xếp hạng kết hợp khoảng cách và Rating
+    private const decimal MinMemberRating = 2.5m;
+    private const double DistanceWeight = 0.6;
+    private const double RatingWeight = 0.4;
+
     private readonly AppDbContext _db;
     private readonly IRedisService _redis;
     private readonly ILogger<VenueService> _logger;
@@ -260,10 +265,8 @@ public class VenueService : IVenueService
         }
 
         // BƯỚC: Danh mục quán chay (Data Object)
-        // Sắp xếp: Ưu tiên khoảng cách gần nhất
-        var sortedList = candidateVenues
-            .OrderBy(v => v.DistanceKm)
-            .ToList();
+        // Khách: khoảng cách gần nhất; Thành viên: lọc Rating < 2.5 và xếp theo điểm kết hợp (BR-USR-11)
+        var sortedList = RankVenues(candidateVenues, isGuest, effectiveRadius);
 
         var total = sortedList.Count;
 
@@ -721,9 +724,8 @@ public class VenueService : IVenueService
             }
         }
 
-        // 6. Xếp hạng theo khoảng cách gần nhất; trả tối đa `limit` quán
-        var results = candidateVenues
-            .OrderBy(v => v.DistanceKm)
+        // 6. Xếp hạng như FN-MAP-01 (Thành viên: Rating ≥ 2.5, điểm kết hợp — BR-USR-11); trả tối đa `limit` quán
+        var results = RankVenues(candidateVenues, isGuest, effectiveRadius)
             .Take(limit)
             .ToList();
 
@@ -735,6 +737,32 @@ public class VenueService : IVenueService
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// BR-USR-11: Khách sắp theo khoảng cách tăng dần. Thành viên loại quán có Rating từ 0 đến dưới 2.5
+    /// (Rating = 0 nghĩa là quán chưa có đánh giá, ví dụ quán mới nhập từ Goong, nên không bị loại),
+    /// rồi xếp theo điểm = 0.6 × (1 − khoảng cách / bán kính) + 0.4 × (Rating / 5); hòa điểm thì quán gần hơn đứng trước.
+    /// </summary>
+    private static List<NearbyVenueItemDto> RankVenues(IEnumerable<NearbyVenueItemDto> venues, bool isGuest, double radiusKm)
+    {
+        if (isGuest)
+        {
+            return venues.OrderBy(v => v.DistanceKm).ToList();
+        }
+
+        return venues
+            .Where(v => v.Rating <= 0m || v.Rating >= MinMemberRating)
+            .OrderByDescending(v => ComputeMemberScore(v, radiusKm))
+            .ThenBy(v => v.DistanceKm)
+            .ToList();
+    }
+
+    private static double ComputeMemberScore(NearbyVenueItemDto venue, double radiusKm)
+    {
+        var proximity = radiusKm > 0 ? Math.Clamp(1.0 - venue.DistanceKm / radiusKm, 0.0, 1.0) : 0.0;
+        var rating = Math.Clamp((double)venue.Rating / 5.0, 0.0, 1.0);
+        return DistanceWeight * proximity + RatingWeight * rating;
     }
 
     private static void ApplyCoordinatesDistance(VenueDetailDto dto, double lat, double lng)

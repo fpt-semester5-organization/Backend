@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using VeggieLife.BLL.Common.Constants;
+using VeggieLife.BLL.Services.AI;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
 
@@ -954,14 +955,25 @@ public static class DevDataSeeder
         // 7. Nạp dữ liệu mẫu AIQuotaLogs (FN-ADM-16)
         if (!db.AiquotaLogs.Any())
         {
+            // Log chức năng khách hàng phải thuộc MEMBER/VIP, không gán cho Admin (Admin không dùng chức năng khách hàng)
+            var customerId = db.Users
+                .Where(u => u.Role == "MEMBER" || u.Role == "VIP")
+                .OrderBy(u => u.UserId)
+                .Select(u => u.UserId)
+                .FirstOrDefault();
+            if (customerId == 0)
+            {
+                return;
+            }
+
             var now = DateTime.UtcNow;
             db.AiquotaLogs.AddRange(
-                new AiquotaLog { UserId = 1, FeatureCode = "AI_CHAT", TokensConsumed = 120000, CostEstimateUsd = 4.2m, RequestStatus = "SUCCESS", ExecutionTimeMs = 600, CreatedAt = now.AddDays(-2) },
-                new AiquotaLog { UserId = 1, FeatureCode = "MEAL_PLAN_GEN", TokensConsumed = 30000, CostEstimateUsd = 1.2m, RequestStatus = "SUCCESS", ExecutionTimeMs = 1200, CreatedAt = now.AddDays(-2) },
-                new AiquotaLog { UserId = 1, FeatureCode = "AI_FRIDGE", TokensConsumed = 45000, CostEstimateUsd = 1.8m, RequestStatus = "SUCCESS", ExecutionTimeMs = 800, CreatedAt = now.AddDays(-1) },
-                new AiquotaLog { UserId = 1, FeatureCode = "AI_BARCODE", TokensConsumed = 15000, CostEstimateUsd = 0.6m, RequestStatus = "SUCCESS", ExecutionTimeMs = 350, CreatedAt = now.AddDays(-1) },
-                new AiquotaLog { UserId = 1, FeatureCode = "AI_CHAT", TokensConsumed = 80000, CostEstimateUsd = 2.75m, RequestStatus = "SUCCESS", ExecutionTimeMs = 700, CreatedAt = now.AddHours(-3) },
-                new AiquotaLog { UserId = 1, FeatureCode = "CONTENT_MODERATION", TokensConsumed = 20000, CostEstimateUsd = 0.85m, RequestStatus = "SUCCESS", ExecutionTimeMs = 400, CreatedAt = now.AddHours(-1) }
+                new AiquotaLog { UserId = customerId, FeatureCode = "AI_CHAT", TokensConsumed = 120000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(120000), RequestStatus = "SUCCESS", ExecutionTimeMs = 600, CreatedAt = now.AddDays(-2) },
+                new AiquotaLog { UserId = customerId, FeatureCode = "MEAL_PLAN_GEN", TokensConsumed = 30000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(30000), RequestStatus = "SUCCESS", ExecutionTimeMs = 1200, CreatedAt = now.AddDays(-2) },
+                new AiquotaLog { UserId = customerId, FeatureCode = "AI_FRIDGE", TokensConsumed = 45000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(45000), RequestStatus = "SUCCESS", ExecutionTimeMs = 800, CreatedAt = now.AddDays(-1) },
+                new AiquotaLog { UserId = customerId, FeatureCode = "AI_BARCODE", TokensConsumed = 15000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(15000), RequestStatus = "SUCCESS", ExecutionTimeMs = 350, CreatedAt = now.AddDays(-1) },
+                new AiquotaLog { UserId = customerId, FeatureCode = "AI_CHAT", TokensConsumed = 80000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(80000), RequestStatus = "SUCCESS", ExecutionTimeMs = 700, CreatedAt = now.AddHours(-3) },
+                new AiquotaLog { UserId = customerId, FeatureCode = "CONTENT_MODERATION", TokensConsumed = 20000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(20000), RequestStatus = "SUCCESS", ExecutionTimeMs = 400, CreatedAt = now.AddHours(-1) }
             );
             db.SaveChanges();
         }

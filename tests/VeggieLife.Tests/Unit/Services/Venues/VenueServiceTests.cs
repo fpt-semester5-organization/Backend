@@ -234,7 +234,7 @@ public class VenueServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ListNearbyVenues_SearchHanoiCoordinates_ShouldReturnHanoiVenuesOrderedByDistanceAscending()
+    public async Task ListNearbyVenues_SearchHanoiCoordinates_Member_ShouldRankByCombinedScoreAndHideLowRated()
     {
         // ARRANGE: Tọa độ Hồ Gươm (21.0285, 105.8542)
         var request = new ListNearbyVenuesRequest
@@ -247,22 +247,19 @@ public class VenueServiceTests : IDisposable
         // ACT: Thành viên tìm kiếm
         var result = await _service.ListNearbyVenuesAsync(request, userId: 1, userRole: UserRoles.Member, guestUuid: null);
 
-        // ASSERT: Kết quả trả về các quán ở Hà Nội, được sắp xếp theo khoảng cách tăng dần
+        // ASSERT: Kết quả trả về các quán ở Hà Nội, xếp theo điểm kết hợp khoảng cách và Rating (BR-USR-11)
         result.Should().NotBeNull();
         result.Venues.Should().NotBeEmpty();
 
-        // 1. Quán gần nhất là Ưu Đàm (~0.7 km), tiếp theo là Vị Lai (~0.8 km), Nàng Tấm (~1.1 km), Tịnh Thực (~4.6 km)
+        // 1. Điểm = 0.6 × (1 − d/5) + 0.4 × (Rating/5): Ưu Đàm (0.7 km, 4.8) > Vị Lai (0.8 km, 4.9) > Nàng Tấm (1.1 km, 4.5) > Tịnh Thực (4.6 km, 4.6)
         var venues = result.Venues;
-        for (int i = 0; i < venues.Count - 1; i++)
-        {
-            venues[i].DistanceKm.Should().BeLessThanOrEqualTo(venues[i + 1].DistanceKm);
-        }
+        venues.Select(v => v.VenueId).Should().ContainInOrder(301, 303, 302, 304);
 
         // 2. Không được chứa quán ở TP.HCM
         venues.Should().NotContain(v => v.Address.Contains("TP.HCM"));
 
-        // 3. Không lọc theo rating (chỉ dùng Goong Places) nên Quán Dưỡng Sinh Cũ (2.1 sao) vẫn có mặt
-        venues.Should().Contain(v => v.VenueId == 305);
+        // 3. Thành viên không thấy Quán Dưỡng Sinh Cũ (2.1 sao < 2.5)
+        venues.Should().NotContain(v => v.VenueId == 305);
 
         // 4. Kiểm tra meta và thông tin tọa độ / rating của quán
         venues[0].Latitude.Should().BeGreaterThan(0);
@@ -273,7 +270,7 @@ public class VenueServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ListNearbyVenues_SearchHcmcCoordinates_ShouldReturnHcmcVenuesOrderedByDistanceAscending()
+    public async Task ListNearbyVenues_SearchHcmcCoordinates_Vip_ShouldRankByCombinedScoreAndHideLowRated()
     {
         // ARRANGE: Tọa độ Nguyễn Huệ Quận 1 (10.7745, 106.7035)
         var request = new ListNearbyVenuesRequest
@@ -286,28 +283,24 @@ public class VenueServiceTests : IDisposable
         // ACT: Thành viên tìm kiếm
         var result = await _service.ListNearbyVenuesAsync(request, userId: 2, userRole: UserRoles.Vip, guestUuid: null);
 
-        // ASSERT: Kết quả trả về các quán ở TP.HCM theo đúng thứ tự khoảng cách
+        // ASSERT: Kết quả trả về các quán ở TP.HCM theo điểm kết hợp (BR-USR-11)
         result.Should().NotBeNull();
         result.Venues.Should().NotBeEmpty();
 
         var venues = result.Venues;
-        for (int i = 0; i < venues.Count - 1; i++)
-        {
-            venues[i].DistanceKm.Should().BeLessThanOrEqualTo(venues[i + 1].DistanceKm);
-        }
 
         // Không chứa quán Hà Nội
         venues.Should().NotContain(v => v.Address.Contains("Hà Nội"));
 
-        // Tib Chay (~0.3 km) đứng trước Tâm An (~0.6 km), Tâm An đứng trước Vỉa Hè Cũ (~1.3 km), Vỉa Hè Cũ đứng trước Hum (~1.5 km)
-        venues[0].Name.Should().Be("Tib Chay Huỳnh Thúc Kháng");
-        venues[1].Name.Should().Be("Cơm Chay Tâm An");
-        venues[2].Name.Should().Be("Quán Chay Vỉa Hè Cũ");
-        venues[3].Name.Should().Be("Hum Vegetarian Lounge & Restaurant");
+        // Tib Chay (0.3 km, 4.8) > Tâm An (0.6 km, 4.6) > Hum (1.5 km, 4.9); Vỉa Hè Cũ (2.2 sao) bị loại
+        venues.Select(v => v.Name).Should().Equal(
+            "Tib Chay Huỳnh Thúc Kháng",
+            "Cơm Chay Tâm An",
+            "Hum Vegetarian Lounge & Restaurant");
     }
 
     [Fact]
-    public async Task ListNearbyVenues_MemberAndGuest_ReturnsAllVenuesInRadius()
+    public async Task ListNearbyVenues_LowRatedVenue_HiddenForMemberButShownToGuest()
     {
         // ARRANGE: Hà Nội
         var request = new ListNearbyVenuesRequest
@@ -323,9 +316,31 @@ public class VenueServiceTests : IDisposable
         // ACT: Khách (GUEST)
         var guestResult = await _service.ListNearbyVenuesAsync(request, userId: null, userRole: UserRoles.Guest, guestUuid: "guest-test-1");
 
-        // ASSERT: Cả Thành viên và Khách đều nhận được quán trong bán kính
-        memberResult.Venues.Should().Contain(v => v.VenueId == 305);
+        // ASSERT: Thành viên không thấy quán 2.1 sao (BR-USR-11); Khách sắp theo khoảng cách, không lọc Rating
+        memberResult.Venues.Should().NotContain(v => v.VenueId == 305);
         guestResult.Venues.Should().Contain(v => v.VenueId == 305);
+        guestResult.Venues.Select(v => v.DistanceKm).Should().BeInAscendingOrder();
+    }
+
+    [Fact]
+    public async Task ListNearbyVenues_Member_HigherRatedVenueOutranksSlightlyCloserLowerRatedOne()
+    {
+        // ARRANGE: Hai quán Đà Nẵng: A gần hơn (0.5 km) nhưng 2.6 sao; B xa hơn (0.9 km) nhưng 5.0 sao; C chưa có đánh giá (Rating = 0)
+        _db.VeganVenues.AddRange(
+            new VeganVenue { VenueId = 401, ExternalSource = "GOONG", ExternalPlaceId = "GOONG_DN_A", VenueName = "Quán A", Address = "Hải Châu, Đà Nẵng", Latitude = 16.054500m, Longitude = 108.202200m, Rating = 2.6m, IsActive = true, CreatedAt = DateTime.UtcNow },
+            new VeganVenue { VenueId = 402, ExternalSource = "GOONG", ExternalPlaceId = "GOONG_DN_B", VenueName = "Quán B", Address = "Hải Châu, Đà Nẵng", Latitude = 16.058100m, Longitude = 108.202200m, Rating = 5.0m, IsActive = true, CreatedAt = DateTime.UtcNow },
+            new VeganVenue { VenueId = 403, ExternalSource = "GOONG", ExternalPlaceId = "GOONG_DN_C", VenueName = "Quán C", Address = "Hải Châu, Đà Nẵng", Latitude = 16.052000m, Longitude = 108.202200m, Rating = 0.0m, IsActive = true, CreatedAt = DateTime.UtcNow });
+        _db.SaveChanges();
+
+        var request = new ListNearbyVenuesRequest { Lat = 16.050000, Lng = 108.202200, RadiusKm = 5.0 };
+
+        // ACT
+        var result = await _service.ListNearbyVenuesAsync(request, userId: 1, userRole: UserRoles.Member, guestUuid: null);
+
+        // ASSERT: B (5.0 sao) đứng trước A (2.6 sao); C chưa có đánh giá vẫn được hiển thị
+        var ids = result.Venues.Select(v => v.VenueId).ToList();
+        ids.Should().Contain(new[] { 401, 402, 403 });
+        ids.IndexOf(402).Should().BeLessThan(ids.IndexOf(401));
     }
 
     [Fact]
@@ -580,11 +595,8 @@ public class VenueServiceTests : IDisposable
         result.Venues.Should().NotBeEmpty();
         result.Venues.Should().OnlyContain(v => v.Address.Contains("TP.HCM"));
 
-        var venues = result.Venues;
-        for (int i = 0; i < venues.Count - 1; i++)
-        {
-            venues[i].DistanceKm.Should().BeLessThanOrEqualTo(venues[i + 1].DistanceKm);
-        }
+        // Thành viên: quán dưới 2.5 sao bị loại (BR-USR-11)
+        result.Venues.Should().OnlyContain(v => v.Rating <= 0m || v.Rating >= 2.5m);
     }
 
     [Fact]

@@ -690,5 +690,78 @@ public class ProductServiceTests : IDisposable
         // Assert: Tuyệt đối không đoán VEGAN (GREEN) khi thiếu dữ liệu, phải trả DOUBTFUL (YELLOW)
         result.VeganVerdict.Should().Be("YELLOW");
     }
+
+    [Fact]
+    public async Task ScanBarcode_OffDeclaresMilkAllergen_ReturnsRedEvenWithoutAdditives()
+    {
+        // Arrange: Trường hợp Nutella — thành phần tiếng Anh bị cụt nhưng allergens_tags có "milk"
+        var barcode = "3017620422003";
+        _mockOffClient.Setup(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenFoodFactsProductDto
+            {
+                Barcode = barcode,
+                ProductName = "Nutella",
+                IngredientsText = "sugar, palm oil",
+                AllergensTags = new List<string> { "milk", "nuts", "soybeans" },
+                IngredientsAnalysisTags = new List<string> { "en:maybe-vegan" }
+            });
+        _mockRedis.Setup(r => r.GetAsync<int?>(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        _mockRedis.Setup(r => r.IncrementAsync(It.IsAny<string>(), 1, It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        // Act
+        var result = await _service.ScanBarcodeAsync(barcode, null, "guest-1");
+
+        // Assert
+        result.VeganVerdict.Should().Be("RED");
+    }
+
+    [Theory]
+    [InlineData("Sucre, huile de palme, NOISETTES 13%, LAIT écrémé en poudre 6,6%, LACTOSERUM en poudre", "RED")]
+    [InlineData("Rice, coconut milk, cocoa butter, sugar", "GREEN")]
+    public async Task ScanBarcode_ForeignIngredientKeywords_DetectsAnimalButNotPlantMilk(string ingredients, string expected)
+    {
+        // Arrange
+        var barcode = "4000000000017";
+        _mockOffClient.Setup(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenFoodFactsProductDto { Barcode = barcode, ProductName = "Test", IngredientsText = ingredients, VeganVerdict = "VEGAN" });
+        _mockRedis.Setup(r => r.GetAsync<int?>(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        _mockRedis.Setup(r => r.IncrementAsync(It.IsAny<string>(), 1, It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        // Act
+        var result = await _service.ScanBarcodeAsync(barcode, null, "guest-1");
+
+        // Assert
+        result.VeganVerdict.Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task ScanBarcode_FreshButDoubtfulAndNotAdminVerified_RefetchesFromOff()
+    {
+        // Arrange: Bản ghi "Cần xem lại" mới đồng bộ 1 ngày trước vẫn phải tra lại OFF
+        var barcode = "8930000000013";
+        _db.Products.Add(new Product
+        {
+            Barcode = barcode,
+            ProductName = "Sản phẩm cũ",
+            ImageUrl = "https://images.openfoodfacts.org/x.jpg",
+            VeganVerdict = "DOUBTFUL",
+            AdminVerified = false,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            LastSyncedAt = DateTime.UtcNow.AddDays(-1)
+        });
+        await _db.SaveChangesAsync();
+
+        _mockOffClient.Setup(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenFoodFactsProductDto { Barcode = barcode, ProductName = "Sữa đậu nành", IngredientsText = "Đậu nành, nước, đường", VeganVerdict = "VEGAN" });
+        _mockRedis.Setup(r => r.GetAsync<int?>(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        _mockRedis.Setup(r => r.IncrementAsync(It.IsAny<string>(), 1, It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        // Act
+        var result = await _service.ScanBarcodeAsync(barcode, null, "guest-1");
+
+        // Assert
+        _mockOffClient.Verify(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()), Times.Once);
+        result.VeganVerdict.Should().Be("GREEN");
+    }
 }
 
