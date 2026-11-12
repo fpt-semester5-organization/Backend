@@ -107,6 +107,7 @@ public static class ErrorCodes
     public const string ErrPlanDuplicate = "ERR_PLAN_DUPLICATE";
     public const string ErrPlanNotFound = "ERR_PLAN_NOT_FOUND";
     public const string ErrVipSamePlanActive = "ERR_VIP_SAME_PLAN_ACTIVE";
+    public const string ErrVipAlreadyActive = "ERR_VIP_ALREADY_ACTIVE";
 
     // === 10. Lỗi Media & Video (Media) ===
     public const string ErrMediaFileTooLarge = "ERR_MEDIA_FILE_TOO_LARGE";
