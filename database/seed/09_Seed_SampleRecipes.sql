@@ -40,6 +40,31 @@ DELETE FROM dbo.RecipeIngredients WHERE Recipe_ID BETWEEN 101 AND 106;
 
 SET IDENTITY_INSERT dbo.Recipes ON;
 
+-- 2b. Đảm bảo Foods đại diện tồn tại với CategoryId tương ứng
+IF NOT EXISTS (SELECT 1 FROM dbo.Foods WHERE Food_Name = N'Canh nấm đậu phụ rong biển')
+    INSERT INTO dbo.Foods (Category_ID, Food_Name, Image_URL, Created_At, Updated_At)
+    VALUES (3, N'Canh nấm đậu phụ rong biển', 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=800&q=80', SYSDATETIME(), SYSDATETIME());
+
+IF NOT EXISTS (SELECT 1 FROM dbo.Foods WHERE Food_Name = N'Nấm kho tiêu hạt sen đậm đà')
+    INSERT INTO dbo.Foods (Category_ID, Food_Name, Image_URL, Created_At, Updated_At)
+    VALUES (9, N'Nấm kho tiêu hạt sen đậm đà', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80', SYSDATETIME(), SYSDATETIME());
+
+IF NOT EXISTS (SELECT 1 FROM dbo.Foods WHERE Food_Name = N'Mì xào nấm rau củ giòn ngọt')
+    INSERT INTO dbo.Foods (Category_ID, Food_Name, Image_URL, Created_At, Updated_At)
+    VALUES (14, N'Mì xào nấm rau củ giòn ngọt', 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=800&q=80', SYSDATETIME(), SYSDATETIME());
+
+IF NOT EXISTS (SELECT 1 FROM dbo.Foods WHERE Food_Name = N'Súp ngô ngọt kem tươi dinh dưỡng')
+    INSERT INTO dbo.Foods (Category_ID, Food_Name, Image_URL, Created_At, Updated_At)
+    VALUES (3, N'Súp ngô ngọt kem tươi dinh dưỡng', 'https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80', SYSDATETIME(), SYSDATETIME());
+
+IF NOT EXISTS (SELECT 1 FROM dbo.Foods WHERE Food_Name = N'Canh bí đỏ nháp đang soạn')
+    INSERT INTO dbo.Foods (Category_ID, Food_Name, Image_URL, Created_At, Updated_At)
+    VALUES (3, N'Canh bí đỏ nháp đang soạn', NULL, SYSDATETIME(), SYSDATETIME());
+
+IF NOT EXISTS (SELECT 1 FROM dbo.Foods WHERE Food_Name = N'Công thức vi phạm cách ly')
+    INSERT INTO dbo.Foods (Category_ID, Food_Name, Image_URL, Created_At, Updated_At)
+    VALUES (9, N'Công thức vi phạm cách ly', NULL, SYSDATETIME(), SYSDATETIME());
+
 -- 3. Nạp hoặc cập nhật 6 công thức mẫu (ID 101 - 106)
 MERGE INTO dbo.Recipes AS target
 USING (
@@ -108,6 +133,13 @@ WHEN NOT MATCHED THEN
     VALUES (source.Recipe_ID, source.User_ID, source.Dietary_School_ID, source.Title, source.Description, source.Instructions, source.Prep_Time_Minutes, source.Cook_Time_Minutes, source.Servings, source.Calories_Kcal, source.Difficulty_Level, source.Is_Verified, source.Image_Url, source.Status, source.View_Count, source.Source, source.Created_At);
 
 SET IDENTITY_INSERT dbo.Recipes OFF;
+
+-- Cập nhật Food_ID chuẩn hóa cho các Recipes từ Foods
+UPDATE r
+SET r.Food_ID = f.Food_ID
+FROM dbo.Recipes r
+INNER JOIN dbo.Foods f ON r.Title = f.Food_Name
+WHERE r.Recipe_ID BETWEEN 101 AND 106;
 
 -- 4. Nạp RecipeIngredients
 INSERT INTO dbo.RecipeIngredients (Recipe_ID, Ingredient_ID, Quantity_Needed, Unit, Preparation_Note, Is_Optional)

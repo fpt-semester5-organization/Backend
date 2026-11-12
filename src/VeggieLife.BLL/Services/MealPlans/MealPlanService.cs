@@ -149,7 +149,7 @@ public class MealPlanService : IMealPlanService
 
             // 8. Lọc trước kho Recipes (APPROVED_ACTIVE) loại trừ 100% món vi phạm trường phái hoặc dị ứng
             var allActiveRecipes = await _db.Recipes
-                .Include(r => r.Food).ThenInclude(f => f.Category)
+                .Include(r => r.Food).ThenInclude(f => f!.Category)
                 .Include(r => r.Food)
                 .Include(r => r.RecipeIngredients)
                     .ThenInclude(ri => ri.Ingredient)
@@ -454,9 +454,9 @@ public class MealPlanService : IMealPlanService
                     RecipeId = r.RecipeId,
                     Title = r.Title,
                     CaloriesKcal = r.CaloriesKcal,
-                    CategoryName = r.Food?.Category?.CategoryName,
+                    CategoryName = r.Food?.Category?.CategoryName ?? "Món chay",
                     FoodId = r.FoodId,
-                    FoodName = r.Food?.FoodName,
+                    FoodName = r.Food?.FoodName ?? r.Title,
                     Description = r.Description,
                     Instructions = r.Instructions,
                     PrepTimeMinutes = r.PrepTimeMinutes,
@@ -1007,10 +1007,10 @@ public class MealPlanService : IMealPlanService
                     CaloriesKcal = recipe.CaloriesKcal,
                     ImageUrl = recipe.ImageUrl ?? recipe.Food?.ImageUrl,
                     FoodId = recipe.FoodId,
-                    FoodName = recipe.Food?.FoodName,
-                    FoodImageUrl = recipe.Food?.ImageUrl,
-                    CategoryId = recipe.Food?.CategoryId,
-                    CategoryName = recipe.Food?.Category?.CategoryName
+                    FoodName = recipe.Food?.FoodName ?? recipe.Title,
+                    FoodImageUrl = recipe.Food?.ImageUrl ?? recipe.ImageUrl,
+                    CategoryId = recipe.Food?.CategoryId ?? 1,
+                    CategoryName = recipe.Food?.Category?.CategoryName ?? "Món chay"
                 } : null
             };
         }).ToList();
@@ -1146,10 +1146,10 @@ public class MealPlanService : IMealPlanService
                     CaloriesKcal = s.Recipe.CaloriesKcal,
                     ImageUrl = s.Recipe.ImageUrl ?? s.Recipe.Food?.ImageUrl,
                     FoodId = s.Recipe.FoodId,
-                    FoodName = s.Recipe.Food?.FoodName,
-                    FoodImageUrl = s.Recipe.Food?.ImageUrl,
-                    CategoryId = s.Recipe.Food?.CategoryId,
-                    CategoryName = s.Recipe.Food?.Category?.CategoryName
+                    FoodName = s.Recipe.Food?.FoodName ?? s.Recipe.Title,
+                    FoodImageUrl = s.Recipe.Food?.ImageUrl ?? s.Recipe.ImageUrl,
+                    CategoryId = s.Recipe.Food?.CategoryId ?? 1,
+                    CategoryName = s.Recipe.Food?.Category?.CategoryName ?? "Món chay"
                 } : null,
                 SwapCount = s.SwapHistories.Count,
                 SwapHistories = s.SwapHistories
@@ -1169,7 +1169,10 @@ public class MealPlanService : IMealPlanService
                             CaloriesKcal = h.OldRecipe.CaloriesKcal,
                             ImageUrl = h.OldRecipe.ImageUrl ?? h.OldRecipe.Food?.ImageUrl,
                             FoodId = h.OldRecipe.FoodId,
-                            FoodName = h.OldRecipe.Food?.FoodName
+                            FoodName = h.OldRecipe.Food?.FoodName ?? h.OldRecipe.Title,
+                            FoodImageUrl = h.OldRecipe.Food?.ImageUrl ?? h.OldRecipe.ImageUrl,
+                            CategoryId = h.OldRecipe.Food?.CategoryId ?? 1,
+                            CategoryName = h.OldRecipe.Food?.Category?.CategoryName ?? "Món chay"
                         } : null,
                         NewRecipeId = h.NewRecipeId,
                         NewRecipeTitle = h.NewRecipe?.Title ?? string.Empty,
@@ -1182,7 +1185,10 @@ public class MealPlanService : IMealPlanService
                             CaloriesKcal = h.NewRecipe.CaloriesKcal,
                             ImageUrl = h.NewRecipe.ImageUrl ?? h.NewRecipe.Food?.ImageUrl,
                             FoodId = h.NewRecipe.FoodId,
-                            FoodName = h.NewRecipe.Food?.FoodName
+                            FoodName = h.NewRecipe.Food?.FoodName ?? h.NewRecipe.Title,
+                            FoodImageUrl = h.NewRecipe.Food?.ImageUrl ?? h.NewRecipe.ImageUrl,
+                            CategoryId = h.NewRecipe.Food?.CategoryId ?? 1,
+                            CategoryName = h.NewRecipe.Food?.Category?.CategoryName ?? "Món chay"
                         } : null,
                         SwapReason = h.SwapReason,
                         CaloriesDelta = h.CaloriesDelta,
@@ -1703,10 +1709,10 @@ public class MealPlanService : IMealPlanService
                     CaloriesKcal = newRecipe.CaloriesKcal,
                     ImageUrl = newRecipe.ImageUrl ?? newRecipe.Food?.ImageUrl,
                     FoodId = newRecipe.FoodId,
-                    FoodName = newRecipe.Food?.FoodName,
-                    FoodImageUrl = newRecipe.Food?.ImageUrl,
-                    CategoryId = newRecipe.Food?.CategoryId,
-                    CategoryName = newRecipe.Food?.Category?.CategoryName
+                    FoodName = newRecipe.Food?.FoodName ?? newRecipe.Title,
+                    FoodImageUrl = newRecipe.Food?.ImageUrl ?? newRecipe.ImageUrl,
+                    CategoryId = newRecipe.Food?.CategoryId ?? 1,
+                    CategoryName = newRecipe.Food?.Category?.CategoryName ?? "Món chay"
                 },
                 SwapCount = slotHistories.Count,
                 SwapHistories = slotHistories
@@ -1735,7 +1741,7 @@ public class MealPlanService : IMealPlanService
             .Include(s => s.Plan)
                 .ThenInclude(p => p.DietarySchool)
             .Include(s => s.Recipe)
-                .ThenInclude(r => r.Food).ThenInclude(f => f.Category)
+                .ThenInclude(r => r.Food).ThenInclude(f => f!.Category)
             .Include(s => s.Recipe)
                 .ThenInclude(r => r.RecipeIngredients)
                     .ThenInclude(ri => ri.Ingredient)
@@ -1823,7 +1829,7 @@ public class MealPlanService : IMealPlanService
 
         // Cào database khoảng 100 món APPROVED_ACTIVE phù hợp
         var allActiveRecipes = await _db.Recipes
-            .Include(r => r.Food).ThenInclude(f => f.Category)
+            .Include(r => r.Food).ThenInclude(f => f!.Category)
             .Include(r => r.Food)
             .Include(r => r.RecipeIngredients)
                 .ThenInclude(ri => ri.Ingredient)
@@ -2062,10 +2068,10 @@ public class MealPlanService : IMealPlanService
                     CaloriesKcal = selectedRecipe.CaloriesKcal,
                     ImageUrl = selectedRecipe.ImageUrl ?? selectedRecipe.Food?.ImageUrl,
                     FoodId = selectedRecipe.FoodId,
-                    FoodName = selectedRecipe.Food?.FoodName,
-                    FoodImageUrl = selectedRecipe.Food?.ImageUrl,
-                    CategoryId = selectedRecipe.Food?.CategoryId,
-                    CategoryName = selectedRecipe.Food?.Category?.CategoryName
+                    FoodName = selectedRecipe.Food?.FoodName ?? selectedRecipe.Title,
+                    FoodImageUrl = selectedRecipe.Food?.ImageUrl ?? selectedRecipe.ImageUrl,
+                    CategoryId = selectedRecipe.Food?.CategoryId ?? 1,
+                    CategoryName = selectedRecipe.Food?.Category?.CategoryName ?? "Món chay"
                 },
                 SwapCount = slotHistories.Count,
                 SwapHistories = slotHistories

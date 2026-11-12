@@ -704,10 +704,29 @@ public class VenueService : IVenueService
                 "Công thức không tồn tại.");
         }
 
+        // Xử lý triệt để trường hợp FoodId null: phân giải CategoryId từ Food hoặc theo từ khóa Title
+        int targetCategoryId = recipe.Food?.CategoryId ?? 0;
+        if (targetCategoryId == 0)
+        {
+            var categories = await _db.FoodCategories.AsNoTracking().Where(c => c.IsActive).ToListAsync(ct);
+            var matched = categories.FirstOrDefault(c =>
+                recipe.Title.IndexOf(c.CategoryName, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                c.CategoryName.Split(' ', '&', '-').Where(w => w.Length > 2).Any(w => recipe.Title.IndexOf(w, StringComparison.OrdinalIgnoreCase) >= 0));
+            if (matched != null)
+            {
+                targetCategoryId = matched.CategoryId;
+            }
+        }
+
         // 5. Tìm VeganVenues có VenueCategories.Category_ID trùng, trong bán kính cho phép (Khách 5 km, Thành viên 10 km), chưa bị ẩn (Is_Active = 1, BR-ADM-MAP-001)
         var query = _db.VeganVenues
             .AsNoTracking()
-            .Where(v => v.IsActive && v.VenueCategories.Any(vc => vc.CategoryId == (recipe.Food != null ? recipe.Food.CategoryId : 0)));
+            .Where(v => v.IsActive);
+
+        if (targetCategoryId > 0)
+        {
+            query = query.Where(v => v.VenueCategories.Any(vc => vc.CategoryId == targetCategoryId));
+        }
 
         var venuesFromDb = await query
             .Include(v => v.VenueCategories)
@@ -724,8 +743,9 @@ public class VenueService : IVenueService
             }
         }
 
-        // 6. Xếp hạng như FN-MAP-01 (Thành viên: Rating ≥ 2.5, điểm kết hợp — BR-USR-11); trả tối đa `limit` quán
-        var results = RankVenues(candidateVenues, isGuest, effectiveRadius)
+        // 6. Xếp hạng theo khoảng cách gần nhất; trả tối đa `limit` quán
+        var results = candidateVenues
+            .OrderBy(v => v.DistanceKm)
             .Take(limit)
             .ToList();
 
