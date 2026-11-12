@@ -308,7 +308,7 @@ public class SubscriptionService : ISubscriptionService
             CreatedAt = now,
             StartsAt = startsAt,
             EndsAt = endsAt,
-            ReceiptUrl = payUrl
+            ReceiptUrl = payUrl != null && payUrl.Length > 255 ? payUrl[..255] : payUrl
         };
 
         _db.PaymentTransactions.Add(transaction);
