@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -230,38 +230,27 @@ public class SubscriptionService : ISubscriptionService
             }
         }
 
-        // 4.1. Chặn mua trùng gói: Khóa nút mua và gán nhãn "Đang sử dụng" cho gói VIP hiện tại.
-        // Backend kiểm tra nếu người dùng đang có gói VIP cùng loại còn hiệu lực (EndsAt > now),
-        // từ chối tạo đơn mới tránh mất tiền oan cho user. Các gói VIP chu kỳ khác vẫn cho phép mua để cộng dồn hạn.
-        var activeSamePlanTx = await _db.PaymentTransactions
+        // 4.1. Chặn đăng ký khi đang có gói VIP còn hiệu lực:
+        // Người dùng đã có gói VIP đang hoạt động phải đợi đến khi hết chu kỳ gói hiện tại mới được đăng ký tiếp.
+        var activeVipTx = await _db.PaymentTransactions
             .Include(pt => pt.Plan)
             .Where(pt => pt.UserId == userId &&
-                         pt.PlanId == request.PlanId &&
                          pt.TransactionStatus == "SUCCESS" &&
                          pt.EndsAt > now)
             .OrderByDescending(pt => pt.EndsAt)
             .FirstOrDefaultAsync(ct);
 
-        if (activeSamePlanTx != null)
+        if (activeVipTx != null)
         {
-            var planName = activeSamePlanTx.Plan?.PlanName ?? plan.PlanName;
+            var planName = activeVipTx.Plan?.PlanName ?? "VIP";
             throw AppException.Conflict(
-                ErrorCodes.ErrVipSamePlanActive,
-                $"Bạn đang sử dụng gói VIP '{planName}' (còn hiệu lực đến {activeSamePlanTx.EndsAt:dd/MM/yyyy HH:mm} UTC). Vui lòng không mua trùng gói để tránh mất tiền oan.");
+                ErrorCodes.ErrVipAlreadyActive,
+                $"Bạn đang có gói VIP '{planName}' còn hiệu lực đến {activeVipTx.EndsAt:dd/MM/yyyy HH:mm} UTC. Vui lòng đợi đến khi hết chu kỳ gói hiện tại để đăng ký gói mới.");
         }
 
         // 5. Tính thời gian bắt đầu và kết thúc dự kiến của kỳ VIP:
-        // Nếu người dùng VIP còn hạn: nối tiếp từ Ends_At lớn nhất, ngược lại bắt đầu từ hiện tại
-        var maxSuccessEndsAt = await _db.PaymentTransactions
-            .Where(pt => pt.UserId == userId &&
-                         pt.TransactionStatus == "SUCCESS" &&
-                         pt.EndsAt > now)
-            .MaxAsync(pt => (DateTime?)pt.EndsAt, ct);
-
-        DateTime startsAt = maxSuccessEndsAt.HasValue && maxSuccessEndsAt.Value > now
-            ? maxSuccessEndsAt.Value
-            : now;
-
+        // Do đã chặn người dùng đang có VIP ở bước 4.1, kỳ mới luôn bắt đầu từ hiện tại
+        DateTime startsAt = now;
         DateTime endsAt = startsAt.AddDays(plan.DurationDays);
         // BR-PAY-SUB-02: Gói thuê bao VIP tự động hết hạn vào 23:59:59 của ngày kết thúc chu kỳ thanh toán
         endsAt = new DateTime(endsAt.Year, endsAt.Month, endsAt.Day, 23, 59, 59, DateTimeKind.Utc);
@@ -743,25 +732,30 @@ public class SubscriptionService : ISubscriptionService
         transaction.CompletedAt = now;
         transaction.SignatureHash = signature;
 
-        // 9. Kích hoạt hoặc gia hạn VIP (BR-PAY-SUB-01, BR-PAY-SUB-02)
+        // 9. Kích hoạt VIP (BR-PAY-SUB-01, BR-PAY-SUB-02)
         var user = transaction.User;
         var plan = transaction.Plan;
-        DateTime startsAt;
-        DateTime endsAt;
 
-        if (string.Equals(user.Role, "VIP", StringComparison.OrdinalIgnoreCase) && transaction.EndsAt > now)
-        {
-            startsAt = transaction.StartsAt;
-            endsAt = transaction.EndsAt.AddDays(plan.DurationDays);
-        }
-        else
-        {
-            startsAt = now;
-            endsAt = now.AddDays(plan.DurationDays);
-            user.Role = "VIP";
-        }
+        var activeMaxEndsAt = await _db.PaymentTransactions
+            .Where(pt => pt.UserId == transaction.UserId &&
+                         pt.TransactionId != transaction.TransactionId &&
+                         pt.TransactionStatus == "SUCCESS" &&
+                         pt.EndsAt > now)
+            .MaxAsync(pt => (DateTime?)pt.EndsAt, ct);
 
+        DateTime startsAt = activeMaxEndsAt.HasValue && activeMaxEndsAt.Value > now
+            ? activeMaxEndsAt.Value
+            : now;
+
+        DateTime endsAt = startsAt.AddDays(plan.DurationDays);
         endsAt = new DateTime(endsAt.Year, endsAt.Month, endsAt.Day, 23, 59, 59, DateTimeKind.Utc);
+
+        if (!string.Equals(user.Role, UserRoles.Admin, StringComparison.OrdinalIgnoreCase))
+        {
+            user.Role = UserRoles.Vip;
+        }
+        user.UpdatedAt = now;
+
         transaction.StartsAt = startsAt;
         transaction.EndsAt = endsAt;
         transaction.ReceiptUrl = $"/api/v1/subscriptions/transactions/{transaction.TransactionId}/receipt";
