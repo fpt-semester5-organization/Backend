@@ -30,6 +30,11 @@ public class AiDetectedItemDto
     public string? Unit { get; set; }
 
     /// <summary>
+    /// Độ tin cậy 0..1 do ai-service trả về (trường "confidence"); null nếu ai-service cũ không gửi.
+    /// </summary>
+    public double? Confidence { get; set; }
+
+    /// <summary>
     /// Tọa độ hộp bao [ymin, xmin, ymax, xmax] trong thang đo 0..1000 từ Gemini Vision.
     /// </summary>
     [JsonPropertyName("box2d")]

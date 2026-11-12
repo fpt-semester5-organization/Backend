@@ -70,4 +70,14 @@ public interface IAdminIngredientService
         string fileName,
         int adminId,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// FN-ADM-12-CAND: tối đa 05 ảnh ứng viên PENDING mới nhất cắt từ ảnh tủ lạnh người dùng.
+    /// </summary>
+    Task<IReadOnlyList<AdminIngredientCandidateDto>> GetCandidatesAsync(int id, CancellationToken ct = default);
+
+    /// <summary>
+    /// FN-ADM-12-APPLY: duyệt 01 ảnh ứng viên làm ảnh đại diện chính thức (BR-ADM-ING-03).
+    /// </summary>
+    Task<string> ApplyCandidateAsync(int id, int candidateId, int adminId, CancellationToken ct = default);
 }

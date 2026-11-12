@@ -120,8 +120,39 @@ public class AdminIngredientsController : BaseApiController
     }
 
     /// <summary>
-    /// FN-ADM-12: Lấy danh sách ảnh ứng viên bóc tách từ ảnh tủ lạnh người dùng (AI Vision box2d).
+    /// FN-ADM-12-CAND: Lấy tối đa 05 ảnh ứng viên PENDING bóc tách từ ảnh tủ lạnh người dùng (AI Vision box2d).
     /// </summary>
+    [HttpGet("{id:int}/candidates")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetCandidates([FromRoute] int id, CancellationToken ct)
+    {
+        EnsureAdmin();
+        var items = await _ingredientService.GetCandidatesAsync(id, ct);
+        return OkResponse(items, "Thành công.");
+    }
+
+    /// <summary>
+    /// FN-ADM-12-APPLY: Duyệt 01 ảnh ứng viên làm ảnh đại diện chính thức (BR-ADM-ING-03). Chặn khi nguyên liệu đang khóa.
+    /// </summary>
+    [HttpPost("{id:int}/apply-candidate")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ApplyCandidate(
+        [FromRoute] int id,
+        [FromBody] ApplyIngredientCandidateRequest request,
+        CancellationToken ct)
+    {
+        var adminId = EnsureAdmin();
+        var imageUrl = await _ingredientService.ApplyCandidateAsync(id, request.CandidateId, adminId, ct);
+        return OkResponse(new { ingredientId = id, candidateId = request.CandidateId, imageUrl }, "Đã cập nhật ảnh đại diện từ ảnh ứng viên.");
+    }
+
     /// <summary>
     /// FN-ADM-12: Tải ảnh từ máy tính lên Cloudinary và lưu URL làm ảnh đại diện duy nhất cho nguyên liệu.
     /// </summary>

@@ -283,6 +283,8 @@ public class FridgeService : IFridgeService
         var detectedList = new List<DetectedFridgeIngredientDto>();
         var matchedItemsForSave = new List<(DetectedFridgeIngredientDto Dto, Ingredient MatchedIngredient)>();
         var newIngredientsToPersist = new List<Ingredient>();
+        // Mục được thu thập làm ảnh ứng viên: tên trùng hẳn danh mục hoặc nguyên liệu mới tạo từ chính khung này
+        var candidateEligible = new HashSet<DetectedFridgeIngredientDto>(ReferenceEqualityComparer.Instance);
 
         foreach (var rawItem in rawAiItems)
         {
@@ -306,32 +308,25 @@ public class FridgeService : IFridgeService
                     FoodGroup = rawItem.FoodGroup ?? "MEAT",
                     IsAnimalProduct = true,
                     IsRedMeat = true,
-                    Confidence = 0.95
+                    Confidence = ClampConfidence(rawItem.Confidence)
                 });
                 continue;
             }
 
-            // 2. Tìm trong danh mục nguyên liệu hiện có (>= 80% tương đồng)
-            Ingredient? bestMatch = null;
-            var highestSim = 0.0;
-
-            foreach (var ing in allIngredients)
-            {
-                var sim = StringSimilarityHelper.CalculateSimilarity(rawName, ing.IngredientName);
-                if (sim > highestSim)
-                {
-                    highestSim = sim;
-                    bestMatch = ing;
-                }
-            }
+            // 2. Tìm trong danh mục nguyên liệu hiện có: chỉ nhận tên trùng hẳn hoặc tên danh mục CHUNG HƠN
+            //    ("Ớt chuông vàng" → "Ớt chuông"); không đổi sang tên cụ thể hơn ("Chuối" ↛ "Hoa chuối thái mỏng").
+            var (bestMatch, catalogMatch) = StringSimilarityHelper.FindBestCatalogMatch(rawName, allIngredients, i => i.IngredientName);
 
             Ingredient targetIngredient;
             string targetName;
+            bool nameFitsCrop;
 
-            if (highestSim >= 0.80 && bestMatch != null)
+            if (catalogMatch.IsMatch && bestMatch != null)
             {
                 targetIngredient = bestMatch;
                 targetName = bestMatch.IngredientName;
+                // BR-ADM-ING-02 "khớp chính xác": khớp "chung hơn" / sai chính tả (vd. ớt chuông vàng → Ớt chuông) không thu thập
+                nameFitsCrop = catalogMatch.Kind == CatalogMatchKind.Exact;
             }
             else
             {
@@ -366,6 +361,7 @@ public class FridgeService : IFridgeService
 
                 targetIngredient = existingDbIng;
                 targetName = cleanName;
+                nameFitsCrop = true;
             }
 
             var dto = new DetectedFridgeIngredientDto
@@ -381,10 +377,14 @@ public class FridgeService : IFridgeService
                 FoodGroup = rawItem.FoodGroup,
                 IsAnimalProduct = rawItem.IsAnimalProduct,
                 IsRedMeat = false,
-                Confidence = 0.95
+                Confidence = ClampConfidence(rawItem.Confidence)
             };
             detectedList.Add(dto);
             matchedItemsForSave.Add((dto, targetIngredient));
+            if (nameFitsCrop)
+            {
+                candidateEligible.Add(dto);
+            }
         }
 
         // Lưu các nguyên liệu mới tạo vào CSDL trước khi gán vào FridgeInventory
@@ -492,40 +492,6 @@ public class FridgeService : IFridgeService
             // Lưu các thay đổi trong FridgeInventory
             await _db.SaveChangesAsync(ct);
 
-            // 6.3b Tận dụng ảnh bóc tách từ ảnh tủ lạnh làm avatar cho nguyên liệu nếu nguyên liệu CHƯA có ảnh
-            // Tuyệt đối không tự động gán đè nếu nguyên liệu đã có ảnh hoặc đang bị Khóa (IsLocked)
-            try
-            {
-                var hasIngChanges = false;
-                foreach (var (dto, matchedIng) in matchedItemsForSave)
-                {
-                    // Nếu nguyên liệu đã bị Khóa hoặc đã có ảnh đại diện, tuyệt đối KHÔNG đè
-                    if (matchedIng.IsLocked || !string.IsNullOrWhiteSpace(matchedIng.ImageUrl))
-                    {
-                        continue;
-                    }
-
-                    if (dto.Box2D != null && dto.Box2D.Count == 4 && dto.Confidence.HasValue && dto.Confidence.Value >= 0.80)
-                    {
-                        var croppedUrl = !string.IsNullOrWhiteSpace(dto.ThumbnailUrl)
-                            ? dto.ThumbnailUrl
-                            : BuildCloudinaryCropUrl(fridgeSession.ImageCdnUrl, dto.Box2D);
-
-                        matchedIng.ImageUrl = croppedUrl;
-                        hasIngChanges = true;
-                    }
-                }
-
-                if (hasIngChanges)
-                {
-                    await _db.SaveChangesAsync(ct);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Lỗi khi cập nhật ảnh nguyên liệu từ phiên quét tủ lạnh {SessionId}", fridgeSession.SessionId);
-            }
-
             // Gán lại InventoryId cho các mục vừa thêm mới
             foreach (var (dto, matchedIng) in matchedItemsForSave)
             {
@@ -541,6 +507,10 @@ public class FridgeService : IFridgeService
 
                 saved = true;
             }
+
+            // 6.3b BR-ADM-ING-02/03: thu thập ẢNH ỨNG VIÊN (không ghi Ingredients.Image_Url) — chạy với mọi lần quét
+            //      của Member, kể cả autoSave = false (frontend lưu từng món sau qua POST /fridge/items).
+            await CollectCandidateImagesAsync(fridgeSession, matchedItemsForSave, candidateEligible, ct);
 
             // 6.4 Ghi nhận nhật ký AIQuotaLogs
             var executionTime = aiResult?.ExecutionTimeMs ?? (int)sw.ElapsedMilliseconds;
@@ -835,6 +805,93 @@ public class FridgeService : IFridgeService
         _db.FridgeInventories.Remove(item);
         await _db.SaveChangesAsync(ct);
     }
+
+    /// <summary>BR-ADM-ING-02: độ tin cậy tối thiểu để thu thập khung nhận diện làm ảnh ứng viên.</summary>
+    public const double CandidateMinConfidence = 0.80;
+
+    /// <summary>BR-ADM-ING-02: số ảnh ứng viên PENDING tối đa cho mỗi nguyên liệu (giữ ảnh mới nhất, FIFO).</summary>
+    public const int MaxPendingCandidatesPerIngredient = 5;
+
+    /// <summary>
+    /// BR-ADM-ING-02/03 (plan/1.Implement/32, mục 4.3): với mỗi nguyên liệu khớp chính xác, chưa khóa, có box2d hợp lệ
+    /// và confidence ≥ 0.80 → thêm 01 ảnh ứng viên PENDING (Cloudinary crop URL, không tạo file mới).
+    /// Mỗi phiên quét lấy tối đa 01 ảnh/nguyên liệu (khung có độ tin cậy cao nhất). Giữ tối đa 05 ảnh PENDING mới nhất.
+    /// TUYỆT ĐỐI không cập nhật dbo.Ingredients. Lỗi ở bước này không làm hỏng kết quả quét.
+    /// </summary>
+    private async Task CollectCandidateImagesAsync(
+        FridgeSession session,
+        IReadOnlyList<(DetectedFridgeIngredientDto Dto, Ingredient MatchedIngredient)> items,
+        IReadOnlySet<DetectedFridgeIngredientDto> eligible,
+        CancellationToken ct)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(session.ImageCdnUrl)
+                || session.ImageCdnUrl.IndexOf("/upload/", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return; // ảnh gốc không phải URL Cloudinary (fallback nội bộ) → không cắt được
+            }
+
+            var best = items
+                .Where(x => eligible.Contains(x.Dto)
+                            && x.MatchedIngredient.IngredientId > 0
+                            && !x.MatchedIngredient.IsLocked
+                            && IsValidBox2D(x.Dto.Box2D)
+                            && x.Dto.Confidence is >= CandidateMinConfidence)
+                .GroupBy(x => x.MatchedIngredient.IngredientId)
+                .Select(g => g.OrderByDescending(x => x.Dto.Confidence).First())
+                .ToList();
+            if (best.Count == 0)
+            {
+                return;
+            }
+
+            var ingredientIds = best.Select(x => x.MatchedIngredient.IngredientId).ToList();
+            var pending = await _db.IngredientCandidateImages
+                .Where(c => ingredientIds.Contains(c.IngredientId) && c.Status == CandidateStatus.Pending)
+                .ToListAsync(ct);
+
+            foreach (var (dto, ingredient) in best)
+            {
+                var url = BuildCloudinaryCropUrl(session.ImageCdnUrl, dto.Box2D!);
+                if (url.Length > 500 || url == session.ImageCdnUrl)
+                {
+                    continue;
+                }
+
+                // FIFO: chừa chỗ cho ảnh mới, giữ tối đa 05 ảnh PENDING mới nhất
+                var existing = pending.Where(c => c.IngredientId == ingredient.IngredientId)
+                    .OrderBy(c => c.CreatedAt).ThenBy(c => c.CandidateId).ToList();
+                foreach (var old in existing.Take(Math.Max(0, existing.Count - (MaxPendingCandidatesPerIngredient - 1))))
+                {
+                    _db.IngredientCandidateImages.Remove(old);
+                }
+
+                _db.IngredientCandidateImages.Add(new IngredientCandidateImage
+                {
+                    IngredientId = ingredient.IngredientId,
+                    SessionId = session.SessionId,
+                    CroppedImageUrl = url,
+                    ConfidenceScore = Math.Round((decimal)Math.Clamp(dto.Confidence!.Value, 0.0, 1.0), 3),
+                    Status = CandidateStatus.Pending,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Lỗi khi thu thập ảnh ứng viên nguyên liệu từ phiên quét tủ lạnh {SessionId}", session.SessionId);
+        }
+    }
+
+    private static bool IsValidBox2D(List<int>? b)
+        => b is { Count: 4 } && b[0] >= 0 && b[1] >= 0 && b[2] <= 1000 && b[3] <= 1000 && b[0] < b[2] && b[1] < b[3];
+
+    /// <summary>Độ tin cậy thật từ ai-service, kẹp về 0..1; null nếu ai-service không gửi (frontend ẩn ô độ tin cậy).</summary>
+    public static double? ClampConfidence(double? value)
+        => value is null || double.IsNaN(value.Value) ? null : Math.Round(Math.Clamp(value.Value, 0.0, 1.0), 4);
 
     private static string NormalizeFreshness(string? freshness)
     {

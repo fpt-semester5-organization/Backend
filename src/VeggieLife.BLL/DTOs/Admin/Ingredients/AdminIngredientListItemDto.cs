@@ -15,6 +15,8 @@ public class AdminIngredientListItemDto
     public string FoodGroup { get; set; } = string.Empty;
     public string? ImageUrl { get; set; }
     public bool IsLocked { get; set; }
+    /// <summary>Số ảnh ứng viên PENDING từ tủ lạnh người dùng đang chờ duyệt (BR-ADM-ING-02).</summary>
+    public int CandidateCount { get; set; }
     public List<AdminIngredientAllergenItemDto> Allergens { get; set; } = new();
 }
 

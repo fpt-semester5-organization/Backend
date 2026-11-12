@@ -19,5 +19,7 @@ public partial class FridgeSession
 
     public virtual ICollection<FridgeInventory> FridgeInventories { get; set; } = new List<FridgeInventory>();
 
+    public virtual ICollection<IngredientCandidateImage> IngredientCandidateImages { get; set; } = new List<IngredientCandidateImage>();
+
     public virtual User User { get; set; } = null!;
 }

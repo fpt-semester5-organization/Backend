@@ -84,6 +84,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<IngredientAllergen> IngredientAllergens { get; set; }
 
+    public virtual DbSet<IngredientCandidateImage> IngredientCandidateImages { get; set; }
+
 
 
     public virtual DbSet<MealPlan> MealPlans { get; set; }
@@ -1083,6 +1085,44 @@ public partial class AppDbContext : DbContext
         });
 
 
+
+        modelBuilder.Entity<IngredientCandidateImage>(entity =>
+        {
+            entity.HasKey(e => e.CandidateId);
+
+            entity.ToTable("IngredientCandidateImages", tb => tb.HasCheckConstraint("CK_CandidateImages_Status", "[Status] IN ('PENDING', 'APPROVED', 'REJECTED')"));
+
+            entity.HasIndex(e => new { e.IngredientId, e.Status }, "IX_CandidateImages_Ingredient_ID");
+
+            entity.HasIndex(e => e.SessionId, "IX_CandidateImages_Session_ID");
+
+            entity.Property(e => e.CandidateId).HasColumnName("Candidate_ID");
+            entity.Property(e => e.IngredientId).HasColumnName("Ingredient_ID");
+            entity.Property(e => e.SessionId).HasColumnName("Session_ID");
+            entity.Property(e => e.CroppedImageUrl)
+                .HasMaxLength(500)
+                .IsUnicode(false)
+                .HasColumnName("Cropped_Image_URL");
+            entity.Property(e => e.ConfidenceScore)
+                .HasColumnType("decimal(4, 3)")
+                .HasColumnName("Confidence_Score");
+            entity.Property(e => e.Status)
+                .HasMaxLength(20)
+                .IsUnicode(false)
+                .HasDefaultValue("PENDING")
+                .HasColumnName("Status");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(sysdatetime())")
+                .HasColumnName("Created_At");
+
+            entity.HasOne(d => d.Ingredient).WithMany(p => p.IngredientCandidateImages)
+                .HasForeignKey(d => d.IngredientId)
+                .HasConstraintName("FK_IngredientCandidateImages_Ingredients");
+
+            entity.HasOne(d => d.Session).WithMany(p => p.IngredientCandidateImages)
+                .HasForeignKey(d => d.SessionId)
+                .HasConstraintName("FK_IngredientCandidateImages_FridgeSessions");
+        });
 
         modelBuilder.Entity<IngredientAllergen>(entity =>
 
