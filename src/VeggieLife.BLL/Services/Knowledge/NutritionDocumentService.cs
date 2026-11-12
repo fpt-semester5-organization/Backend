@@ -12,6 +12,9 @@ using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.DTOs.Admin.Knowledge;
 using VeggieLife.BLL.Services.AI;
 using VeggieLife.BLL.Services.Cache;
+using VeggieLife.BLL.DTOs.Ai;
+using VeggieLife.DAL.Context;
+using VeggieLife.DAL.Entities;
 using VeggieLife.DAL.External.Cloudinary;
 
 namespace VeggieLife.BLL.Services.Knowledge;
@@ -27,17 +30,20 @@ public class NutritionDocumentService : INutritionDocumentService
     private readonly IAiServiceClient _aiServiceClient;
     private readonly ILogger<NutritionDocumentService> _logger;
     private readonly ICloudinaryClient? _cloudinaryClient;
+    private readonly AppDbContext? _db;
 
     public NutritionDocumentService(
         IRedisService redis,
         IAiServiceClient aiServiceClient,
         ILogger<NutritionDocumentService> logger,
-        ICloudinaryClient? cloudinaryClient = null)
+        ICloudinaryClient? cloudinaryClient = null,
+        AppDbContext? db = null)
     {
         _redis = redis;
         _aiServiceClient = aiServiceClient;
         _logger = logger;
         _cloudinaryClient = cloudinaryClient;
+        _db = db;
     }
 
     public async Task<List<AdminNutritionDocumentDto>> GetDocumentsAsync(CancellationToken ct = default)
@@ -61,6 +67,7 @@ public class NutritionDocumentService : INutritionDocumentService
             await _redis.SetAsync(StorageKey, docs, null, ct);
         }
 
+        await ReconcileVisibilityAsync(docs, ct);
         return docs;
     }
 
@@ -87,11 +94,26 @@ public class NutritionDocumentService : INutritionDocumentService
         await request.FileStream.CopyToAsync(memoryStream, ct);
         memoryStream.Position = 0;
 
-        string text = ExtractTextFromStream(memoryStream, ext, request.Title, request.Author);
-
-        if (string.IsNullOrWhiteSpace(text) || text.Trim().Length < 20)
+        // Trích văn bản thật; KHÔNG nạp nội dung giả khi không đọc được (RAG chặt sẽ trích dẫn nhầm nội dung bịa).
+        // PDF có lớp chữ → PdfPig; PDF scan (chỉ có ảnh) → OCR bằng Gemini ở AI service (D118).
+        string text;
+        if (ext == ".pdf")
         {
-            text = $"{request.Title}\n\nTác giả: {request.Author ?? "VeggieLife"}\n\nTài liệu: {fileName}\n\nNội dung tài liệu chuyên sâu về dinh dưỡng thuần chay, cân bằng dưỡng chất và khuyến nghị sức khỏe thực vật.";
+            var (layerText, pageCount) = ReadPdfTextLayer(memoryStream);
+            if (IsScannedPdf(layerText, pageCount))
+            {
+                _logger.LogInformation("[NutritionDocumentService] '{File}' là PDF scan ({Pages} trang), chuyển sang OCR.", fileName, pageCount);
+                text = await OcrAndLogAsync(memoryStream.ToArray(), fileName, request.ActorUserId, ct);
+            }
+            else
+            {
+                text = layerText;
+            }
+            EnsureEnoughText(text);
+        }
+        else
+        {
+            text = ExtractTextFromStream(memoryStream, ext);
         }
 
         // Tạo Document ID chuẩn định dạng ký tự chữ số
@@ -100,8 +122,28 @@ public class NutritionDocumentService : INutritionDocumentService
 
         _logger.LogInformation("[NutritionDocumentService] Đang vector hoá tài liệu '{Title}' (ID: {DocId}) vào Qdrant...", request.Title, docId);
 
-        // Gọi AI Service để chia chunk và nhúng vector vào Qdrant
-        await _aiServiceClient.UpsertKnowledgeAsync("NUTRITION_DOC", docId, request.Title.Trim(), text, DateTime.UtcNow, ct);
+        // Gọi AI Service để chia chunk và nhúng vector vào Qdrant; tài liệu dài chia phần (giới hạn /rag/upsert 200.000 ký tự)
+        var parts = SplitIntoParts(text, MaxPartChars);
+        var totalChunks = 0;
+        try
+        {
+            for (var i = 0; i < parts.Count; i++)
+            {
+                var partTitle = parts.Count > 1 ? $"{request.Title.Trim()} — phần {i + 1}/{parts.Count}" : request.Title.Trim();
+                totalChunks += await _aiServiceClient.UpsertKnowledgeChunksAsync(
+                    "NUTRITION_DOC", PartSourceId(docId, i + 1), partTitle, parts[i], DateTime.UtcNow, ct);
+            }
+        }
+        catch
+        {
+            // Nạp dở dang → gỡ các phần đã nạp để không còn đoạn mồ côi trong Qdrant
+            for (var i = 0; i < parts.Count; i++)
+            {
+                try { await _aiServiceClient.DeleteKnowledgeAsync("NUTRITION_DOC", PartSourceId(docId, i + 1), CancellationToken.None); }
+                catch (Exception ex) { _logger.LogWarning(ex, "[NutritionDocumentService] Không gỡ được phần {Part} của {DocId}.", i + 1, docId); }
+            }
+            throw;
+        }
 
         // 1. Lưu bản sao tệp nguyên bản vào thư mục hệ thống để phục vụ endpoint xem trực tiếp trong iframe
         try
@@ -139,7 +181,6 @@ public class NutritionDocumentService : INutritionDocumentService
         // Ưu tiên endpoint nội bộ hệ thống để nhúng iframe 100% hiển thị không bị lỗi Cloudinary 401 ACL deny
         string fileUrl = $"/api/v1/admin/ai/knowledge/documents/{docId}/file";
 
-        var estimatedChunks = Math.Max(1, (int)Math.Ceiling(text.Length / 1200.0));
 
         var newDoc = new AdminNutritionDocumentDto
         {
@@ -148,7 +189,8 @@ public class NutritionDocumentService : INutritionDocumentService
             Author = author,
             FileName = fileName,
             FileType = ext == ".pdf" ? "PDF" : "MARKDOWN",
-            Chunks = estimatedChunks,
+            Chunks = totalChunks,
+            Parts = parts.Count,
             IsActive = true,
             UpdatedAt = DateTime.UtcNow,
             FileUrl = fileUrl
@@ -171,10 +213,14 @@ public class NutritionDocumentService : INutritionDocumentService
             throw AppException.NotFound(ErrorCodes.ErrAdmNotFound, $"Không tìm thấy tài liệu dinh dưỡng có ID '{id}'.");
         }
 
+        // Đổi trạng thái trên Qdrant TRƯỚC; lỗi thì ném ra, giữ nguyên Redis để hai bên không lệch nhau
+        var affected = await ApplyVisibilityAsync(doc, isActive, ct);
+
         doc.IsActive = isActive;
         doc.UpdatedAt = DateTime.UtcNow;
         await _redis.SetAsync(StorageKey, currentDocs, null, ct);
 
+        _logger.LogInformation("[NutritionDocumentService] {Count} đoạn vector của '{Id}' đã chuyển trạng thái.", affected, id);
         _logger.LogInformation("[NutritionDocumentService] Cập nhật trạng thái tài liệu '{Id}' thành {Status}.", id, isActive ? "HOẠT ĐỘNG" : "ĐÃ ẨN");
         return doc;
     }
@@ -189,7 +235,20 @@ public class NutritionDocumentService : INutritionDocumentService
         }
 
         _logger.LogInformation("[NutritionDocumentService] Đang xóa vector của tài liệu '{Id}' khỏi Qdrant...", id);
-        await _aiServiceClient.DeleteKnowledgeAsync("NUTRITION_DOC", id, ct);
+        var (sourceIds, bookNo, prefix) = ResolveQdrantSources(doc);
+        if (prefix == null)
+        {
+            // Tài liệu mặc định (sách/bài nhóm biên soạn) nằm trong thư mục knowledge của AI service, lần reindex sau sẽ nạp lại;
+            // nên chỉ ẩn vĩnh viễn trên Qdrant (cờ ẩn được giữ khi reindex) thay vì xóa điểm.
+            await _aiServiceClient.SetKnowledgeVisibilityAsync("NUTRITION_DOC", sourceIds, bookNo, null, false, ct);
+        }
+        else
+        {
+            for (var i = 1; i <= Math.Max(1, doc.Parts); i++)
+            {
+                await _aiServiceClient.DeleteKnowledgeAsync("NUTRITION_DOC", PartSourceId(doc.Id, i), ct);
+            }
+        }
 
         currentDocs.Remove(doc);
         await _redis.SetAsync(StorageKey, currentDocs, null, ct);
@@ -257,47 +316,206 @@ public class NutritionDocumentService : INutritionDocumentService
         return appDataDocs;
     }
 
-    private static string ExtractTextFromStream(Stream stream, string ext, string title, string? author)
+    /// <summary>Giới hạn mỗi lần gọi /rag/upsert (AI service nhận tối đa 200.000 ký tự).</summary>
+    public const int MaxPartChars = 150_000;
+
+    /// <summary>PDF có trung bình ít hơn ngần này ký tự mỗi trang coi như bản scan (ảnh), không có lớp văn bản.</summary>
+    public const int MinCharsPerPage = 40;
+
+    private static bool _visibilityReconciled;
+
+    /// <summary>sourceId trên Qdrant của phần thứ <paramref name="part"/> (phần 1 giữ nguyên Id để tương thích dữ liệu cũ).</summary>
+    public static string PartSourceId(string docId, int part) => part <= 1 ? docId : $"{docId}_P{part}";
+
+    /// <summary>
+    /// Ánh xạ Id tài liệu trên giao diện sang nguồn trên Qdrant:
+    /// DOC_BOOK_N → các phần sách N (sourceId N*1000+k, do scripts/ingest_books.py nạp);
+    /// DOC_GUIDE_X → sourceId "X" (front-matter id trong knowledge/nutrition);
+    /// tài liệu Admin tải lên → sourceId = Id và các phần Id_P2, Id_P3...
+    /// </summary>
+    public static (List<string> SourceIds, int? BookNo, string? Prefix) ResolveQdrantSources(AdminNutritionDocumentDto doc)
     {
+        if (doc.Id.StartsWith("DOC_BOOK_", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(doc.Id["DOC_BOOK_".Length..], out var bookNo))
+        {
+            return (new List<string>(), bookNo, null);
+        }
+
+        if (doc.Id.StartsWith("DOC_GUIDE_", StringComparison.OrdinalIgnoreCase))
+        {
+            return (new List<string> { doc.Id["DOC_GUIDE_".Length..] }, null, null);
+        }
+
+        return (new List<string> { doc.Id }, null, doc.Id);
+    }
+
+    private Task<int> ApplyVisibilityAsync(AdminNutritionDocumentDto doc, bool active, CancellationToken ct)
+    {
+        var (sourceIds, bookNo, prefix) = ResolveQdrantSources(doc);
+        return _aiServiceClient.SetKnowledgeVisibilityAsync("NUTRITION_DOC", sourceIds, bookNo, prefix, active, ct);
+    }
+
+    /// <summary>
+    /// Đẩy trạng thái bật/ẩn đang lưu ở Redis sang Qdrant (một lần mỗi tiến trình, khi Admin mở danh sách tài liệu).
+    /// Sửa dữ liệu cũ: trước đây ẩn tài liệu chỉ đổi cờ Redis nên đoạn vector vẫn được chatbot trích.
+    /// </summary>
+    private async Task ReconcileVisibilityAsync(List<AdminNutritionDocumentDto> docs, CancellationToken ct)
+    {
+        if (_visibilityReconciled) return;
+        try
+        {
+            foreach (var doc in docs)
+            {
+                await ApplyVisibilityAsync(doc, doc.IsActive, ct);
+            }
+
+            // Tài liệu mặc định đã bị xóa khỏi danh sách (bản cũ xóa sai sourceId nên đoạn vector còn sót) → ẩn trên Qdrant
+            var listed = new HashSet<string>(docs.Select(d => d.Id), StringComparer.OrdinalIgnoreCase);
+            foreach (var removed in GetDefaultDocuments().Where(d => !listed.Contains(d.Id)))
+            {
+                await ApplyVisibilityAsync(removed, false, ct);
+            }
+            _visibilityReconciled = true;
+            _logger.LogInformation("[NutritionDocumentService] Đã đối soát trạng thái bật/ẩn của {Count} tài liệu với Qdrant.", docs.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[NutritionDocumentService] Chưa đối soát được trạng thái tài liệu với Qdrant, sẽ thử lại lần sau.");
+        }
+    }
+
+    /// <summary>Chia văn bản dài thành các phần ≤ maxChars, cắt ở ranh giới đoạn văn.</summary>
+    public static List<string> SplitIntoParts(string text, int maxChars)
+    {
+        var parts = new List<string>();
+        var sb = new StringBuilder();
+        foreach (var para in Regex.Split(text, @"\n\s*\n"))
+        {
+            var piece = para.Trim();
+            if (piece.Length == 0) continue;
+            while (piece.Length > maxChars)
+            {
+                if (sb.Length > 0) { parts.Add(sb.ToString().Trim()); sb.Clear(); }
+                parts.Add(piece[..maxChars]);
+                piece = piece[maxChars..];
+            }
+            if (sb.Length + piece.Length + 2 > maxChars && sb.Length > 0)
+            {
+                parts.Add(sb.ToString().Trim());
+                sb.Clear();
+            }
+            sb.Append(piece).Append("\n\n");
+        }
+        if (sb.ToString().Trim().Length > 0) parts.Add(sb.ToString().Trim());
+        return parts;
+    }
+
+    /// <summary>Đọc lớp chữ của PDF bằng PdfPig theo thứ tự đọc từng trang; PDF hỏng/có mật khẩu → 422.</summary>
+    public static (string Text, int Pages) ReadPdfTextLayer(Stream stream)
+    {
+        var sb = new StringBuilder();
+        try
+        {
+            using var pdf = UglyToad.PdfPig.PdfDocument.Open(stream);
+            foreach (var page in pdf.GetPages())
+            {
+                var pageText = UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor.ContentOrderTextExtractor.GetText(page);
+                if (!string.IsNullOrWhiteSpace(pageText))
+                {
+                    sb.Append(pageText.Trim()).Append("\n\n");
+                }
+            }
+            return (sb.ToString().Replace("\r\n", "\n").Trim(), pdf.NumberOfPages);
+        }
+        catch (Exception ex) when (ex is not AppException)
+        {
+            throw AppException.UnprocessableEntity(ErrorCodes.ErrMediaInvalidFile,
+                "Không đọc được tệp PDF (tệp hỏng, bị mã hóa hoặc có mật khẩu).");
+        }
+    }
+
+    /// <summary>PDF có trung bình dưới <see cref="MinCharsPerPage"/> ký tự mỗi trang coi như bản scan (ảnh).</summary>
+    public static bool IsScannedPdf(string text, int pages)
+        => pages > 0 && Regex.Replace(text, @"\s+", string.Empty).Length < pages * MinCharsPerPage;
+
+    private static void EnsureEnoughText(string text)
+    {
+        if (Regex.Replace(text, @"\s+", string.Empty).Length < 50)
+        {
+            throw AppException.UnprocessableEntity(ErrorCodes.ErrMediaInvalidFile, "Tài liệu không có đủ nội dung văn bản để đưa vào kho tri thức.");
+        }
+    }
+
+    /// <summary>
+    /// Trích văn bản không cần AI: TXT/MD đọc UTF-8; PDF đọc lớp chữ. PDF scan → 422 (luồng tải lên sẽ OCR thay vì gọi hàm này).
+    /// </summary>
+    public static string ExtractTextFromStream(Stream stream, string ext)
+    {
+        string text;
         if (ext == ".txt" || ext == ".md")
         {
             using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-            return reader.ReadToEnd();
+            text = reader.ReadToEnd().Replace("\r\n", "\n").Trim();
         }
-
-        // Đọc nội dung file PDF cơ bản
-        using var memoryStream = new MemoryStream();
-        stream.CopyTo(memoryStream);
-        var bytes = memoryStream.ToArray();
-
-        // Trích xuất các chuỗi text nằm trong luồng PDF
-        var rawString = Encoding.ASCII.GetString(bytes);
-        var textMatches = Regex.Matches(rawString, @"\(([^()]*)\)\s*Tj", RegexOptions.Singleline);
-        if (textMatches.Count > 0)
+        else
         {
-            var sb = new StringBuilder();
-            foreach (Match m in textMatches)
+            var (layerText, pageCount) = ReadPdfTextLayer(stream);
+            if (IsScannedPdf(layerText, pageCount))
             {
-                var val = m.Groups[1].Value.Trim();
-                if (!string.IsNullOrWhiteSpace(val))
-                {
-                    sb.Append(val).Append(' ');
-                }
+                throw AppException.UnprocessableEntity(ErrorCodes.ErrMediaInvalidFile,
+                    $"PDF không có lớp văn bản (bản scan dạng ảnh, {pageCount} trang), cần nhận dạng chữ (OCR).");
             }
-            var extracted = sb.ToString().Trim();
-            if (extracted.Length > 50) return extracted;
+            text = layerText;
         }
 
-        // Fallback: Tìm các khối ký tự có nghĩa
-        var words = Regex.Matches(rawString, @"[a-zA-ZÀ-ỹ0-9\s,\.\-:\(\)]{4,}")
-            .Select(m => m.Value.Trim())
-            .Where(w => w.Length >= 4 && !w.Contains('/') && !w.Contains('\\'))
-            .Take(150);
+        EnsureEnoughText(text);
+        return text;
+    }
 
-        var joined = string.Join(" ", words);
-        if (joined.Length > 80) return joined;
+    /// <summary>OCR qua AI service và ghi AIQuotaLogs (Feature_Code AI_EMBEDDING — khâu nạp kho tri thức; CHECK của bảng chưa có mã OCR riêng).</summary>
+    private async Task<string> OcrAndLogAsync(byte[] pdf, string fileName, int? actorUserId, CancellationToken ct)
+    {
+        var started = DateTime.UtcNow;
+        AiOcrPdfResult result;
+        try
+        {
+            result = await _aiServiceClient.OcrPdfAsync(pdf, fileName, ct);
+        }
+        catch (AppException ex)
+        {
+            await LogOcrAsync(actorUserId, 0, 0, "ERROR", ex.Message, (int)(DateTime.UtcNow - started).TotalMilliseconds, ct);
+            throw;
+        }
 
-        return $"{title}\n\nTác giả: {author ?? "VeggieLife"}\n\nNội dung tài liệu chuyên sâu về dinh dưỡng thuần chay, cân bằng dưỡng chất và khuyến nghị sức khỏe thực vật.";
+        await LogOcrAsync(actorUserId, result.Usage.PromptTokens, result.Usage.CompletionTokens, "SUCCESS", null,
+            (int)(DateTime.UtcNow - started).TotalMilliseconds, ct);
+        _logger.LogInformation("[NutritionDocumentService] OCR '{File}': {Pages} trang, {Chars} ký tự, {In}/{Out} token.",
+            fileName, result.Pages, result.Text.Length, result.Usage.PromptTokens, result.Usage.CompletionTokens);
+        return result.Text.Replace("\r\n", "\n").Trim();
+    }
+
+    private async Task LogOcrAsync(int? actorUserId, int promptTokens, int completionTokens, string status, string? error, int elapsedMs, CancellationToken ct)
+    {
+        if (_db == null || actorUserId == null) return;
+        try
+        {
+            _db.AiquotaLogs.Add(new AiquotaLog
+            {
+                UserId = actorUserId.Value,
+                FeatureCode = "AI_EMBEDDING",
+                TokensConsumed = promptTokens + completionTokens,
+                CostEstimateUsd = AiCostCalculator.Calculate(promptTokens, completionTokens),
+                RequestStatus = status,
+                ErrorMessage = error is { Length: > 500 } ? error[..500] : error,
+                ExecutionTimeMs = elapsedMs,
+                CreatedAt = DateTime.UtcNow
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[NutritionDocumentService] Không ghi được AIQuotaLogs cho OCR.");
+        }
     }
 
     private static List<AdminNutritionDocumentDto> GetDefaultDocuments()
