@@ -514,13 +514,17 @@ public class FridgeService : IFridgeService
 
             // 6.4 Ghi nhận nhật ký AIQuotaLogs
             var executionTime = aiResult?.ExecutionTimeMs ?? (int)sw.ElapsedMilliseconds;
-            var tokensConsumed = aiResult?.TokensConsumed ?? 250;
+            var usage = aiResult?.Usage;
+            var tokensConsumed = usage != null ? usage.PromptTokens + usage.CompletionTokens : aiResult?.TokensConsumed ?? 250;
             var quotaLog = new AiquotaLog
             {
                 UserId = memberId,
                 FeatureCode = "AI_FRIDGE",
                 TokensConsumed = tokensConsumed,
-                CostEstimateUsd = AiCostCalculator.CalculateFromTotal(tokensConsumed),
+                // Có usage thật → tính theo giá riêng Input/Output; không có → ước lượng từ tổng
+                CostEstimateUsd = usage != null
+                    ? AiCostCalculator.Calculate(usage.PromptTokens, usage.CompletionTokens)
+                    : AiCostCalculator.CalculateFromTotal(tokensConsumed),
                 RequestStatus = "SUCCESS",
                 ExecutionTimeMs = executionTime > 0 ? executionTime : 500,
                 CreatedAt = DateTime.UtcNow

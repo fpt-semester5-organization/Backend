@@ -196,7 +196,7 @@ public class MealPlanService : IMealPlanService
                 .Take(100)
                 .ToList();
 
-            var (slots, usedAi, tokensConsumed, modelVersion) = await ScheduleMealsAsync(
+            var (slots, usedAi, tokensConsumed, modelVersion, aiCostUsd) = await ScheduleMealsAsync(
                 selectedCandidates,
                 profile,
                 targetCalories,
@@ -224,6 +224,7 @@ public class MealPlanService : IMealPlanService
                 slots,
                 selectedCandidates,
                 tokensConsumed,
+                aiCostUsd,
                 modelVersion,
                 (int)sw.ElapsedMilliseconds,
                 ct);
@@ -422,7 +423,7 @@ public class MealPlanService : IMealPlanService
         return candidates;
     }
 
-    private async Task<(List<(string DayOfWeek, string MealType, int RecipeId)> Slots, bool UsedAi, int TokensConsumed, string ModelVersion)>
+    private async Task<(List<(string DayOfWeek, string MealType, int RecipeId)> Slots, bool UsedAi, int TokensConsumed, string ModelVersion, decimal CostUsd)>
         ScheduleMealsAsync(
             List<Recipe> candidateRecipes,
             HealthProfile profile,
@@ -518,7 +519,9 @@ public class MealPlanService : IMealPlanService
                 if (caloCompliant)
                 {
                     _logger.LogInformation("[MealPlanService] AI xếp 21 bữa thành công tại lần thử {Attempt}.", attempt);
-                    return (candidateSlots, true, aiResponse.TokensConsumed, aiResponse.ModelVersion);
+                    // Tính chi phí theo giá riêng Input/Output (không ước lượng 70/30 từ tổng)
+                    var mealCostUsd = AiCostCalculator.Calculate(aiResponse.Usage?.PromptTokens ?? 0, aiResponse.Usage?.CompletionTokens ?? 0);
+                    return (candidateSlots, true, aiResponse.TokensConsumed, aiResponse.ModelVersion, mealCostUsd);
                 }
 
                 _logger.LogWarning("[MealPlanService] AI lần {Attempt} có ngày lệch calo > 10%. Thử lại...", attempt);
@@ -539,7 +542,7 @@ public class MealPlanService : IMealPlanService
             startDate,
             ct);
 
-        return (fallbackSlots, false, 0, "fallback-template-engine");
+        return (fallbackSlots, false, 0, "fallback-template-engine", 0m);
     }
 
     private static bool CheckCalorieCompliance(
@@ -896,6 +899,7 @@ public class MealPlanService : IMealPlanService
         List<(string DayOfWeek, string MealType, int RecipeId)> slots,
         List<Recipe> candidateRecipes,
         int tokensConsumed,
+        decimal aiCostUsd,
         string modelVersion,
         int executionTimeMs,
         CancellationToken ct)
@@ -959,7 +963,7 @@ public class MealPlanService : IMealPlanService
             UserId = userId,
             FeatureCode = "MEAL_PLAN_GEN",
             TokensConsumed = generatedByAi ? (tokensConsumed > 0 ? tokensConsumed : 450) : 0,
-            CostEstimateUsd = generatedByAi ? AiCostCalculator.CalculateFromTotal(tokensConsumed > 0 ? tokensConsumed : 450) : 0m,
+            CostEstimateUsd = generatedByAi ? (aiCostUsd > 0 ? aiCostUsd : AiCostCalculator.CalculateFromTotal(tokensConsumed > 0 ? tokensConsumed : 450)) : 0m,
             RequestStatus = "SUCCESS",
             ExecutionTimeMs = executionTimeMs,
             CreatedAt = DateTime.UtcNow
