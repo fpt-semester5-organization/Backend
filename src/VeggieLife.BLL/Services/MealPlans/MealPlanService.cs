@@ -171,13 +171,20 @@ public class MealPlanService : IMealPlanService
 
             // 9. Lấy nguyên liệu tủ lạnh ảo nếu useFridge = true (BR-USR-08, BR-USR-VIS-FRESH-01)
             var fridgeIngredientIds = new HashSet<int>();
+            var fridgeIngredientNames = new List<string>();
             if (request.UseFridge)
             {
-                fridgeIngredientIds = (await _db.FridgeInventories
+                var fridgeInventories = await _db.FridgeInventories
                     .Where(f => f.UserId == userId)
-                    .Select(f => f.IngredientId)
-                    .ToListAsync(ct))
-                    .ToHashSet();
+                    .Include(f => f.Ingredient)
+                    .ToListAsync(ct);
+
+                fridgeIngredientIds = fridgeInventories.Select(f => f.IngredientId).ToHashSet();
+                fridgeIngredientNames = fridgeInventories
+                    .Where(f => f.Ingredient != null && !string.IsNullOrWhiteSpace(f.Ingredient.IngredientName))
+                    .Select(f => f.Ingredient.IngredientName)
+                    .Distinct()
+                    .ToList();
 
                 if (fridgeIngredientIds.Count == 0)
                 {
@@ -203,9 +210,10 @@ public class MealPlanService : IMealPlanService
                 forbiddenFoodGroups,
                 requiresAlliumFree,
                 fridgeIngredientIds,
-
+                fridgeIngredientNames,
                 durationDays,
                 startDate,
+                request.BudgetTier,
                 request.CustomInstructions,
                 ct);
             sw.Stop();
@@ -220,6 +228,10 @@ public class MealPlanService : IMealPlanService
                 targetCalories,
                 request.BudgetTier.ToUpperInvariant(),
                 request.CustomInstructions,
+                profile.HealthGoal,
+                profile.RegionPreference,
+                request.UseFridge,
+                requiresAlliumFree,
                 usedAi,
                 slots,
                 selectedCandidates,
@@ -276,11 +288,11 @@ public class MealPlanService : IMealPlanService
         request.DurationDays = duration;
         request.NumberOfDays = duration;
 
-        if (!string.IsNullOrWhiteSpace(request.CustomInstructions) && request.CustomInstructions.Length > 200)
+        if (!string.IsNullOrWhiteSpace(request.CustomInstructions) && request.CustomInstructions.Length > 500)
         {
             throw AppException.BadRequest(
                 ErrorCodes.ErrValidation,
-                "Ghi chú tùy chỉnh cho AI không được vượt quá 200 ký tự.");
+                "Ghi chú tùy chỉnh cho AI không được vượt quá 500 ký tự.");
         }
     }
 
@@ -423,7 +435,7 @@ public class MealPlanService : IMealPlanService
         return candidates;
     }
 
-    private async Task<(List<(string DayOfWeek, string MealType, int RecipeId)> Slots, bool UsedAi, int TokensConsumed, string ModelVersion, decimal CostUsd)>
+    private async Task<(List<(string DayOfWeek, string MealType, int RecipeId, string? MatchReason)> Slots, bool UsedAi, int TokensConsumed, string ModelVersion, decimal CostUsd)>
         ScheduleMealsAsync(
             List<Recipe> candidateRecipes,
             HealthProfile profile,
@@ -431,8 +443,10 @@ public class MealPlanService : IMealPlanService
             HashSet<string> forbiddenFoodGroups,
             bool requiresAlliumFree,
             HashSet<int> fridgeIngredientIds,
+            List<string> fridgeIngredientNames,
             int durationDays,
             DateOnly startDate,
+            string budgetTier,
             string? customInstructions,
             CancellationToken ct)
     {
@@ -445,10 +459,16 @@ public class MealPlanService : IMealPlanService
             {
                 TargetDailyCalories = targetCalories,
                 DietarySchoolCode = profile.DietarySchool.SchoolCode,
+                DietarySchoolName = profile.DietarySchool.SchoolName,
                 RequiresAlliumFree = requiresAlliumFree,
+                HealthGoal = profile.HealthGoal,
+                RegionPreference = profile.RegionPreference,
+                BudgetTier = budgetTier,
+                TargetWeightKg = profile.TargetWeightKg,
                 DurationDays = durationDays,
                 StartDate = startDate.ToString("yyyy-MM-dd"),
                 ForbiddenFoodGroups = forbiddenFoodGroups.ToList(),
+                FridgeIngredients = fridgeIngredientNames,
                 CustomInstructions = customInstructions,
                 CandidateRecipes = candidateRecipes.Select(r => new AiCandidateRecipeDto
                 {
@@ -491,7 +511,7 @@ public class MealPlanService : IMealPlanService
                 }
 
                 // Kiểm tra 21 vị trí món ăn do AI xếp
-                var candidateSlots = new List<(string DayOfWeek, string MealType, int RecipeId)>();
+                var candidateSlots = new List<(string DayOfWeek, string MealType, int RecipeId, string? MatchReason)>();
                 var allSlotsValid = true;
 
                 for (var i = 0; i < aiResponse.Slots.Count; i++)
@@ -505,7 +525,7 @@ public class MealPlanService : IMealPlanService
                     var dayIdx = i / 3;
                     var slotDate = startDate.AddDays(dayIdx);
                     var dayCode = MapDayOfWeek(slotDate.DayOfWeek);
-                    candidateSlots.Add((dayCode, s.MealType, s.RecipeId));
+                    candidateSlots.Add((dayCode, s.MealType, s.RecipeId, s.MatchReason));
                 }
 
                 if (!allSlotsValid)
@@ -546,7 +566,7 @@ public class MealPlanService : IMealPlanService
     }
 
     private static bool CheckCalorieCompliance(
-        List<(string DayOfWeek, string MealType, int RecipeId)> slots,
+        List<(string DayOfWeek, string MealType, int RecipeId, string? MatchReason)> slots,
         Dictionary<int, Recipe> candidateLookup,
         decimal targetCalories,
         int durationDays = 7,
@@ -625,7 +645,7 @@ public class MealPlanService : IMealPlanService
         return true;
     }
 
-    private async Task<List<(string DayOfWeek, string MealType, int RecipeId)>> FallbackEngineScheduleAsync(
+    private async Task<List<(string DayOfWeek, string MealType, int RecipeId, string? MatchReason)>> FallbackEngineScheduleAsync(
         int dietarySchoolId,
         List<Recipe> candidateRecipes,
         decimal targetCalories,
@@ -649,7 +669,7 @@ public class MealPlanService : IMealPlanService
             if (templatePlan != null)
             {
                 var templateSlots = templatePlan.MealSlots
-                    .Select(s => (s.DayOfWeek, s.MealType, s.RecipeId))
+                    .Select(s => (s.DayOfWeek, s.MealType, s.RecipeId, (string?)(s.Notes ?? "Thực đơn mẫu thanh đạm.")))
                     .ToList();
 
                 // Kiểm tra thực đơn mẫu có hoàn toàn nằm trong tập ứng viên hợp lệ hay không
@@ -669,7 +689,7 @@ public class MealPlanService : IMealPlanService
             .ThenBy(r => r.CaloriesKcal)
             .ToList();
 
-        var fallbackSlots = new List<(string DayOfWeek, string MealType, int RecipeId)>();
+        var fallbackSlots = new List<(string DayOfWeek, string MealType, int RecipeId, string? MatchReason)>();
         var minKcal = targetCalories * 0.85m; // Dung sai ±15% cho Fallback Engine
         var maxKcal = targetCalories * 1.15m;
 
@@ -714,9 +734,9 @@ public class MealPlanService : IMealPlanService
 
             var (b, l, d) = bestTriplet.Value;
 
-            fallbackSlots.Add((day, "BREAKFAST", b.RecipeId));
-            fallbackSlots.Add((day, "LUNCH", l.RecipeId));
-            fallbackSlots.Add((day, "DINNER", d.RecipeId));
+            fallbackSlots.Add((day, "BREAKFAST", b.RecipeId, "Món ăn thanh đạm, cân đối dinh dưỡng."));
+            fallbackSlots.Add((day, "LUNCH", l.RecipeId, "Món ăn thanh đạm, cân đối dinh dưỡng."));
+            fallbackSlots.Add((day, "DINNER", d.RecipeId, "Món ăn thanh đạm, cân đối dinh dưỡng."));
 
             // Cập nhật lịch sử và tần suất
             var todayRecipes = new HashSet<int> { b.RecipeId, l.RecipeId, d.RecipeId };
@@ -895,8 +915,12 @@ public class MealPlanService : IMealPlanService
         decimal targetDailyKcal,
         string budgetTier,
         string? customInstructions,
+        string? healthGoal,
+        string? regionPreference,
+        bool useFridge,
+        bool requiresAlliumFree,
         bool generatedByAi,
-        List<(string DayOfWeek, string MealType, int RecipeId)> slots,
+        List<(string DayOfWeek, string MealType, int RecipeId, string? MatchReason)> slots,
         List<Recipe> candidateRecipes,
         int tokensConsumed,
         decimal aiCostUsd,
@@ -924,6 +948,10 @@ public class MealPlanService : IMealPlanService
             TargetDailyKcal = Math.Round(targetDailyKcal, 1),
             BudgetTier = budgetTier,
             CustomInstructions = customInstructions,
+            HealthGoal = healthGoal,
+            RegionPreference = regionPreference,
+            UseFridge = useFridge,
+            RequiresAlliumFree = requiresAlliumFree,
             PlanStatus = "DRAFT",
             GeneratedByAi = generatedByAi,
             CreatedAt = DateTime.UtcNow,
@@ -934,7 +962,7 @@ public class MealPlanService : IMealPlanService
         _db.MealPlans.Add(mealPlan);
         await _db.SaveChangesAsync(ct);
 
-        var finalSlots = new List<(string DayOfWeek, string MealType, int RecipeId)>();
+        var finalSlots = new List<(string DayOfWeek, string MealType, int RecipeId, string? MatchReason)>();
         for (var dayIndex = 0; dayIndex < safeDays; dayIndex++)
         {
             var dayCode = GetDayOfWeekCode(startDate.AddDays(dayIndex));
@@ -942,7 +970,7 @@ public class MealPlanService : IMealPlanService
             {
                 var slotIdx = finalSlots.Count;
                 var sourceSlot = slots[slotIdx % slots.Count];
-                finalSlots.Add((dayCode, mealType, sourceSlot.RecipeId));
+                finalSlots.Add((dayCode, mealType, sourceSlot.RecipeId, sourceSlot.MatchReason));
             }
         }
 
@@ -952,7 +980,8 @@ public class MealPlanService : IMealPlanService
             RecipeId = s.RecipeId,
             DayOfWeek = s.DayOfWeek,
             MealType = s.MealType,
-            IsCompleted = false
+            IsCompleted = false,
+            Notes = s.MatchReason
         }).ToList();
 
         _db.MealSlots.AddRange(mealSlotEntities);
@@ -1028,6 +1057,10 @@ public class MealPlanService : IMealPlanService
             DurationDays = mealPlan.DurationDays,
             BudgetTier = mealPlan.BudgetTier,
             CustomInstructions = mealPlan.CustomInstructions,
+            HealthGoal = mealPlan.HealthGoal,
+            RegionPreference = mealPlan.RegionPreference,
+            UseFridge = mealPlan.UseFridge,
+            RequiresAlliumFree = mealPlan.RequiresAlliumFree,
             TargetDailyKcal = mealPlan.TargetDailyKcal,
             PlanStatus = mealPlan.PlanStatus,
             GeneratedByAi = mealPlan.GeneratedByAi,
@@ -1083,7 +1116,8 @@ public class MealPlanService : IMealPlanService
                 PlanName = p.PlanName,
                 StartDate = p.StartDate.ToString("yyyy-MM-dd"),
                 PlanStatus = p.PlanStatus,
-                DurationDays = p.DurationDays
+                DurationDays = p.DurationDays,
+                UseFridge = p.UseFridge
             })
             .ToListAsync(ct);
 
@@ -1214,6 +1248,10 @@ public class MealPlanService : IMealPlanService
             DurationDays = plan.DurationDays,
             BudgetTier = plan.BudgetTier,
             CustomInstructions = plan.CustomInstructions,
+            HealthGoal = plan.HealthGoal,
+            RegionPreference = plan.RegionPreference,
+            UseFridge = plan.UseFridge,
+            RequiresAlliumFree = plan.RequiresAlliumFree,
             TargetDailyKcal = plan.TargetDailyKcal,
             PlanStatus = plan.PlanStatus,
             GeneratedByAi = plan.GeneratedByAi,
@@ -1335,6 +1373,10 @@ public class MealPlanService : IMealPlanService
             EndDate = detail.EndDate,
             BudgetTier = detail.BudgetTier,
             CustomInstructions = detail.CustomInstructions,
+            HealthGoal = detail.HealthGoal,
+            RegionPreference = detail.RegionPreference,
+            UseFridge = detail.UseFridge,
+            RequiresAlliumFree = detail.RequiresAlliumFree,
             TargetDailyKcal = detail.TargetDailyKcal,
             PlanStatus = detail.PlanStatus,
             GeneratedByAi = detail.GeneratedByAi,
@@ -1893,6 +1935,11 @@ public class MealPlanService : IMealPlanService
                 CurrentRecipeId = oldRecipe.RecipeId,
                 SwapNote = request.Note,
                 DietarySchoolCode = plan.DietarySchool?.SchoolCode ?? "VEGAN",
+                DietarySchoolName = plan.DietarySchool?.SchoolName,
+                HealthGoal = hp?.HealthGoal,
+                RegionPreference = hp?.RegionPreference,
+                BudgetTier = plan.BudgetTier,
+                RequiresAlliumFree = requiresAlliumFree,
                 MealType = slot.MealType,
                 TargetCalories = oldRecipe.CaloriesKcal,
                 ExcludedRecipeIds = excludedIds.ToList(),

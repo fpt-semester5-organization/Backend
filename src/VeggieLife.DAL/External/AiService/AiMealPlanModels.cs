@@ -10,12 +10,18 @@ public class AiMealPlanRequest
 {
     public decimal TargetDailyCalories { get; set; }
     public string DietarySchoolCode { get; set; } = null!;
+    public string? DietarySchoolName { get; set; }
     public bool RequiresAlliumFree { get; set; }
+    public string? HealthGoal { get; set; }
+    public string? RegionPreference { get; set; }
+    public string? BudgetTier { get; set; }
+    public decimal? TargetWeightKg { get; set; }
     public int DurationDays { get; set; } = 7;
     public string? StartDate { get; set; }
     public List<string> ForbiddenFoodGroups { get; set; } = new();
     public List<int> ExcludedRecipeIds { get; set; } = new();
     public List<AiCandidateRecipeDto> CandidateRecipes { get; set; } = new();
+    public List<string> FridgeIngredients { get; set; } = new();
     public string? CustomInstructions { get; set; }
 }
 
@@ -137,10 +143,15 @@ public class AiSwapMealByNoteRequest
     public int CurrentRecipeId { get; set; }
     public string SwapNote { get; set; } = null!;
     public string DietarySchoolCode { get; set; } = null!;
+    public string? DietarySchoolName { get; set; }
     public string MealType { get; set; } = null!;
     public decimal TargetCalories { get; set; }
     public List<int> ExcludedRecipeIds { get; set; } = new();
     public List<AiCandidateRecipeDto> CandidateRecipes { get; set; } = new();
+    public string? HealthGoal { get; set; }
+    public string? RegionPreference { get; set; }
+    public string? BudgetTier { get; set; }
+    public bool? RequiresAlliumFree { get; set; }
 }
 
 /// <summary>

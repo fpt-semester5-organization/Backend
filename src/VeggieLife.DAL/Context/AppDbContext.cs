@@ -1198,9 +1198,37 @@ public partial class AppDbContext : DbContext
 
             entity.Property(e => e.CustomInstructions)
 
-                .HasMaxLength(200)
+                .HasMaxLength(500)
 
                 .HasColumnName("Custom_Instructions");
+
+            entity.Property(e => e.HealthGoal)
+
+                .HasMaxLength(30)
+
+                .IsUnicode(false)
+
+                .HasColumnName("Health_Goal");
+
+            entity.Property(e => e.RegionPreference)
+
+                .HasMaxLength(20)
+
+                .IsUnicode(false)
+
+                .HasColumnName("Region_Preference");
+
+            entity.Property(e => e.UseFridge)
+
+                .HasDefaultValue(false)
+
+                .HasColumnName("Use_Fridge");
+
+            entity.Property(e => e.RequiresAlliumFree)
+
+                .HasDefaultValue(false)
+
+                .HasColumnName("Requires_Allium_Free");
 
             entity.Property(e => e.DietarySchoolId).HasColumnName("Dietary_School_ID");
 
