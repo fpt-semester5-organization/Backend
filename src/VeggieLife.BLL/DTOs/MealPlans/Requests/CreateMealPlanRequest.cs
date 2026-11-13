@@ -37,8 +37,8 @@ public class CreateMealPlanRequest
     public int? NumberOfDays { get; set; }
 
     /// <summary>
-    /// Ghi chú tùy chỉnh tự do cho AI, tối đa 200 ký tự (BR-USR-MEAL-CI-01, D88).
+    /// Ghi chú tùy chỉnh tự do cho AI, tối đa 500 ký tự (BR-USR-MEAL-CI-01, D88).
     /// </summary>
-    [MaxLength(200, ErrorMessage = "Ghi chú tùy chỉnh tối đa 200 ký tự.")]
+    [MaxLength(500, ErrorMessage = "Ghi chú tùy chỉnh tối đa 500 ký tự.")]
     public string? CustomInstructions { get; set; }
 }
