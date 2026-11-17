@@ -16,4 +16,6 @@ public class CreateAdminSubscriptionPlanRequest
 
     [Range(1, long.MaxValue, ErrorMessage = "Giá gói phải lớn hơn 0.")]
     public long PriceVnd { get; set; }
+
+    public string? FeaturesJson { get; set; }
 }

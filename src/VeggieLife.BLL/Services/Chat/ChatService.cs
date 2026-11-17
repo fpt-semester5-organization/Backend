@@ -32,6 +32,7 @@ public class ChatService : IChatService
     private readonly IRedisService _redisService;
     private readonly IAiServiceClient _aiServiceClient;
     private readonly ISystemSettingService? _settingService;
+    private readonly VeggieLife.BLL.Services.Subscriptions.IUserBenefitService? _userBenefitService;
     private readonly ILogger<ChatService> _logger;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -46,13 +47,15 @@ public class ChatService : IChatService
         IRedisService redisService,
         IAiServiceClient aiServiceClient,
         ILogger<ChatService> logger,
-        ISystemSettingService? settingService = null)
+        ISystemSettingService? settingService = null,
+        VeggieLife.BLL.Services.Subscriptions.IUserBenefitService? userBenefitService = null)
     {
         _dbContext = dbContext;
         _redisService = redisService;
         _aiServiceClient = aiServiceClient;
         _logger = logger;
         _settingService = settingService;
+        _userBenefitService = userBenefitService;
     }
 
     /// <summary>
@@ -290,15 +293,23 @@ public class ChatService : IChatService
         }
         else
         {
-            var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase);
-            var vipLimit = _settingService != null
-                ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_VIP", ChatConstants.VipDailyLimit, ct)
-                : ChatConstants.VipDailyLimit;
-            var freeLimit = _settingService != null
-                ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_FREE", ChatConstants.FreeMemberDailyLimit, ct)
-                : ChatConstants.FreeMemberDailyLimit;
+            if (_userBenefitService != null)
+            {
+                var benefits = await _userBenefitService.GetUserBenefitsAsync((int)userId!.Value, userRole, ct);
+                quotaLimit = benefits.ChatLimitDaily;
+            }
+            else
+            {
+                var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase);
+                var vipLimit = _settingService != null
+                    ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_VIP", ChatConstants.VipDailyLimit, ct)
+                    : ChatConstants.VipDailyLimit;
+                var freeLimit = _settingService != null
+                    ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_FREE", ChatConstants.FreeMemberDailyLimit, ct)
+                    : ChatConstants.FreeMemberDailyLimit;
 
-            quotaLimit = isVip ? vipLimit : freeLimit;
+                quotaLimit = isVip ? vipLimit : freeLimit;
+            }
             quotaScope = "DAILY";
 
             var todayStart = DateTime.UtcNow.Date;
@@ -804,12 +815,21 @@ public class ChatService : IChatService
             };
         }
 
-        var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase);
-        var quotaLimit = _settingService != null
-            ? (isVip
-                ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_VIP", ChatConstants.VipDailyLimit, ct)
-                : await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_FREE", ChatConstants.FreeMemberDailyLimit, ct))
-            : (isVip ? ChatConstants.VipDailyLimit : ChatConstants.FreeMemberDailyLimit);
+        int quotaLimit;
+        if (_userBenefitService != null)
+        {
+            var benefits = await _userBenefitService.GetUserBenefitsAsync((int)userId!.Value, userRole, ct);
+            quotaLimit = benefits.ChatLimitDaily;
+        }
+        else
+        {
+            var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase);
+            quotaLimit = _settingService != null
+                ? (isVip
+                    ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_VIP", ChatConstants.VipDailyLimit, ct)
+                    : await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_FREE", ChatConstants.FreeMemberDailyLimit, ct))
+                : (isVip ? ChatConstants.VipDailyLimit : ChatConstants.FreeMemberDailyLimit);
+        }
 
         var todayStart = DateTime.UtcNow.Date;
         var memberUsedToday = await _dbContext.ChatMessages

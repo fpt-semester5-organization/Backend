@@ -56,7 +56,10 @@ public class AdminSubscriptionService : IAdminSubscriptionService
                 PlanName = p.PlanName,
                 DurationDays = p.DurationDays,
                 PriceVnd = (long)p.Price,
-                IsActive = p.IsActive
+                IsActive = p.IsActive,
+                Version = p.Version,
+                FeaturesJson = p.FeaturesJson,
+                EffectiveFrom = p.EffectiveFrom
             })
             .ToListAsync(ct);
 
@@ -107,17 +110,39 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             throw AppException.Conflict(ErrorCodes.ErrPlanDuplicate, "Tên gói đã tồn tại.");
         }
 
+        var now = DateTime.UtcNow;
         var plan = new SubscriptionPlan
         {
             AdminId = adminId,
             PlanName = trimmedName,
             DurationDays = request.DurationDays,
             Price = request.PriceVnd,
+            FeaturesJson = request.FeaturesJson,
             IsActive = true,
-            CreatedAt = DateTime.UtcNow
+            Version = 1,
+            EffectiveFrom = now,
+            CreatedAt = now
         };
 
         _db.SubscriptionPlans.Add(plan);
+        await _db.SaveChangesAsync(ct);
+
+        // Khởi tạo bản ghi phiên bản 1 trong SubscriptionPlanVersions
+        var initialVersion = new SubscriptionPlanVersion
+        {
+            PlanId = plan.PlanId,
+            Version = 1,
+            PlanName = plan.PlanName,
+            Price = plan.Price,
+            DurationDays = plan.DurationDays,
+            FeaturesJson = plan.FeaturesJson,
+            EffectiveFrom = now,
+            EffectiveTo = null,
+            UpdatedByAdminId = adminId,
+            ChangeReason = "Khởi tạo gói VIP ban đầu (Initial Version)",
+            CreatedAt = now
+        };
+        _db.SubscriptionPlanVersions.Add(initialVersion);
         await _db.SaveChangesAsync(ct);
 
         // Ghi AuditLogs theo BR-ADM-SYS-002
@@ -184,8 +209,12 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             planName = plan.PlanName,
             durationDays = plan.DurationDays,
             price = (long)plan.Price,
-            isActive = plan.IsActive
+            isActive = plan.IsActive,
+            version = plan.Version,
+            featuresJson = plan.FeaturesJson
         });
+
+        bool isPlanSpecificationChanged = false;
 
         if (!string.IsNullOrWhiteSpace(request?.PlanName))
         {
@@ -203,7 +232,11 @@ public class AdminSubscriptionService : IAdminSubscriptionService
                 throw AppException.Conflict(ErrorCodes.ErrPlanDuplicate, "Tên gói đã tồn tại.");
             }
 
-            plan.PlanName = trimmedName;
+            if (!string.Equals(plan.PlanName, trimmedName, StringComparison.Ordinal))
+            {
+                plan.PlanName = trimmedName;
+                isPlanSpecificationChanged = true;
+            }
         }
 
         if (request?.DurationDays.HasValue == true)
@@ -212,12 +245,23 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             {
                 throw AppException.BadRequest(ErrorCodes.ErrValidation, "Thời hạn gói phải lớn hơn 0.");
             }
-            plan.DurationDays = request.DurationDays.Value;
+            if (plan.DurationDays != request.DurationDays.Value)
+            {
+                plan.DurationDays = request.DurationDays.Value;
+                isPlanSpecificationChanged = true;
+            }
         }
 
-        if (request?.PriceVnd.HasValue == true)
+        if (request?.PriceVnd.HasValue == true && (long)plan.Price != request.PriceVnd.Value)
         {
             plan.Price = request.PriceVnd.Value;
+            isPlanSpecificationChanged = true;
+        }
+
+        if (request?.FeaturesJson != null && !string.Equals(plan.FeaturesJson, request.FeaturesJson, StringComparison.Ordinal))
+        {
+            plan.FeaturesJson = request.FeaturesJson;
+            isPlanSpecificationChanged = true;
         }
 
         if (request?.IsActive.HasValue == true)
@@ -225,7 +269,47 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             plan.IsActive = request.IsActive.Value;
         }
 
-        plan.UpdatedAt = DateTime.UtcNow;
+        var now = DateTime.UtcNow;
+
+        // Nếu thông số gói thay đổi -> Tăng version và ghi nhận lịch sử phiên bản (Plan Versioning)
+        if (isPlanSpecificationChanged)
+        {
+            // 1. Đóng phiên bản hiện hành trong SubscriptionPlanVersions
+            var currentVersionRecord = await _db.SubscriptionPlanVersions
+                .Where(v => v.PlanId == plan.PlanId && v.Version == plan.Version && v.EffectiveTo == null)
+                .OrderByDescending(v => v.VersionId)
+                .FirstOrDefaultAsync(ct);
+
+            if (currentVersionRecord != null)
+            {
+                currentVersionRecord.EffectiveTo = now;
+            }
+
+            // 2. Tăng số hiệu phiên bản của gói
+            plan.Version += 1;
+            plan.EffectiveFrom = now;
+
+            // 3. Tạo bản ghi phiên bản mới
+            var newVersionRecord = new SubscriptionPlanVersion
+            {
+                PlanId = plan.PlanId,
+                Version = plan.Version,
+                PlanName = plan.PlanName,
+                Price = plan.Price,
+                DurationDays = plan.DurationDays,
+                FeaturesJson = plan.FeaturesJson,
+                EffectiveFrom = now,
+                EffectiveTo = null,
+                UpdatedByAdminId = adminId,
+                ChangeReason = !string.IsNullOrWhiteSpace(request?.ChangeReason)
+                    ? request.ChangeReason.Trim()
+                    : $"Cập nhật thông số gói VIP lên Version {plan.Version}",
+                CreatedAt = now
+            };
+            _db.SubscriptionPlanVersions.Add(newVersionRecord);
+        }
+
+        plan.UpdatedAt = now;
 
         // Ghi AuditLogs theo BR-ADM-SYS-002
         _db.AuditLogs.Add(new AuditLog
@@ -241,10 +325,14 @@ public class AdminSubscriptionService : IAdminSubscriptionService
                 planName = plan.PlanName,
                 durationDays = plan.DurationDays,
                 price = (long)plan.Price,
-                isActive = plan.IsActive
+                isActive = plan.IsActive,
+                version = plan.Version,
+                featuresJson = plan.FeaturesJson
             }),
-            Note = $"Cập nhật gói VIP {plan.PlanName}",
-            CreatedAt = DateTime.UtcNow
+            Note = isPlanSpecificationChanged 
+                ? $"Cập nhật gói VIP {plan.PlanName} lên Version {plan.Version}" 
+                : $"Cập nhật trạng thái gói VIP {plan.PlanName}",
+            CreatedAt = now
         });
         await _db.SaveChangesAsync(ct);
 
@@ -256,6 +344,52 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             PlanId = plan.PlanId,
             PriceVnd = (long)plan.Price
         };
+    }
+
+    /// <summary>
+    /// Lấy lịch sử tất cả các phiên bản của một gói VIP (Audit & Plan Versioning).
+    /// </summary>
+    public async Task<IReadOnlyList<AdminSubscriptionPlanVersionDto>> GetSubscriptionPlanVersionsAsync(
+        int planId,
+        CancellationToken ct = default)
+    {
+        if (planId <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã gói không hợp lệ.");
+        }
+
+        var exists = await _db.SubscriptionPlans
+            .IgnoreQueryFilters()
+            .AnyAsync(p => p.PlanId == planId, ct);
+        if (!exists)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrAdmNotFound, "Gói VIP không tồn tại.");
+        }
+
+        var versions = await _db.SubscriptionPlanVersions
+            .AsNoTracking()
+            .Include(v => v.UpdatedByAdmin)
+            .Where(v => v.PlanId == planId)
+            .OrderByDescending(v => v.Version)
+            .Select(v => new AdminSubscriptionPlanVersionDto
+            {
+                VersionId = v.VersionId,
+                PlanId = v.PlanId,
+                Version = v.Version,
+                PlanName = v.PlanName,
+                Price = v.Price,
+                DurationDays = v.DurationDays,
+                FeaturesJson = v.FeaturesJson,
+                EffectiveFrom = v.EffectiveFrom,
+                EffectiveTo = v.EffectiveTo,
+                UpdatedByAdminId = v.UpdatedByAdminId,
+                UpdatedByAdminName = v.UpdatedByAdmin != null ? (!string.IsNullOrWhiteSpace(v.UpdatedByAdmin.FullName) ? v.UpdatedByAdmin.FullName : v.UpdatedByAdmin.Email) : null,
+                ChangeReason = v.ChangeReason,
+                CreatedAt = v.CreatedAt
+            })
+            .ToListAsync(ct);
+
+        return versions;
     }
 
     /// <summary>
@@ -490,6 +624,7 @@ public class AdminSubscriptionService : IAdminSubscriptionService
         try
         {
             await _redis.RemoveAsync($"vip_status:{transaction.UserId}", ct);
+            await _redis.RemoveAsync($"user_benefits:{transaction.UserId}", ct);
             await _redis.RemoveAsync($"cache:profile:{transaction.UserId}", ct);
             await _redis.RemoveAsync("plans_cache", ct);
         }
@@ -708,6 +843,7 @@ public class AdminSubscriptionService : IAdminSubscriptionService
         try
         {
             await _redis.RemoveAsync($"vip_status:{transaction.UserId}", ct);
+            await _redis.RemoveAsync($"user_benefits:{transaction.UserId}", ct);
             await _redis.RemoveAsync($"cache:profile:{transaction.UserId}", ct);
             await _redis.RemoveAsync("plans_cache", ct);
         }

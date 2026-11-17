@@ -33,6 +33,7 @@ public class FridgeService : IFridgeService
     private readonly IMediaService _mediaService;
     private readonly ILogger<FridgeService> _logger;
     private readonly VeggieLife.BLL.Services.Settings.ISystemSettingService? _settingService;
+    private readonly VeggieLife.BLL.Services.Subscriptions.IUserBenefitService? _userBenefitService;
 
     public const int GuestAiTrialLimit = 3;
     public const int MemberDailyLimit = 10;
@@ -45,7 +46,8 @@ public class FridgeService : IFridgeService
         IRedisService redisService,
         IMediaService mediaService,
         ILogger<FridgeService> logger,
-        VeggieLife.BLL.Services.Settings.ISystemSettingService? settingService = null)
+        VeggieLife.BLL.Services.Settings.ISystemSettingService? settingService = null,
+        VeggieLife.BLL.Services.Subscriptions.IUserBenefitService? userBenefitService = null)
     {
         _db = db;
         _aiClient = aiClient;
@@ -53,6 +55,7 @@ public class FridgeService : IFridgeService
         _mediaService = mediaService;
         _logger = logger;
         _settingService = settingService;
+        _userBenefitService = userBenefitService;
     }
 
     /// <summary>
@@ -128,11 +131,19 @@ public class FridgeService : IFridgeService
         else
         {
             var memberId = userId!.Value;
-            quotaLimit = _settingService != null
-                ? (isVip
-                    ? await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_VIP", VipDailyLimit, ct)
-                    : await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_FREE", MemberDailyLimit, ct))
-                : (isVip ? VipDailyLimit : MemberDailyLimit);
+            if (_userBenefitService != null)
+            {
+                var benefits = await _userBenefitService.GetUserBenefitsAsync(memberId, userRole, ct);
+                quotaLimit = benefits.FridgeScanLimitDaily;
+            }
+            else
+            {
+                quotaLimit = _settingService != null
+                    ? (isVip
+                        ? await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_VIP", VipDailyLimit, ct)
+                        : await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_FREE", MemberDailyLimit, ct))
+                    : (isVip ? VipDailyLimit : MemberDailyLimit);
+            }
 
             var todayUtc = DateTime.UtcNow.Date;
             currentUsed = await _db.AiquotaLogs.CountAsync(l =>
@@ -1595,11 +1606,20 @@ public class FridgeService : IFridgeService
         }
 
         var memberId = userId!.Value;
-        var quotaLimit = _settingService != null
-            ? (isVip
-                ? await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_VIP", VipDailyLimit, ct)
-                : await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_FREE", MemberDailyLimit, ct))
-            : (isVip ? VipDailyLimit : MemberDailyLimit);
+        int quotaLimit;
+        if (_userBenefitService != null)
+        {
+            var benefits = await _userBenefitService.GetUserBenefitsAsync(memberId, userRole, ct);
+            quotaLimit = benefits.FridgeScanLimitDaily;
+        }
+        else
+        {
+            quotaLimit = _settingService != null
+                ? (isVip
+                    ? await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_VIP", VipDailyLimit, ct)
+                    : await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_FREE", MemberDailyLimit, ct))
+                : (isVip ? VipDailyLimit : MemberDailyLimit);
+        }
 
         var todayUtc = DateTime.UtcNow.Date;
         var currentUsed = await _db.AiquotaLogs.CountAsync(l =>

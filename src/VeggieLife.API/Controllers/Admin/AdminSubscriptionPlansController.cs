@@ -79,6 +79,22 @@ public class AdminSubscriptionPlansController : BaseApiController
     }
 
     /// <summary>
+    /// Lấy lịch sử tất cả các phiên bản của một gói VIP (Audit & Plan Versioning).
+    /// </summary>
+    [HttpGet("{id:int}/versions")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<AdminSubscriptionPlanVersionDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetPlanVersions([FromRoute] int id, CancellationToken ct)
+    {
+        EnsureAdmin();
+        var result = await _subscriptionService.GetSubscriptionPlanVersionsAsync(id, ct);
+        return OkResponse(result, "OK");
+    }
+
+    /// <summary>
     /// FN-ADM-13: Xóa gói VIP (nếu chưa có giao dịch phát sinh) hoặc ẩn gói nếu đã có giao dịch.
     /// </summary>
     [HttpDelete("{id:int}")]

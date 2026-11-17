@@ -59,6 +59,13 @@ public interface IAdminSubscriptionService
         CancellationToken ct = default);
 
     /// <summary>
+    /// Lấy lịch sử tất cả các phiên bản của một gói VIP (Audit & Plan Versioning).
+    /// </summary>
+    Task<IReadOnlyList<AdminSubscriptionPlanVersionDto>> GetSubscriptionPlanVersionsAsync(
+        int planId,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Xóa gói VIP (nếu chưa có giao dịch thanh toán) hoặc chuyển sang ẩn gói (FN-ADM-13).
     /// </summary>
     Task DeleteSubscriptionPlanAsync(

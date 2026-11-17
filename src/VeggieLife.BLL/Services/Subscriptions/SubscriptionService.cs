@@ -30,6 +30,7 @@ public class SubscriptionService : ISubscriptionService
     private readonly IEmailService _emailService;
     private readonly ILogger<SubscriptionService> _logger;
     private readonly VeggieLife.BLL.Services.Settings.ISystemSettingService? _settingService;
+    private readonly IUserBenefitService? _userBenefitService;
 
     public SubscriptionService(
         AppDbContext db,
@@ -37,7 +38,8 @@ public class SubscriptionService : ISubscriptionService
         IPaymentGatewayService paymentGateway,
         IEmailService emailService,
         ILogger<SubscriptionService> logger,
-        VeggieLife.BLL.Services.Settings.ISystemSettingService? settingService = null)
+        VeggieLife.BLL.Services.Settings.ISystemSettingService? settingService = null,
+        IUserBenefitService? userBenefitService = null)
     {
         _db = db;
         _redis = redis;
@@ -45,6 +47,7 @@ public class SubscriptionService : ISubscriptionService
         _emailService = emailService;
         _logger = logger;
         _settingService = settingService;
+        _userBenefitService = userBenefitService;
     }
 
     /// <summary>
@@ -308,7 +311,12 @@ public class SubscriptionService : ISubscriptionService
             CreatedAt = now,
             StartsAt = startsAt,
             EndsAt = endsAt,
-            ReceiptUrl = payUrl != null && payUrl.Length > 255 ? payUrl[..255] : payUrl
+            ReceiptUrl = payUrl != null && payUrl.Length > 255 ? payUrl[..255] : payUrl,
+            PlanVersion = plan.Version,
+            SnapshotPlanName = plan.PlanName,
+            SnapshotPrice = plan.Price,
+            SnapshotDurationDays = plan.DurationDays,
+            SnapshotFeaturesJson = plan.FeaturesJson
         };
 
         _db.PaymentTransactions.Add(transaction);
@@ -538,6 +546,7 @@ public class SubscriptionService : ISubscriptionService
         try
         {
             await _redis.RemoveAsync($"vip_status:{user.UserId}", ct);
+            await _redis.RemoveAsync($"user_benefits:{user.UserId}", ct);
             await _redis.RemoveAsync($"cache:profile:{user.UserId}", ct);
         }
         catch (Exception ex)
@@ -787,6 +796,7 @@ public class SubscriptionService : ISubscriptionService
         try
         {
             await _redis.RemoveAsync($"vip_status:{user.UserId}", ct);
+            await _redis.RemoveAsync($"user_benefits:{user.UserId}", ct);
             await _redis.RemoveAsync($"cache:profile:{user.UserId}", ct);
         }
         catch (Exception ex)
@@ -922,12 +932,14 @@ public class SubscriptionService : ISubscriptionService
             FullName = fullName,
             Email = tx.User.Email,
             PlanId = tx.PlanId,
-            PlanName = tx.Plan.PlanName,
-            DurationDays = tx.Plan.DurationDays,
+            PlanVersion = tx.PlanVersion,
+            PlanName = tx.SnapshotPlanName ?? tx.Plan.PlanName,
+            DurationDays = tx.SnapshotDurationDays ?? tx.Plan.DurationDays,
             AmountVnd = tx.AmountVnd,
+            SnapshotFeaturesJson = tx.SnapshotFeaturesJson ?? tx.Plan.FeaturesJson,
             VipStartsAt = tx.StartsAt,
             VipEndsAt = tx.EndsAt,
-            Note = $"Thanh toán kích hoạt gói VIP {tx.Plan.PlanName} ({tx.Plan.DurationDays} ngày)"
+            Note = $"Thanh toán kích hoạt gói VIP {tx.SnapshotPlanName ?? tx.Plan.PlanName} ({tx.SnapshotDurationDays ?? tx.Plan.DurationDays} ngày, Version {tx.PlanVersion})"
         };
     }
 
@@ -982,9 +994,9 @@ public class SubscriptionService : ISubscriptionService
             activePlanDto = new SubscriptionPlanItemDto
             {
                 PlanId = activeVipTx.Plan.PlanId,
-                PlanName = activeVipTx.Plan.PlanName,
-                DurationDays = activeVipTx.Plan.DurationDays,
-                PriceVnd = (long)activeVipTx.Plan.Price,
+                PlanName = activeVipTx.SnapshotPlanName ?? activeVipTx.Plan.PlanName,
+                DurationDays = activeVipTx.SnapshotDurationDays ?? activeVipTx.Plan.DurationDays,
+                PriceVnd = (long)(activeVipTx.SnapshotPrice ?? activeVipTx.Plan.Price),
                 IsActive = activeVipTx.Plan.IsActive
             };
             endsAt = activeVipTx.EndsAt;
@@ -997,7 +1009,8 @@ public class SubscriptionService : ISubscriptionService
             AmountVnd = (long)pt.AmountVnd,
             Status = pt.TransactionStatus,
             CreatedAt = pt.CreatedAt,
-            PlanName = pt.Plan?.PlanName ?? string.Empty,
+            PlanName = pt.SnapshotPlanName ?? pt.Plan?.PlanName ?? string.Empty,
+            PlanVersion = pt.PlanVersion,
             OrderCode = pt.PartnerTransactionCode,
             CompletedAt = pt.CompletedAt,
             ReceiptUrl = string.Equals(pt.TransactionStatus, "SUCCESS", StringComparison.OrdinalIgnoreCase)
@@ -1005,11 +1018,18 @@ public class SubscriptionService : ISubscriptionService
                 : null
         }).ToList();
 
+        VipBenefitFeaturesDto? features = null;
+        if (_userBenefitService != null)
+        {
+            features = await _userBenefitService.GetUserBenefitsAsync(userId, isVip ? UserRoles.Vip : UserRoles.Member, ct);
+        }
+
         var result = new CurrentUserSubscriptionResponseDto
         {
             IsVip = isVip,
             Plan = activePlanDto,
             EndsAt = endsAt,
+            Features = features,
             Transactions = txDtos
         };
 
@@ -1119,12 +1139,14 @@ public class SubscriptionService : ISubscriptionService
             FullName = fullName,
             Email = tx.User.Email,
             PlanId = tx.PlanId,
-            PlanName = tx.Plan.PlanName,
-            DurationDays = tx.Plan.DurationDays,
+            PlanVersion = tx.PlanVersion,
+            PlanName = tx.SnapshotPlanName ?? tx.Plan.PlanName,
+            DurationDays = tx.SnapshotDurationDays ?? tx.Plan.DurationDays,
             AmountVnd = tx.AmountVnd,
+            SnapshotFeaturesJson = tx.SnapshotFeaturesJson ?? tx.Plan.FeaturesJson,
             VipStartsAt = tx.StartsAt,
             VipEndsAt = tx.EndsAt,
-            Note = $"Thanh toán kích hoạt gói VIP {tx.Plan.PlanName} ({tx.Plan.DurationDays} ngày)"
+            Note = $"Thanh toán kích hoạt gói VIP {tx.SnapshotPlanName ?? tx.Plan.PlanName} ({tx.SnapshotDurationDays ?? tx.Plan.DurationDays} ngày, Version {tx.PlanVersion})"
         };
     }
 }

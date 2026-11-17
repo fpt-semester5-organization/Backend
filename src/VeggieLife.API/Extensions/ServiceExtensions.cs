@@ -506,6 +506,7 @@ public static class ServiceExtensions
         services.AddScoped<VeggieLife.BLL.Services.Chat.IChatService, VeggieLife.BLL.Services.Chat.ChatService>();
 
         // Dịch vụ Đăng ký gói VIP & Thanh toán (FN-SUB-01..04)
+        services.AddScoped<VeggieLife.BLL.Services.Subscriptions.IUserBenefitService, VeggieLife.BLL.Services.Subscriptions.UserBenefitService>();
         services.AddScoped<VeggieLife.BLL.Services.Subscriptions.ISubscriptionService, VeggieLife.BLL.Services.Subscriptions.SubscriptionService>();
 
         // Dịch vụ Bóc tách công thức từ video & Background Worker (FN-POST-10)
