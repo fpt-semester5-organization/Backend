@@ -308,7 +308,9 @@ public class SubscriptionService : ISubscriptionService
             CreatedAt = now,
             StartsAt = startsAt,
             EndsAt = endsAt,
-            ReceiptUrl = payUrl != null && payUrl.Length > 255 ? payUrl[..255] : payUrl
+            ReceiptUrl = payUrl != null && payUrl.Length > 255 ? payUrl[..255] : payUrl,
+            SnapshotPlanName = plan.PlanName,
+            SnapshotFeaturesJson = plan.FeaturesJson
         };
 
         _db.PaymentTransactions.Add(transaction);
@@ -510,6 +512,8 @@ public class SubscriptionService : ISubscriptionService
         transaction.StartsAt = startsAt;
         transaction.EndsAt = endsAt;
         transaction.ReceiptUrl = $"/api/v1/subscriptions/transactions/{transaction.TransactionId}/receipt";
+        transaction.SnapshotPlanName ??= transaction.Plan?.PlanName;
+        transaction.SnapshotFeaturesJson ??= transaction.Plan?.FeaturesJson;
 
         // Cập nhật vai trò người dùng thành VIP (giữ nguyên nếu là ADMIN)
         var user = transaction.User;
@@ -759,6 +763,8 @@ public class SubscriptionService : ISubscriptionService
         transaction.StartsAt = startsAt;
         transaction.EndsAt = endsAt;
         transaction.ReceiptUrl = $"/api/v1/subscriptions/transactions/{transaction.TransactionId}/receipt";
+        transaction.SnapshotPlanName ??= transaction.Plan?.PlanName;
+        transaction.SnapshotFeaturesJson ??= transaction.Plan?.FeaturesJson;
 
         // 10. Ghi AuditLog
         _db.AuditLogs.Add(new AuditLog
@@ -922,12 +928,12 @@ public class SubscriptionService : ISubscriptionService
             FullName = fullName,
             Email = tx.User.Email,
             PlanId = tx.PlanId,
-            PlanName = tx.Plan.PlanName,
+            PlanName = tx.SnapshotPlanName ?? tx.Plan.PlanName,
             DurationDays = tx.Plan.DurationDays,
             AmountVnd = tx.AmountVnd,
             VipStartsAt = tx.StartsAt,
             VipEndsAt = tx.EndsAt,
-            Note = $"Thanh toán kích hoạt gói VIP {tx.Plan.PlanName} ({tx.Plan.DurationDays} ngày)"
+            Note = $"Thanh toán kích hoạt gói VIP {tx.SnapshotPlanName ?? tx.Plan.PlanName} ({tx.Plan.DurationDays} ngày)"
         };
     }
 
@@ -982,7 +988,7 @@ public class SubscriptionService : ISubscriptionService
             activePlanDto = new SubscriptionPlanItemDto
             {
                 PlanId = activeVipTx.Plan.PlanId,
-                PlanName = activeVipTx.Plan.PlanName,
+                PlanName = activeVipTx.SnapshotPlanName ?? activeVipTx.Plan.PlanName,
                 DurationDays = activeVipTx.Plan.DurationDays,
                 PriceVnd = (long)activeVipTx.Plan.Price,
                 IsActive = activeVipTx.Plan.IsActive
@@ -1119,12 +1125,12 @@ public class SubscriptionService : ISubscriptionService
             FullName = fullName,
             Email = tx.User.Email,
             PlanId = tx.PlanId,
-            PlanName = tx.Plan.PlanName,
+            PlanName = tx.SnapshotPlanName ?? tx.Plan.PlanName,
             DurationDays = tx.Plan.DurationDays,
             AmountVnd = tx.AmountVnd,
             VipStartsAt = tx.StartsAt,
             VipEndsAt = tx.EndsAt,
-            Note = $"Thanh toán kích hoạt gói VIP {tx.Plan.PlanName} ({tx.Plan.DurationDays} ngày)"
+            Note = $"Thanh toán kích hoạt gói VIP {tx.SnapshotPlanName ?? tx.Plan.PlanName} ({tx.Plan.DurationDays} ngày)"
         };
     }
 }

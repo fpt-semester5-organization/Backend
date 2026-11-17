@@ -25,11 +25,7 @@ public partial class SubscriptionPlan
 
     public int Version { get; set; } = 1;
 
-    public DateTime EffectiveFrom { get; set; }
-
     public virtual User Admin { get; set; } = null!;
 
     public virtual ICollection<PaymentTransaction> PaymentTransactions { get; set; } = new List<PaymentTransaction>();
-
-    public virtual ICollection<SubscriptionPlanVersion> SubscriptionPlanVersions { get; set; } = new List<SubscriptionPlanVersion>();
 }

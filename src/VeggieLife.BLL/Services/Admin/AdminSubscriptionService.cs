@@ -181,9 +181,11 @@ public class AdminSubscriptionService : IAdminSubscriptionService
 
         var oldValue = JsonSerializer.Serialize(new
         {
+            version = plan.Version,
             planName = plan.PlanName,
             durationDays = plan.DurationDays,
             price = (long)plan.Price,
+            features = plan.FeaturesJson,
             isActive = plan.IsActive
         });
 
@@ -225,6 +227,7 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             plan.IsActive = request.IsActive.Value;
         }
 
+        plan.Version += 1;
         plan.UpdatedAt = DateTime.UtcNow;
 
         // Ghi AuditLogs theo BR-ADM-SYS-002
@@ -238,12 +241,14 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             OldValue = oldValue,
             NewValue = JsonSerializer.Serialize(new
             {
+                version = plan.Version,
                 planName = plan.PlanName,
                 durationDays = plan.DurationDays,
                 price = (long)plan.Price,
+                features = plan.FeaturesJson,
                 isActive = plan.IsActive
             }),
-            Note = $"Cập nhật gói VIP {plan.PlanName}",
+            Note = $"Cập nhật gói VIP {plan.PlanName} lên Version {plan.Version}",
             CreatedAt = DateTime.UtcNow
         });
         await _db.SaveChangesAsync(ct);
