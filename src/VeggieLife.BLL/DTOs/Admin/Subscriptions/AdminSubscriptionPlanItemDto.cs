@@ -10,4 +10,7 @@ public class AdminSubscriptionPlanItemDto
     public int DurationDays { get; set; }
     public long PriceVnd { get; set; }
     public bool IsActive { get; set; }
+    public int Version { get; set; } = 1;
+    public string? FeaturesJson { get; set; }
+    public System.DateTime EffectiveFrom { get; set; }
 }

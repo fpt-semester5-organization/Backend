@@ -13,6 +13,7 @@ public class SubscriptionTransactionDto
     public string Status { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public string? PlanName { get; set; }
+    public int PlanVersion { get; set; } = 1;
     public string? OrderCode { get; set; }
     public DateTime? CompletedAt { get; set; }
     public string? ReceiptUrl { get; set; }

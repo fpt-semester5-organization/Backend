@@ -17,4 +17,9 @@ public class UpdateAdminSubscriptionPlanRequest
     public long? PriceVnd { get; set; }
 
     public bool? IsActive { get; set; }
+
+    public string? FeaturesJson { get; set; }
+
+    [StringLength(255, ErrorMessage = "Lý do thay đổi tối đa 255 ký tự.")]
+    public string? ChangeReason { get; set; }
 }

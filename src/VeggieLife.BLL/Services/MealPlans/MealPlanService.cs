@@ -72,6 +72,7 @@ public class MealPlanService : IMealPlanService
     private readonly IAiServiceClient _aiClient;
     private readonly IRedisService _redisService;
     private readonly ISystemSettingService _settingService;
+    private readonly VeggieLife.BLL.Services.Subscriptions.IUserBenefitService? _userBenefitService;
     private readonly ILogger<MealPlanService> _logger;
 
     public MealPlanService(
@@ -79,13 +80,15 @@ public class MealPlanService : IMealPlanService
         IAiServiceClient aiClient,
         IRedisService redisService,
         ISystemSettingService settingService,
-        ILogger<MealPlanService> logger)
+        ILogger<MealPlanService> logger,
+        VeggieLife.BLL.Services.Subscriptions.IUserBenefitService? userBenefitService = null)
     {
         _db = db;
         _aiClient = aiClient;
         _redisService = redisService;
         _settingService = settingService;
         _logger = logger;
+        _userBenefitService = userBenefitService;
     }
 
     public async Task<CreateMealPlanResponseData> CreateMealPlanAsync(
@@ -312,9 +315,18 @@ public class MealPlanService : IMealPlanService
     private async Task CheckWeeklyQuotaAsync(int userId, string userRole, DateOnly startDate, int durationDays, CancellationToken ct)
     {
         var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase);
-        var weeklyLimit = isVip
-            ? await _settingService.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_VIP", 3, ct)
-            : await _settingService.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_FREE", 1, ct);
+        int weeklyLimit;
+        if (_userBenefitService != null)
+        {
+            var benefits = await _userBenefitService.GetUserBenefitsAsync(userId, userRole, ct);
+            weeklyLimit = benefits.MealPlanLimitWeekly;
+        }
+        else
+        {
+            weeklyLimit = isVip
+                ? await _settingService.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_VIP", 3, ct)
+                : await _settingService.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_FREE", 1, ct);
+        }
 
         var weekStart = startDate;
         var weekEnd = startDate.AddDays(durationDays - 1);
