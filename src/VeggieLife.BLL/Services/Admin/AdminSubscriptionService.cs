@@ -59,7 +59,7 @@ public class AdminSubscriptionService : IAdminSubscriptionService
                 IsActive = p.IsActive,
                 Version = p.Version,
                 FeaturesJson = p.FeaturesJson,
-                EffectiveFrom = p.EffectiveFrom
+                EffectiveFrom = p.UpdatedAt ?? p.CreatedAt
             })
             .ToListAsync(ct);
 
@@ -120,29 +120,10 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             FeaturesJson = request.FeaturesJson,
             IsActive = true,
             Version = 1,
-            EffectiveFrom = now,
             CreatedAt = now
         };
 
         _db.SubscriptionPlans.Add(plan);
-        await _db.SaveChangesAsync(ct);
-
-        // Khởi tạo bản ghi phiên bản 1 trong SubscriptionPlanVersions
-        var initialVersion = new SubscriptionPlanVersion
-        {
-            PlanId = plan.PlanId,
-            Version = 1,
-            PlanName = plan.PlanName,
-            Price = plan.Price,
-            DurationDays = plan.DurationDays,
-            FeaturesJson = plan.FeaturesJson,
-            EffectiveFrom = now,
-            EffectiveTo = null,
-            UpdatedByAdminId = adminId,
-            ChangeReason = "Khởi tạo gói VIP ban đầu (Initial Version)",
-            CreatedAt = now
-        };
-        _db.SubscriptionPlanVersions.Add(initialVersion);
         await _db.SaveChangesAsync(ct);
 
         // Ghi AuditLogs theo BR-ADM-SYS-002
@@ -158,11 +139,13 @@ public class AdminSubscriptionService : IAdminSubscriptionService
                 planId = plan.PlanId,
                 planName = plan.PlanName,
                 durationDays = plan.DurationDays,
-                priceVnd = request.PriceVnd,
+                price = (long)plan.Price,
+                features = plan.FeaturesJson,
+                version = plan.Version,
                 isActive = plan.IsActive
             }),
             Note = $"Tạo mới gói VIP {plan.PlanName}",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = now
         });
         await _db.SaveChangesAsync(ct);
 
@@ -271,42 +254,10 @@ public class AdminSubscriptionService : IAdminSubscriptionService
 
         var now = DateTime.UtcNow;
 
-        // Nếu thông số gói thay đổi -> Tăng version và ghi nhận lịch sử phiên bản (Plan Versioning)
+        // Nếu thông số gói thay đổi -> Tăng version và ghi nhận vết AuditLog
         if (isPlanSpecificationChanged)
         {
-            // 1. Đóng phiên bản hiện hành trong SubscriptionPlanVersions
-            var currentVersionRecord = await _db.SubscriptionPlanVersions
-                .Where(v => v.PlanId == plan.PlanId && v.Version == plan.Version && v.EffectiveTo == null)
-                .OrderByDescending(v => v.VersionId)
-                .FirstOrDefaultAsync(ct);
-
-            if (currentVersionRecord != null)
-            {
-                currentVersionRecord.EffectiveTo = now;
-            }
-
-            // 2. Tăng số hiệu phiên bản của gói
             plan.Version += 1;
-            plan.EffectiveFrom = now;
-
-            // 3. Tạo bản ghi phiên bản mới
-            var newVersionRecord = new SubscriptionPlanVersion
-            {
-                PlanId = plan.PlanId,
-                Version = plan.Version,
-                PlanName = plan.PlanName,
-                Price = plan.Price,
-                DurationDays = plan.DurationDays,
-                FeaturesJson = plan.FeaturesJson,
-                EffectiveFrom = now,
-                EffectiveTo = null,
-                UpdatedByAdminId = adminId,
-                ChangeReason = !string.IsNullOrWhiteSpace(request?.ChangeReason)
-                    ? request.ChangeReason.Trim()
-                    : $"Cập nhật thông số gói VIP lên Version {plan.Version}",
-                CreatedAt = now
-            };
-            _db.SubscriptionPlanVersions.Add(newVersionRecord);
         }
 
         plan.UpdatedAt = now;
@@ -322,15 +273,17 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             OldValue = oldValue,
             NewValue = JsonSerializer.Serialize(new
             {
+                version = plan.Version,
                 planName = plan.PlanName,
                 durationDays = plan.DurationDays,
                 price = (long)plan.Price,
-                isActive = plan.IsActive,
-                version = plan.Version,
-                featuresJson = plan.FeaturesJson
+                features = plan.FeaturesJson,
+                isActive = plan.IsActive
             }),
             Note = isPlanSpecificationChanged 
-                ? $"Cập nhật gói VIP {plan.PlanName} lên Version {plan.Version}" 
+                ? (!string.IsNullOrWhiteSpace(request?.ChangeReason) 
+                    ? request.ChangeReason.Trim() 
+                    : $"Cập nhật gói VIP {plan.PlanName} lên Version {plan.Version}")
                 : $"Cập nhật trạng thái gói VIP {plan.PlanName}",
             CreatedAt = now
         });
@@ -347,7 +300,7 @@ public class AdminSubscriptionService : IAdminSubscriptionService
     }
 
     /// <summary>
-    /// Lấy lịch sử tất cả các phiên bản của một gói VIP (Audit & Plan Versioning).
+    /// Lấy lịch sử tất cả các phiên bản của một gói VIP (Audit & Plan Versioning từ AuditLogs).
     /// </summary>
     public async Task<IReadOnlyList<AdminSubscriptionPlanVersionDto>> GetSubscriptionPlanVersionsAsync(
         int planId,
@@ -358,38 +311,118 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã gói không hợp lệ.");
         }
 
-        var exists = await _db.SubscriptionPlans
+        var plan = await _db.SubscriptionPlans
             .IgnoreQueryFilters()
-            .AnyAsync(p => p.PlanId == planId, ct);
-        if (!exists)
+            .FirstOrDefaultAsync(p => p.PlanId == planId, ct);
+        if (plan == null)
         {
             throw AppException.NotFound(ErrorCodes.ErrAdmNotFound, "Gói VIP không tồn tại.");
         }
 
-        var versions = await _db.SubscriptionPlanVersions
+        var auditLogs = await _db.AuditLogs
             .AsNoTracking()
-            .Include(v => v.UpdatedByAdmin)
-            .Where(v => v.PlanId == planId)
-            .OrderByDescending(v => v.Version)
-            .Select(v => new AdminSubscriptionPlanVersionDto
-            {
-                VersionId = v.VersionId,
-                PlanId = v.PlanId,
-                Version = v.Version,
-                PlanName = v.PlanName,
-                Price = v.Price,
-                DurationDays = v.DurationDays,
-                FeaturesJson = v.FeaturesJson,
-                EffectiveFrom = v.EffectiveFrom,
-                EffectiveTo = v.EffectiveTo,
-                UpdatedByAdminId = v.UpdatedByAdminId,
-                UpdatedByAdminName = v.UpdatedByAdmin != null ? (!string.IsNullOrWhiteSpace(v.UpdatedByAdmin.FullName) ? v.UpdatedByAdmin.FullName : v.UpdatedByAdmin.Email) : null,
-                ChangeReason = v.ChangeReason,
-                CreatedAt = v.CreatedAt
-            })
+            .Where(a => a.TargetTable == "SubscriptionPlans"
+                     && a.TargetId == planId.ToString()
+                     && (a.Action == "UPDATE_VIP_PLAN" || a.Action == "UPDATE_VIP_PRICE" || a.Action == "CREATE_VIP_PLAN"))
+            .OrderByDescending(a => a.CreatedAt)
             .ToListAsync(ct);
 
-        return versions;
+        var adminIds = auditLogs.Where(a => a.ActorUserId.HasValue).Select(a => a.ActorUserId!.Value).Distinct().ToList();
+        var adminNames = await _db.Users
+            .Where(u => adminIds.Contains(u.UserId))
+            .ToDictionaryAsync(u => u.UserId, u => !string.IsNullOrWhiteSpace(u.FullName) ? u.FullName : u.Email, ct);
+
+        var versions = new List<AdminSubscriptionPlanVersionDto>();
+        var seenVersions = new HashSet<int>();
+
+        // 1. Phiên bản hiện hành
+        versions.Add(new AdminSubscriptionPlanVersionDto
+        {
+            VersionId = plan.PlanId * 1000 + plan.Version,
+            PlanId = plan.PlanId,
+            Version = plan.Version,
+            PlanName = plan.PlanName,
+            Price = plan.Price,
+            DurationDays = plan.DurationDays,
+            FeaturesJson = plan.FeaturesJson,
+            EffectiveFrom = plan.UpdatedAt ?? plan.CreatedAt,
+            EffectiveTo = null,
+            UpdatedByAdminId = plan.AdminId,
+            UpdatedByAdminName = adminNames.TryGetValue(plan.AdminId, out var curAdminName) ? curAdminName : null,
+            ChangeReason = $"Phiên bản hiện hành (Version {plan.Version})",
+            CreatedAt = plan.UpdatedAt ?? plan.CreatedAt
+        });
+        seenVersions.Add(plan.Version);
+
+        // 2. Trích xuất các phiên bản lịch sử từ AuditLogs
+        foreach (var log in auditLogs)
+        {
+            var adminName = log.ActorUserId.HasValue && adminNames.TryGetValue(log.ActorUserId.Value, out var aName) ? aName : null;
+            ParseAndAddVersionFromAuditJson(log.OldValue, plan.CreatedAt, log.CreatedAt, log.ActorUserId ?? plan.AdminId, adminName, log.Note, versions, seenVersions, plan);
+        }
+
+        return versions.OrderByDescending(v => v.Version).ToList();
+    }
+
+    private static void ParseAndAddVersionFromAuditJson(
+        string? json,
+        DateTime effFrom,
+        DateTime? effTo,
+        int adminId,
+        string? adminName,
+        string? note,
+        List<AdminSubscriptionPlanVersionDto> versions,
+        HashSet<int> seenVersions,
+        SubscriptionPlan plan)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            int version = 1;
+            if (root.TryGetProperty("version", out var vProp) && vProp.TryGetInt32(out var vVal))
+            {
+                version = vVal;
+            }
+
+            if (!seenVersions.Add(version)) return;
+
+            string name = root.TryGetProperty("planName", out var nProp) ? nProp.GetString() ?? plan.PlanName : plan.PlanName;
+            decimal price = root.TryGetProperty("price", out var pProp) && pProp.TryGetDecimal(out var pVal) ? pVal : plan.Price;
+            int duration = root.TryGetProperty("durationDays", out var dProp) && dProp.TryGetInt32(out var dVal) ? dVal : plan.DurationDays;
+            
+            string? features = null;
+            if (root.TryGetProperty("features", out var fProp))
+            {
+                features = fProp.ValueKind == JsonValueKind.String ? fProp.GetString() : fProp.GetRawText();
+            }
+            else if (root.TryGetProperty("featuresJson", out var fjProp))
+            {
+                features = fjProp.GetString();
+            }
+
+            versions.Add(new AdminSubscriptionPlanVersionDto
+            {
+                VersionId = plan.PlanId * 1000 + version,
+                PlanId = plan.PlanId,
+                Version = version,
+                PlanName = name,
+                Price = price,
+                DurationDays = duration,
+                FeaturesJson = features ?? plan.FeaturesJson,
+                EffectiveFrom = effFrom,
+                EffectiveTo = effTo,
+                UpdatedByAdminId = adminId,
+                UpdatedByAdminName = adminName,
+                ChangeReason = note ?? $"Phiên bản {version}",
+                CreatedAt = effFrom
+            });
+        }
+        catch
+        {
+            // Bỏ qua nếu json parse không hợp lệ
+        }
     }
 
     /// <summary>

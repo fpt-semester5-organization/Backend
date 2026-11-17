@@ -18,7 +18,6 @@ namespace VeggieLife.DAL.Context;
 public partial class AppDbContext
 {
     public virtual DbSet<SystemSetting> SystemSettings { get; set; }
-    public virtual DbSet<SubscriptionPlanVersion> SubscriptionPlanVersions { get; set; }
 
     /// <summary>
     /// Hook partial method được gọi ở cuối OnModelCreating của AppDbContext (scaffold sinh).
@@ -248,53 +247,17 @@ public partial class AppDbContext
                 .HasConstraintName("FK_SystemSettings_Users");
         });
 
-        // SubscriptionPlans: Thêm Version và EffectiveFrom
+        // SubscriptionPlans: Thêm Version
         modelBuilder.Entity<SubscriptionPlan>(entity =>
         {
             entity.Property(e => e.Version).HasColumnName("Version").HasDefaultValue(1);
-            entity.Property(e => e.EffectiveFrom).HasColumnName("Effective_From").HasDefaultValueSql("SYSDATETIME()");
         });
 
-        // PaymentTransactions: Thêm các cột Snapshot và Plan_Version (Bảo lưu quyền lợi biên lai)
+        // PaymentTransactions: Thêm các cột Snapshot bảo lưu quyền lợi biên lai
         modelBuilder.Entity<PaymentTransaction>(entity =>
         {
-            entity.Property(e => e.PlanVersion).HasColumnName("Plan_Version").HasDefaultValue(1);
             entity.Property(e => e.SnapshotFeaturesJson).HasColumnName("Snapshot_Features_JSON");
-            entity.Property(e => e.SnapshotPlanName).HasColumnName("Snapshot_Plan_Name").HasMaxLength(100);
-            entity.Property(e => e.SnapshotPrice).HasColumnName("Snapshot_Price").HasPrecision(18, 2);
-            entity.Property(e => e.SnapshotDurationDays).HasColumnName("Snapshot_Duration_Days");
-        });
-
-        // SubscriptionPlanVersions: Bảng lưu lịch sử các phiên bản gói của Admin
-        modelBuilder.Entity<SubscriptionPlanVersion>(entity =>
-        {
-            entity.ToTable("SubscriptionPlanVersions");
-            entity.HasKey(e => e.VersionId);
-
-            entity.Property(e => e.VersionId).HasColumnName("Version_ID");
-            entity.Property(e => e.PlanId).HasColumnName("Plan_ID");
-            entity.Property(e => e.Version).HasColumnName("Version");
-            entity.Property(e => e.PlanName).HasColumnName("Plan_Name").HasMaxLength(100);
-            entity.Property(e => e.Price).HasColumnName("Price").HasPrecision(18, 2);
-            entity.Property(e => e.DurationDays).HasColumnName("Duration_Days");
-            entity.Property(e => e.FeaturesJson).HasColumnName("Features_JSON");
-            entity.Property(e => e.EffectiveFrom).HasColumnName("Effective_From").HasDefaultValueSql("SYSDATETIME()");
-            entity.Property(e => e.EffectiveTo).HasColumnName("Effective_To");
-            entity.Property(e => e.UpdatedByAdminId).HasColumnName("Updated_By_Admin_ID");
-            entity.Property(e => e.ChangeReason).HasColumnName("Change_Reason").HasMaxLength(255);
-            entity.Property(e => e.CreatedAt).HasColumnName("Created_At").HasDefaultValueSql("SYSDATETIME()");
-
-            entity.HasOne(d => d.Plan)
-                .WithMany(p => p.SubscriptionPlanVersions)
-                .HasForeignKey(d => d.PlanId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK_SubPlanVersions_SubscriptionPlans");
-
-            entity.HasOne(d => d.UpdatedByAdmin)
-                .WithMany()
-                .HasForeignKey(d => d.UpdatedByAdminId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK_SubPlanVersions_Users");
+            entity.Property(e => e.SnapshotPlanName).HasColumnName("Snapshot_Plan_Name").HasMaxLength(200);
         });
     }
 

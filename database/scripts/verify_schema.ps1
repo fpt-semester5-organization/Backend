@@ -1,6 +1,6 @@
-﻿<#
+<#
 .SYNOPSIS
-    Kiểm tra tự động cơ sở dữ liệu VeggieLife (41 bảng, 343 cột).
+    Kiểm tra tự động cơ sở dữ liệu VeggieLife (42 bảng, 359 cột).
 .DESCRIPTION
     Chạy query kiểm tra trực tiếp vào SQL Server và báo kết quả PASS/FAIL.
 #>

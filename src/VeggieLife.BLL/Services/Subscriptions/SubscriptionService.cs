@@ -312,10 +312,7 @@ public class SubscriptionService : ISubscriptionService
             StartsAt = startsAt,
             EndsAt = endsAt,
             ReceiptUrl = payUrl != null && payUrl.Length > 255 ? payUrl[..255] : payUrl,
-            PlanVersion = plan.Version,
             SnapshotPlanName = plan.PlanName,
-            SnapshotPrice = plan.Price,
-            SnapshotDurationDays = plan.DurationDays,
             SnapshotFeaturesJson = plan.FeaturesJson
         };
 
@@ -351,7 +348,7 @@ public class SubscriptionService : ISubscriptionService
             TransactionId = transaction.TransactionId,
             OrderCode = orderCode,
             AmountVnd = (long)plan.Price,
-            PayUrl = payUrl,
+            PayUrl = payUrl ?? string.Empty,
             ExpiresAt = now.AddMinutes(5)
         };
     }
@@ -932,14 +929,14 @@ public class SubscriptionService : ISubscriptionService
             FullName = fullName,
             Email = tx.User.Email,
             PlanId = tx.PlanId,
-            PlanVersion = tx.PlanVersion,
-            PlanName = tx.SnapshotPlanName ?? tx.Plan.PlanName,
-            DurationDays = tx.SnapshotDurationDays ?? tx.Plan.DurationDays,
+            PlanVersion = tx.Plan?.Version ?? 1,
+            PlanName = tx.SnapshotPlanName ?? tx.Plan?.PlanName ?? "Gói VIP",
+            DurationDays = (int)(tx.EndsAt - tx.StartsAt).TotalDays > 0 ? (int)(tx.EndsAt - tx.StartsAt).TotalDays : (tx.Plan?.DurationDays ?? 30),
             AmountVnd = tx.AmountVnd,
-            SnapshotFeaturesJson = tx.SnapshotFeaturesJson ?? tx.Plan.FeaturesJson,
+            SnapshotFeaturesJson = tx.SnapshotFeaturesJson ?? tx.Plan?.FeaturesJson,
             VipStartsAt = tx.StartsAt,
             VipEndsAt = tx.EndsAt,
-            Note = $"Thanh toán kích hoạt gói VIP {tx.SnapshotPlanName ?? tx.Plan.PlanName} ({tx.SnapshotDurationDays ?? tx.Plan.DurationDays} ngày, Version {tx.PlanVersion})"
+            Note = $"Thanh toán kích hoạt gói VIP {tx.SnapshotPlanName ?? tx.Plan?.PlanName ?? "Gói VIP"} ({((int)(tx.EndsAt - tx.StartsAt).TotalDays > 0 ? (int)(tx.EndsAt - tx.StartsAt).TotalDays : (tx.Plan?.DurationDays ?? 30))} ngày, Version {tx.Plan?.Version ?? 1})"
         };
     }
 
@@ -995,8 +992,8 @@ public class SubscriptionService : ISubscriptionService
             {
                 PlanId = activeVipTx.Plan.PlanId,
                 PlanName = activeVipTx.SnapshotPlanName ?? activeVipTx.Plan.PlanName,
-                DurationDays = activeVipTx.SnapshotDurationDays ?? activeVipTx.Plan.DurationDays,
-                PriceVnd = (long)(activeVipTx.SnapshotPrice ?? activeVipTx.Plan.Price),
+                DurationDays = (int)(activeVipTx.EndsAt - activeVipTx.StartsAt).TotalDays > 0 ? (int)(activeVipTx.EndsAt - activeVipTx.StartsAt).TotalDays : activeVipTx.Plan.DurationDays,
+                PriceVnd = (long)activeVipTx.AmountVnd,
                 IsActive = activeVipTx.Plan.IsActive
             };
             endsAt = activeVipTx.EndsAt;
@@ -1010,7 +1007,7 @@ public class SubscriptionService : ISubscriptionService
             Status = pt.TransactionStatus,
             CreatedAt = pt.CreatedAt,
             PlanName = pt.SnapshotPlanName ?? pt.Plan?.PlanName ?? string.Empty,
-            PlanVersion = pt.PlanVersion,
+            PlanVersion = pt.Plan?.Version ?? 1,
             OrderCode = pt.PartnerTransactionCode,
             CompletedAt = pt.CompletedAt,
             ReceiptUrl = string.Equals(pt.TransactionStatus, "SUCCESS", StringComparison.OrdinalIgnoreCase)
@@ -1139,14 +1136,14 @@ public class SubscriptionService : ISubscriptionService
             FullName = fullName,
             Email = tx.User.Email,
             PlanId = tx.PlanId,
-            PlanVersion = tx.PlanVersion,
-            PlanName = tx.SnapshotPlanName ?? tx.Plan.PlanName,
-            DurationDays = tx.SnapshotDurationDays ?? tx.Plan.DurationDays,
+            PlanVersion = tx.Plan?.Version ?? 1,
+            PlanName = tx.SnapshotPlanName ?? tx.Plan?.PlanName ?? "Gói VIP",
+            DurationDays = (int)(tx.EndsAt - tx.StartsAt).TotalDays > 0 ? (int)(tx.EndsAt - tx.StartsAt).TotalDays : (tx.Plan?.DurationDays ?? 30),
             AmountVnd = tx.AmountVnd,
-            SnapshotFeaturesJson = tx.SnapshotFeaturesJson ?? tx.Plan.FeaturesJson,
+            SnapshotFeaturesJson = tx.SnapshotFeaturesJson ?? tx.Plan?.FeaturesJson,
             VipStartsAt = tx.StartsAt,
             VipEndsAt = tx.EndsAt,
-            Note = $"Thanh toán kích hoạt gói VIP {tx.SnapshotPlanName ?? tx.Plan.PlanName} ({tx.SnapshotDurationDays ?? tx.Plan.DurationDays} ngày, Version {tx.PlanVersion})"
+            Note = $"Thanh toán kích hoạt gói VIP {tx.SnapshotPlanName ?? tx.Plan?.PlanName ?? "Gói VIP"} ({((int)(tx.EndsAt - tx.StartsAt).TotalDays > 0 ? (int)(tx.EndsAt - tx.StartsAt).TotalDays : (tx.Plan?.DurationDays ?? 30))} ngày, Version {tx.Plan?.Version ?? 1})"
         };
     }
 }
