@@ -1,14 +1,16 @@
 -- ============================================================================
 -- File: 23_Seed_SubscriptionPlans_Versioning_MockData.sql
 -- Thư mục: database/seed/
--- Mục đích: Nạp dữ liệu mẫu kiểm thử bài toán Phân biệt quyền lợi Gói VIP:
---   1. Gói VIP 1 Tháng (Plan_ID = 1) được Admin nâng cấp từ Version 1 lên Version 2
---      (Giá tăng 49k -> 59k, Hạn mức AI tăng 200 -> 300 chat/ngày, 3 -> 5 thực đơn, thêm Video-to-Recipe STT).
---   2. Bảng [AuditLogs] có sẵn ghi vết toàn bộ lịch sử thay đổi của Admin (OldValue, NewValue, Note, CreatedAt).
---   3. Bảng [PaymentTransactions] thể hiện rõ 2 nhóm người dùng:
---      - Nhóm Đăng Ký TRƯỚC (trước ngày cập nhật): Snapshot quyền lợi Version 1 (200 chat/ngày, giá 49k).
---      - Nhóm Đăng Ký SAU (sau ngày cập nhật): Snapshot quyền lợi Version 2 (300 chat/ngày, giá 59k, Video-to-Recipe STT).
---   4. KHÔNG SỬ DỤNG BẢNG MỚI - Giữ trọn vẹn mô hình dữ liệu Conceptual & Logical.
+-- Mục đích: Đồng bộ quyền lợi chuẩn cho toàn bộ Gói VIP và nạp dữ liệu Snapshot:
+--   1. Hệ thống chỉ có 1 Role VIP duy nhất: Toàn bộ gói VIP (1 Tháng, 3 Tháng, 1 Năm)
+--      đều mang CHUNG bộ quyền lợi chuẩn theo cấu hình hệ thống:
+--      - Hạn mức Chat AI dinh dưỡng: 200 câu/ngày
+--      - Hạn mức Tạo thực đơn tuần: 3 thực đơn/tuần
+--      - Hạn mức Quét tủ lạnh AI: 30 lượt/ngày
+--      - Đặc quyền: Không quảng cáo, Huy hiệu VIP, Ưu tiên AI, Video-to-Recipe STT.
+--   2. Các gói chỉ khác nhau về Thời hạn (30, 90, 365 ngày) và Giá tiền (49k, 129k, 449k).
+--   3. Tất cả các gói được đặt ở Version = 1 chuẩn mực.
+--   4. Bảng [PaymentTransactions] đóng băng trọn vẹn bộ quyền lợi chuẩn này vào Snapshot_Features_JSON.
 -- ============================================================================
 
 USE [VeggieLifeDb];
@@ -19,83 +21,67 @@ GO
 SET QUOTED_IDENTIFIER ON;
 GO
 
-PRINT N'>> [Seed 23] Đang nạp dữ liệu mẫu kiểm thử Phân biệt quyền lợi VIP (Tận dụng AuditLogs & Snapshot)...';
+PRINT N'>> [Seed 23] Đang đồng bộ chuẩn quyền lợi các Gói VIP và dữ liệu Snapshot...';
 
-DECLARE @Now DATETIME2(7) = SYSDATETIME();
-DECLARE @UpdateDate DATETIME2(7) = DATEADD(DAY, -4, SYSDATETIME()); -- Mốc Admin sửa gói cách đây 4 ngày
-DECLARE @AdminId INT = (SELECT TOP 1 User_ID FROM dbo.Users WHERE Role = 'ADMIN' ORDER BY User_ID ASC);
-
-IF @AdminId IS NULL SET @AdminId = 1;
-
--- Lấy thông tin Gói VIP 1 Tháng
-DECLARE @PlanId INT = (SELECT TOP 1 Plan_ID FROM dbo.SubscriptionPlans WHERE Plan_Name LIKE N'%1 Tháng%' ORDER BY Plan_ID ASC);
-IF @PlanId IS NULL SET @PlanId = 1;
-
--- Định nghĩa JSON quyền lợi Version 1 và Version 2
-DECLARE @FeaturesV1 NVARCHAR(MAX) = N'{"chatLimitDaily":200,"mealPlanLimitWeekly":3,"fridgeScanLimitDaily":30,"exclusiveBadge":true,"adFree":true,"priorityAiResponse":true,"description":"Gói trải nghiệm linh hoạt 30 ngày (Version 1 cam kết đúng biên lai lúc mua)."}';
-DECLARE @FeaturesV2 NVARCHAR(MAX) = N'{"chatLimitDaily":300,"mealPlanLimitWeekly":5,"fridgeScanLimitDaily":50,"exclusiveBadge":true,"adFree":true,"priorityAiResponse":true,"vipDietitianAi":true,"videoToRecipeStt":true,"description":"Gói VIP 1 Tháng nâng cấp Version 2: Tăng lên 300 lượt AI chat/ngày, 5 thực đơn tuần và mở khóa tính năng tách công thức từ video nấu ăn (Video-to-Recipe STT)."}';
+-- Định nghĩa JSON quyền lợi VIP chuẩn mực theo cấu hình hệ thống
+DECLARE @StandardVipFeatures NVARCHAR(MAX) = N'{"chatLimitDaily":200,"mealPlanLimitWeekly":3,"fridgeScanLimitDaily":30,"exclusiveBadge":true,"adFree":true,"priorityAiResponse":true,"vipDietitianAi":true,"videoToRecipeStt":true,"description":"Mở khóa toàn bộ đặc quyền hội viên VIP VeggieLife."}';
 
 -- ============================================================================
--- 1. CẬP NHẬT GÓI VIP 1 THÁNG LÊN VERSION 2 TRONG BẢNG SubscriptionPlans
+-- 1. ĐỒNG BỘ 3 GÓI VIP TRONG BẢNG SubscriptionPlans VỀ VERSION 1 & 200 CHAT/NGÀY
 -- ============================================================================
+
+-- Gói 1: 1 Năm (Plan_ID = 1, Giá 449k, 365 ngày)
 UPDATE dbo.SubscriptionPlans
 SET 
-    [Version] = 2,
-    [Price] = 59000.00,
-    [Features_JSON] = @FeaturesV2,
-    [Updated_At] = @UpdateDate
-WHERE [Plan_ID] = @PlanId;
+    [Version] = 1,
+    [Price] = 449000.00,
+    [Duration_Days] = 365,
+    [Features_JSON] = @StandardVipFeatures,
+    [Is_Active] = 1,
+    [Updated_At] = GETUTCDATE()
+WHERE [Plan_ID] = 1;
 
-PRINT N'   -> Đã cập nhật Gói VIP 1 Tháng lên Version 2 (Giá 59.000đ, 300 chat/ngày, Video-to-Recipe).';
+-- Gói 2: 1 Tháng (Plan_ID = 2, Giá 49k, 30 ngày)
+UPDATE dbo.SubscriptionPlans
+SET 
+    [Version] = 1,
+    [Price] = 49000.00,
+    [Duration_Days] = 30,
+    [Features_JSON] = @StandardVipFeatures,
+    [Is_Active] = 1,
+    [Updated_At] = GETUTCDATE()
+WHERE [Plan_ID] = 2;
 
--- ============================================================================
--- 2. GHI VẾT LỊCH SỬ THAY ĐỔI CỦA ADMIN VÀO BẢNG AuditLogs (CÓ SẴN)
--- ============================================================================
-IF NOT EXISTS (
-    SELECT 1 FROM dbo.AuditLogs 
-    WHERE Target_Table = 'SubscriptionPlans' 
-      AND Target_ID = CAST(@PlanId AS NVARCHAR(50))
-      AND Action = 'UPDATE_VIP_PLAN'
-)
-BEGIN
-    INSERT INTO dbo.AuditLogs (
-        [Actor_User_ID], [Actor_Role], [Action], [Target_Table], [Target_ID],
-        [Old_Value], [New_Value], [Note], [Created_At]
-    )
-    VALUES (
-        @AdminId,
-        'ADMIN',
-        'UPDATE_VIP_PLAN',
-        'SubscriptionPlans',
-        CAST(@PlanId AS NVARCHAR(50)),
-        N'{"version":1,"planName":"Gói VIP 1 Tháng - Mở Khóa AI Dinh Dưỡng","price":49000.00,"durationDays":30,"features":' + @FeaturesV1 + N'}',
-        N'{"version":2,"planName":"Gói VIP 1 Tháng - Mở Khóa AI Dinh Dưỡng","price":59000.00,"durationDays":30,"features":' + @FeaturesV2 + N'}',
-        N'Admin nâng cấp gói VIP 1 Tháng lên Version 2: Tăng giá 49k -> 59k, hạn mức AI chat 200 -> 300/ngày, 3 -> 5 thực đơn tuần và mở khóa Video-to-Recipe STT',
-        @UpdateDate
-    );
+-- Gói 3: 3 Tháng (Plan_ID = 3, Giá 129k, 90 ngày)
+UPDATE dbo.SubscriptionPlans
+SET 
+    [Version] = 1,
+    [Price] = 129000.00,
+    [Duration_Days] = 90,
+    [Features_JSON] = @StandardVipFeatures,
+    [Is_Active] = 1,
+    [Updated_At] = GETUTCDATE()
+WHERE [Plan_ID] = 3;
 
-    PRINT N'   -> Đã ghi vết lịch sử nâng cấp gói vào bảng dbo.AuditLogs.';
-END;
+PRINT N'   -> Đã đồng bộ cả 3 gói VIP về Version 1 với hạn mức chuẩn (200 chat/ngày, 3 thực đơn/tuần, 30 quét tủ lạnh).';
 
 -- ============================================================================
--- 3. BẢO TOÀN QUYỀN LỢI CHO NHÓM ĐĂNG KÝ TRƯỚC (VERSION 1)
+-- 2. ĐÓNG BĂNG QUYỀN LỢI CHUẨN VÀO TOÀN BỘ GIAO DỊCH TRONG PaymentTransactions
 -- ============================================================================
--- Cập nhật Snapshot quyền lợi Version 1 cho toàn bộ giao dịch trước mốc @UpdateDate
 UPDATE pt
 SET 
-    pt.[Snapshot_Plan_Name] = N'Gói VIP 1 Tháng - Mở Khóa AI Dinh Dưỡng',
-    pt.[Snapshot_Features_JSON] = @FeaturesV1
+    pt.[Snapshot_Plan_Name] = sp.[Plan_Name],
+    pt.[Snapshot_Features_JSON] = @StandardVipFeatures
 FROM dbo.PaymentTransactions pt
-WHERE pt.[Plan_ID] = @PlanId 
-  AND pt.[Created_At] < @UpdateDate;
+JOIN dbo.SubscriptionPlans sp ON pt.[Plan_ID] = sp.[Plan_ID]
+WHERE pt.[Snapshot_Features_JSON] IS NULL 
+   OR pt.[Snapshot_Features_JSON] LIKE '%"chatLimitDaily":300%';
 
-PRINT N'   -> Đã đóng băng quyền lợi Version 1 (200 chat/ngày, 49k) cho người mua trước ngày cập nhật.';
+PRINT N'   -> Đã đóng băng quyền lợi chuẩn (200 chat/ngày) cho toàn bộ các giao dịch thanh toán.';
 
 -- ============================================================================
--- 4. THÊM GIAO DỊCH CỦA NHÓM ĐĂNG KÝ SAU KHI CẬP NHẬT GÓI (VERSION 2)
+-- 3. ĐẢM BẢO 2 GIAO DỊCH MẪU #36 VÀ #37 ĐỒNG NHẤT QUYỀN LỢI CHUẨN
 -- ============================================================================
-
--- Giao dịch #36: Thành viên Hoàng Kim (User 3) đăng ký mua gói mới (Version 2)
 IF NOT EXISTS (SELECT 1 FROM dbo.PaymentTransactions WHERE Partner_Transaction_Code = 'VIETQR_VIP_20261115_036')
 BEGIN
     INSERT INTO dbo.PaymentTransactions (
@@ -106,42 +92,30 @@ BEGIN
         [Snapshot_Plan_Name], [Snapshot_Features_JSON]
     )
     VALUES (
-        @PlanId,
-        3, -- User 3
+        2,
+        3, -- User 3 (Master Chef Hoàng Kim)
         'VIETQR',
         'VIETQR_VIP_20261115_036',
-        59000.00,
+        49000.00,
         'SUCCESS',
-        'sig_hash_vietqr_036_v2',
+        'sig_hash_vietqr_036_v1',
         DATEADD(DAY, -2, SYSDATETIME()),
         DATEADD(DAY, -2, SYSDATETIME()),
-        'https://receipts.veggielife.vn/vietqr/036_v2.pdf',
+        'https://receipts.veggielife.vn/vietqr/036.pdf',
         DATEADD(DAY, -2, SYSDATETIME()),
         DATEADD(DAY, 28, SYSDATETIME()),
         N'Gói VIP 1 Tháng - Mở Khóa AI Dinh Dưỡng',
-        @FeaturesV2
+        @StandardVipFeatures
     );
-
-    -- Ghi AuditLogs tương ứng cho giao dịch thanh toán thành công
-    INSERT INTO dbo.AuditLogs (
-        [Actor_User_ID], [Actor_Role], [Action], [Target_Table], [Target_ID],
-        [New_Value], [Note], [Created_At]
-    )
-    VALUES (
-        3,
-        'VIP',
-        'PAYMENT_SUCCESS',
-        'PaymentTransactions',
-        'VIETQR_VIP_20261115_036',
-        N'{"planId":' + CAST(@PlanId AS NVARCHAR(10)) + N',"version":2,"amount":59000.00,"gateway":"VIETQR"}',
-        N'Thanh toán thành công gói VIP 1 Tháng Version 2 qua VietQR',
-        DATEADD(DAY, -2, SYSDATETIME())
-    );
-
-    PRINT N'   -> Đã chèn giao dịch mẫu #36 mua gói Version 2 (User 3 - Hoàng Kim - 300 chat/ngày, Video-to-Recipe).';
+END
+ELSE
+BEGIN
+    UPDATE dbo.PaymentTransactions
+    SET [Amount_VND] = 49000.00,
+        [Snapshot_Features_JSON] = @StandardVipFeatures
+    WHERE Partner_Transaction_Code = 'VIETQR_VIP_20261115_036';
 END;
 
--- Giao dịch #37: Thành viên Phạm Đình (User 10) đăng ký mua gói mới (Version 2)
 IF NOT EXISTS (SELECT 1 FROM dbo.PaymentTransactions WHERE Partner_Transaction_Code = 'MOMO_VIP_20261116_037')
 BEGIN
     INSERT INTO dbo.PaymentTransactions (
@@ -152,39 +126,29 @@ BEGIN
         [Snapshot_Plan_Name], [Snapshot_Features_JSON]
     )
     VALUES (
-        @PlanId,
-        10, -- User 10
+        2,
+        10, -- User 10 (Phạm Đình Sống Xanh)
         'MOMO',
         'MOMO_VIP_20261116_037',
-        59000.00,
+        49000.00,
         'SUCCESS',
-        'sig_hash_momo_037_v2',
+        'sig_hash_momo_037_v1',
         DATEADD(DAY, -1, SYSDATETIME()),
         DATEADD(DAY, -1, SYSDATETIME()),
-        'https://receipts.veggielife.vn/momo/037_v2.pdf',
+        'https://receipts.veggielife.vn/momo/037.pdf',
         DATEADD(DAY, -1, SYSDATETIME()),
         DATEADD(DAY, 29, SYSDATETIME()),
         N'Gói VIP 1 Tháng - Mở Khóa AI Dinh Dưỡng',
-        @FeaturesV2
+        @StandardVipFeatures
     );
-
-    INSERT INTO dbo.AuditLogs (
-        [Actor_User_ID], [Actor_Role], [Action], [Target_Table], [Target_ID],
-        [New_Value], [Note], [Created_At]
-    )
-    VALUES (
-        10,
-        'VIP',
-        'PAYMENT_SUCCESS',
-        'PaymentTransactions',
-        'MOMO_VIP_20261116_037',
-        N'{"planId":' + CAST(@PlanId AS NVARCHAR(10)) + N',"version":2,"amount":59000.00,"gateway":"MOMO"}',
-        N'Thanh toán thành công gói VIP 1 Tháng Version 2 qua MoMo',
-        DATEADD(DAY, -1, SYSDATETIME())
-    );
-
-    PRINT N'   -> Đã chèn giao dịch mẫu #37 mua gói Version 2 (User 10 - Phạm Đình - 300 chat/ngày, Video-to-Recipe).';
+END
+ELSE
+BEGIN
+    UPDATE dbo.PaymentTransactions
+    SET [Amount_VND] = 49000.00,
+        [Snapshot_Features_JSON] = @StandardVipFeatures
+    WHERE Partner_Transaction_Code = 'MOMO_VIP_20261116_037';
 END;
 
-PRINT N'>> Hoàn tất nạp dữ liệu mẫu: Phân biệt rõ người đăng ký trước (V1) và sau (V2) thành công!';
+PRINT N'>> Hoàn tất đồng bộ dữ liệu mẫu: Cả 3 gói VIP đều đồng nhất 200 chat/ngày theo cấu hình hệ thống!';
 GO
