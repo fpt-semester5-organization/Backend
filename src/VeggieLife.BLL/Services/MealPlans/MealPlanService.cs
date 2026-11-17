@@ -41,6 +41,19 @@ public class MealPlanService : IMealPlanService
         var trimmed = reason.Trim();
         return trimmed.Length <= SwapReasonMaxLength ? trimmed : trimmed[..(SwapReasonMaxLength - 1)] + "…";
     }
+
+    /// <summary>
+    /// Chuẩn hóa hạn mức đổi món theo tỷ lệ số ngày (Math.Ceiling — Ưu ái trải nghiệm người dùng).
+    /// Hạn mức baseSevenDayLimit là chuẩn 7 ngày (từ SystemSettings). Thực đơn N ngày sẽ nhận:
+    /// Max(1, Ceiling(baseLimit * N / 7.0)).
+    /// </summary>
+    private static int CalculateScaledLimit(int baseSevenDayLimit, int durationDays)
+    {
+        var safeDays = Math.Clamp(durationDays, 1, 30);
+        return (safeDays == 7)
+            ? baseSevenDayLimit
+            : Math.Max(1, (int)Math.Ceiling((double)baseSevenDayLimit * safeDays / 7.0));
+    }
     private static readonly HashSet<string> RedMeatFoodGroups = new(StringComparer.OrdinalIgnoreCase) { "MEAT", "RED_MEAT", "BEEF", "PORK", "MAM" };
 
     private static string MapDayOfWeek(DayOfWeek dayOfWeek) => dayOfWeek switch
@@ -930,11 +943,11 @@ public class MealPlanService : IMealPlanService
     {
         var candidateLookup = candidateRecipes.ToDictionary(r => r.RecipeId);
 
-        var preDeployLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct);
-        var postDeployLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
-        var swapLimit = (durationDays == 7)
-            ? preDeployLimit
-            : Math.Max(1, (int)Math.Round((double)preDeployLimit * durationDays / 7.0));
+        var baseDraftLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct);
+        var baseActiveLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
+        var preDeployLimit = CalculateScaledLimit(baseDraftLimit, durationDays);
+        var postDeployLimit = CalculateScaledLimit(baseActiveLimit, durationDays);
+        var swapLimit = preDeployLimit;
 
         var safeDays = Math.Clamp(durationDays, 1, 30);
         var mealPlan = new MealPlan
@@ -1236,8 +1249,14 @@ public class MealPlanService : IMealPlanService
             })
             .ToList();
 
-        var preDeployLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct);
-        var postDeployLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
+        var baseDraftLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct);
+        var baseActiveLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
+        var preDeployLimit = CalculateScaledLimit(baseDraftLimit, plan.DurationDays);
+        var postDeployLimit = CalculateScaledLimit(baseActiveLimit, plan.DurationDays);
+
+        var currentLimit = string.Equals(plan.PlanStatus, "DRAFT", StringComparison.OrdinalIgnoreCase) ? preDeployLimit : postDeployLimit;
+        var currentUsed = string.Equals(plan.PlanStatus, "DRAFT", StringComparison.OrdinalIgnoreCase) ? preDeployUsed : postDeployUsed;
+        var dynamicSwapsRemaining = Math.Max(0, currentLimit - currentUsed);
 
         return new CreateMealPlanResponseData
         {
@@ -1263,8 +1282,8 @@ public class MealPlanService : IMealPlanService
                 PostDeployUsed = postDeployUsed,
                 PostDeployLimit = postDeployLimit
             },
-            MaxSwapsAllowed = plan.MaxSwapsAllowed,
-            SwapsRemaining = plan.SwapsRemaining
+            MaxSwapsAllowed = currentLimit,
+            SwapsRemaining = dynamicSwapsRemaining
         };
     }
 
@@ -1301,7 +1320,10 @@ public class MealPlanService : IMealPlanService
         }
 
         plan.PlanStatus = "ACTIVE";
-        plan.SwapsRemaining = plan.MaxSwapsAllowed;
+        var baseActiveLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
+        var postDeployLimit = CalculateScaledLimit(baseActiveLimit, plan.DurationDays);
+        plan.MaxSwapsAllowed = postDeployLimit;
+        plan.SwapsRemaining = postDeployLimit;
 
         var auditLog = new AuditLog
         {
@@ -1427,19 +1449,26 @@ public class MealPlanService : IMealPlanService
 
         // Kiểm tra hạn mức đổi món linh hoạt theo MaxSwapsAllowed & SwapsRemaining kết hợp SystemSettings
         var currentPhase = plan.PlanStatus;
-        var swapLimit = string.Equals(currentPhase, "DRAFT", StringComparison.OrdinalIgnoreCase)
+        var baseLimit = string.Equals(currentPhase, "DRAFT", StringComparison.OrdinalIgnoreCase)
             ? await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct)
             : await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
 
-        var swapsUsedInPhase = await _db.AuditLogs.CountAsync(a =>
+        var auditCount = await _db.AuditLogs.CountAsync(a =>
             a.TargetTable == "MealPlans" &&
             a.TargetId == id.ToString() &&
             a.Action == "MEAL_SLOT_SWAPPED" &&
             a.Note == currentPhase, ct);
 
-        var effectiveLimit = swapLimit != 21 ? swapLimit : (plan.MaxSwapsAllowed > 0 ? plan.MaxSwapsAllowed : 21);
+        var scaledLimit = CalculateScaledLimit(baseLimit, plan.DurationDays);
+        var effectiveLimit = baseLimit != 21
+            ? scaledLimit
+            : (plan.MaxSwapsAllowed > 0 && plan.MaxSwapsAllowed != 21 ? plan.MaxSwapsAllowed : scaledLimit);
 
-        if (plan.SwapsRemaining <= 0 || swapsUsedInPhase >= effectiveLimit)
+        var swapsUsedInPhase = Math.Max(
+            auditCount,
+            plan.MaxSwapsAllowed > 0 ? Math.Max(0, plan.MaxSwapsAllowed - plan.SwapsRemaining) : 0);
+
+        if (swapsUsedInPhase >= effectiveLimit)
         {
             throw AppException.Forbidden(
                 ErrorCodes.ErrQuotaMealSwapExceeded,
@@ -1659,7 +1688,10 @@ public class MealPlanService : IMealPlanService
 
         var newRecipeId = newRecipe.RecipeId;
         slot.RecipeId = newRecipeId;
-        plan.SwapsRemaining--;
+
+        var remainingAfterSwap = Math.Max(0, effectiveLimit - swapsUsedInPhase - 1);
+        plan.SwapsRemaining = remainingAfterSwap;
+        plan.MaxSwapsAllowed = effectiveLimit;
 
         if (!string.IsNullOrWhiteSpace(request?.CustomNote))
         {
@@ -1763,8 +1795,8 @@ public class MealPlanService : IMealPlanService
                 SwapCount = slotHistories.Count,
                 SwapHistories = slotHistories
             },
-            SwapsRemaining = plan.SwapsRemaining,
-            MaxSwapsAllowed = plan.MaxSwapsAllowed
+            SwapsRemaining = remainingAfterSwap,
+            MaxSwapsAllowed = effectiveLimit
         };
     }
 
@@ -1822,19 +1854,26 @@ public class MealPlanService : IMealPlanService
         }
 
         var currentPhase = plan.PlanStatus;
-        var swapLimit = string.Equals(currentPhase, "DRAFT", StringComparison.OrdinalIgnoreCase)
+        var baseLimit = string.Equals(currentPhase, "DRAFT", StringComparison.OrdinalIgnoreCase)
             ? await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct)
             : await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
 
-        var swapsUsedInPhase = await _db.AuditLogs.CountAsync(a =>
+        var auditCount = await _db.AuditLogs.CountAsync(a =>
             a.TargetTable == "MealPlans" &&
             a.TargetId == plan.PlanId.ToString() &&
             a.Action == "MEAL_SLOT_SWAPPED" &&
             a.Note == currentPhase, ct);
 
-        var effectiveLimit = swapLimit != 21 ? swapLimit : (plan.MaxSwapsAllowed > 0 ? plan.MaxSwapsAllowed : 21);
+        var scaledLimit = CalculateScaledLimit(baseLimit, plan.DurationDays);
+        var effectiveLimit = baseLimit != 21
+            ? scaledLimit
+            : (plan.MaxSwapsAllowed > 0 && plan.MaxSwapsAllowed != 21 ? plan.MaxSwapsAllowed : scaledLimit);
 
-        if (plan.SwapsRemaining <= 0 || swapsUsedInPhase >= effectiveLimit)
+        var swapsUsedInPhase = Math.Max(
+            auditCount,
+            plan.MaxSwapsAllowed > 0 ? Math.Max(0, plan.MaxSwapsAllowed - plan.SwapsRemaining) : 0);
+
+        if (swapsUsedInPhase >= effectiveLimit)
         {
             throw AppException.Forbidden(
                 ErrorCodes.ErrQuotaMealSwapExceeded,
@@ -2035,7 +2074,10 @@ public class MealPlanService : IMealPlanService
             var trimmedNote = request.Note.Trim();
             slot.Notes = trimmedNote.Length > 200 ? trimmedNote.Substring(0, 200) : trimmedNote;
         }
-        plan.SwapsRemaining--;
+
+        var remainingAfterSwap = Math.Max(0, effectiveLimit - swapsUsedInPhase - 1);
+        plan.SwapsRemaining = remainingAfterSwap;
+        plan.MaxSwapsAllowed = effectiveLimit;
 
         var caloriesDelta = Math.Round(selectedRecipe.CaloriesKcal - oldRecipe.CaloriesKcal, 1);
 
@@ -2127,8 +2169,8 @@ public class MealPlanService : IMealPlanService
                 SwapCount = slotHistories.Count,
                 SwapHistories = slotHistories
             },
-            SwapsRemaining = plan.SwapsRemaining,
-            MaxSwapsAllowed = plan.MaxSwapsAllowed
+            SwapsRemaining = remainingAfterSwap,
+            MaxSwapsAllowed = effectiveLimit
         };
     }
 
