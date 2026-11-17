@@ -171,7 +171,7 @@ public class UserBenefitService : IUserBenefitService
         }
 
         var planName = activeTx.SnapshotPlanName ?? activeTx.Plan?.PlanName ?? "Gói VIP";
-        var planVersion = activeTx.PlanVersion > 0 ? activeTx.PlanVersion : (activeTx.Plan?.Version ?? 1);
+        var planVersion = activeTx.Plan?.Version ?? 1;
         var featuresJson = activeTx.SnapshotFeaturesJson ?? activeTx.Plan?.FeaturesJson;
 
         var benefit = new VipBenefitFeaturesDto

@@ -82,6 +82,18 @@ GO
 :r "21_Seed_Community_Videos_Posts.sql" 
 GO
 
+-- 15. SEED INGREDIENT IMAGES (CLOUDINARY)
+:r "timeline/out/update_ingredient_images.sql"
+GO
+
+-- 16. SEED 2-MONTH AI QUOTA LOGS (CHO LLMOPS & COST ANALYTICS)
+:r "22_Seed_AIQuotaLogs_2Months.sql"
+GO
+
+-- 17. SEED VIP SUBSCRIPTION PLANS VERSIONING & BENEFIT SNAPSHOTS (AUDIT LOGS & RECEIPTS)
+:r "23_Seed_SubscriptionPlans_Versioning_MockData.sql"
+GO
+
 PRINT N'============================================================================';
 PRINT N'  HOÀN TẤT THỰC THI TOÀN BỘ MASTER DATA & SEED DATA CHO VEGGIELIFE DB!';
 PRINT N'============================================================================';

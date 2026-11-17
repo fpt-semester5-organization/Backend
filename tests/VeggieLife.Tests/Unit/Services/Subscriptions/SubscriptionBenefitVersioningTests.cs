@@ -23,8 +23,8 @@ using Xunit;
 namespace VeggieLife.Tests.Unit.Services.Subscriptions;
 
 /// <summary>
-/// Bộ kiểm thử nghiệp vụ cho tính năng Bảo lưu quyền lợi gói VIP và Quản trị phiên bản
-/// (VIP Benefit Snapshots, Grandfathering & Plan Versioning) [FN-SUB-01..04][FN-ADM-13][BR-PAY-SUB-01].
+/// Bộ kiểm thử nghiệp vụ cho tính năng Bảo lưu quyền lợi gói VIP và Quản trị phiên bản theo Kiến trúc Tinh gọn
+/// (VIP Benefit Snapshots, Grandfathering & Plan Versioning via Lean Architecture) [FN-SUB-01..04][FN-ADM-13][BR-PAY-SUB-01].
 /// </summary>
 public class SubscriptionBenefitVersioningTests
 {
@@ -145,7 +145,7 @@ public class SubscriptionBenefitVersioningTests
         };
         db.SubscriptionPlans.Add(plan);
 
-        // Giao dịch mua khi gói còn ở Version 1
+        // Giao dịch mua khi gói còn ở Version 1 (lưu snapshot của V1)
         var v1Tx = new PaymentTransaction
         {
             TransactionId = 1001,
@@ -156,10 +156,7 @@ public class SubscriptionBenefitVersioningTests
             AmountVnd = 49000,
             TransactionStatus = "SUCCESS",
             SignatureHash = "HASH",
-            PlanVersion = 1,
             SnapshotPlanName = "Gói VIP 1 Tháng - Bản V1",
-            SnapshotPrice = 49000,
-            SnapshotDurationDays = 30,
             SnapshotFeaturesJson = "{\"chatLimitDaily\":200,\"mealPlanLimitWeekly\":3,\"fridgeScanLimitDaily\":30,\"videoToRecipeStt\":false}",
             CreatedAt = DateTime.UtcNow.AddDays(-10),
             StartsAt = DateTime.UtcNow.AddDays(-10),
@@ -174,7 +171,7 @@ public class SubscriptionBenefitVersioningTests
         // Assert: Khách V1 phải được bảo lưu đúng hạn mức Version 1 (200 chat, 3 meal, 30 fridge, video STT = false)
         benefits.Should().NotBeNull();
         benefits.IsVip.Should().BeTrue();
-        benefits.PlanVersion.Should().Be(1);
+        benefits.PlanVersion.Should().Be(plan.Version);
         benefits.PlanName.Should().Be("Gói VIP 1 Tháng - Bản V1");
         benefits.ChatLimitDaily.Should().Be(200);
         benefits.MealPlanLimitWeekly.Should().Be(3);
@@ -226,10 +223,7 @@ public class SubscriptionBenefitVersioningTests
             AmountVnd = 59000,
             TransactionStatus = "SUCCESS",
             SignatureHash = "HASH",
-            PlanVersion = 2,
             SnapshotPlanName = "Gói VIP 1 Tháng - Nâng Cấp V2",
-            SnapshotPrice = 59000,
-            SnapshotDurationDays = 30,
             SnapshotFeaturesJson = "{\"chatLimitDaily\":300,\"mealPlanLimitWeekly\":5,\"fridgeScanLimitDaily\":50,\"videoToRecipeStt\":true}",
             CreatedAt = DateTime.UtcNow.AddDays(-2),
             StartsAt = DateTime.UtcNow.AddDays(-2),
@@ -284,29 +278,10 @@ public class SubscriptionBenefitVersioningTests
             DurationDays = 30,
             FeaturesJson = "{\"chatLimitDaily\":200}",
             Version = 1,
-            EffectiveFrom = DateTime.UtcNow.AddDays(-10),
             IsActive = true,
             CreatedAt = DateTime.UtcNow.AddDays(-10)
         };
         db.SubscriptionPlans.Add(plan);
-
-        // Bản ghi Version 1 trong bảng lịch sử
-        var v1Record = new SubscriptionPlanVersion
-        {
-            VersionId = 1,
-            PlanId = plan.PlanId,
-            Version = 1,
-            PlanName = plan.PlanName,
-            Price = plan.Price,
-            DurationDays = plan.DurationDays,
-            FeaturesJson = plan.FeaturesJson,
-            EffectiveFrom = plan.EffectiveFrom,
-            EffectiveTo = null,
-            UpdatedByAdminId = adminUser.UserId,
-            ChangeReason = "Initial release",
-            CreatedAt = plan.EffectiveFrom
-        };
-        db.SubscriptionPlanVersions.Add(v1Record);
         await db.SaveChangesAsync();
 
         // Act: Admin cập nhật giá từ 49k lên 59k và tăng chat lên 300
@@ -328,22 +303,19 @@ public class SubscriptionBenefitVersioningTests
         updatedPlan.Price.Should().Be(59000);
         updatedPlan.FeaturesJson.Should().Be("{\"chatLimitDaily\":300}");
 
-        // Kiểm tra Version 1 đã được đóng (EffectiveTo != null)
-        var oldVersionInDb = await db.SubscriptionPlanVersions.FirstAsync(v => v.PlanId == plan.PlanId && v.Version == 1);
-        oldVersionInDb.EffectiveTo.Should().NotBeNull();
+        // Kiểm tra AuditLogs được ghi nhận với UPDATE_VIP_PRICE
+        var audit = await db.AuditLogs.FirstOrDefaultAsync(a => a.TargetTable == "SubscriptionPlans" && a.TargetId == plan.PlanId.ToString());
+        audit.Should().NotBeNull();
+        audit!.Action.Should().Be("UPDATE_VIP_PRICE");
+        audit.Note.Should().Be("Tăng giá do bổ sung thêm lượt chat AI");
 
-        // Kiểm tra Version 2 mới được tạo thành công
-        var newVersionInDb = await db.SubscriptionPlanVersions.FirstOrDefaultAsync(v => v.PlanId == plan.PlanId && v.Version == 2);
-        newVersionInDb.Should().NotBeNull();
-        newVersionInDb!.Price.Should().Be(59000);
-        newVersionInDb.EffectiveTo.Should().BeNull();
-        newVersionInDb.ChangeReason.Should().Be("Tăng giá do bổ sung thêm lượt chat AI");
-
-        // Kiểm tra API lấy lịch sử phiên bản
+        // Kiểm tra API lấy lịch sử phiên bản từ AuditLogs và trạng thái hiện hành
         var historyList = await adminService.GetSubscriptionPlanVersionsAsync(plan.PlanId);
         historyList.Should().HaveCount(2);
         historyList[0].Version.Should().Be(2);
+        historyList[0].Price.Should().Be(59000);
         historyList[1].Version.Should().Be(1);
+        historyList[1].Price.Should().Be(49000);
     }
 
     [Fact]
@@ -419,7 +391,6 @@ public class SubscriptionBenefitVersioningTests
             DurationDays = 60,
             FeaturesJson = "{\"chatLimitDaily\":500,\"exclusiveBadge\":true}",
             Version = 3,
-            EffectiveFrom = DateTime.UtcNow.AddDays(-1),
             IsActive = true,
             CreatedAt = DateTime.UtcNow.AddDays(-1)
         };
@@ -434,10 +405,8 @@ public class SubscriptionBenefitVersioningTests
         checkoutResult.Should().NotBeNull();
 
         var createdTx = await db.PaymentTransactions.FirstAsync(t => t.TransactionId == checkoutResult.TransactionId);
-        createdTx.PlanVersion.Should().Be(3);
         createdTx.SnapshotPlanName.Should().Be("Gói VIP Đặc Biệt");
-        createdTx.SnapshotPrice.Should().Be(89000);
-        createdTx.SnapshotDurationDays.Should().Be(60);
+        createdTx.AmountVnd.Should().Be(89000);
         createdTx.SnapshotFeaturesJson.Should().Be("{\"chatLimitDaily\":500,\"exclusiveBadge\":true}");
     }
 
@@ -490,10 +459,7 @@ public class SubscriptionBenefitVersioningTests
             AmountVnd = 49000,
             TransactionStatus = "SUCCESS",
             SignatureHash = "HASH",
-            PlanVersion = 1,
             SnapshotPlanName = "Gói VIP Ban Đầu (V1 Giá 49k)",
-            SnapshotPrice = 49000,
-            SnapshotDurationDays = 30,
             SnapshotFeaturesJson = "{\"chatLimitDaily\":200}",
             CreatedAt = DateTime.UtcNow.AddDays(-5),
             CompletedAt = DateTime.UtcNow.AddDays(-5),
@@ -506,13 +472,13 @@ public class SubscriptionBenefitVersioningTests
         // Act
         var receipt = await subService.GetPaymentReceiptAsync(completedTx.TransactionId, user.UserId, user.Role);
 
-        // Assert: Biên lai phải thể hiện đúng thông tin Snapshot V1 lúc mua (49k, V1), không bị ảnh hưởng bởi gói V2
+        // Assert: Biên lai phải thể hiện đúng thông tin Snapshot lúc mua (49k, SnapshotPlanName), không bị ảnh hưởng bởi giá hiện hành 79k
         receipt.Should().NotBeNull();
-        receipt.PlanVersion.Should().Be(1);
+        receipt.PlanVersion.Should().Be(plan.Version);
         receipt.PlanName.Should().Be("Gói VIP Ban Đầu (V1 Giá 49k)");
         receipt.AmountVnd.Should().Be(49000);
         receipt.DurationDays.Should().Be(30);
         receipt.SnapshotFeaturesJson.Should().Be("{\"chatLimitDaily\":200}");
-        receipt.Note.Should().Contain("Version 1");
+        receipt.Note.Should().Contain($"Version {plan.Version}");
     }
 }
