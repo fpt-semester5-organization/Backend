@@ -209,6 +209,10 @@ IF EXISTS (
 )
 BEGIN
     EXEC sp_executesql N'
+    UPDATE [dbo].[SubscriptionPlans]
+    SET [Features_JSON] = N''{"chatLimitDaily":200,"mealPlanLimitWeekly":3,"fridgeScanLimitDaily":30,"exclusiveBadge":true,"adFree":true,"priorityAiResponse":true,"description":"Gói VIP tiêu chuẩn (Version 1)."}'
+    WHERE [Features_JSON] IS NULL;
+
     UPDATE pt
     SET 
         pt.[Plan_Version] = ISNULL(sp.[Version], 1),
