@@ -49,7 +49,10 @@ public class UserBenefitService : IUserBenefitService
         try
         {
             var cached = await _redis.GetAsync<VipBenefitFeaturesDto>(cacheKey, ct);
-            if (cached != null)
+            // Bỏ qua cache đã lệch role (vừa nâng VIP hoặc vừa hết hạn mà cache chưa kịp xóa)
+            var cacheMatchesRole = string.IsNullOrWhiteSpace(userRole) ||
+                cached?.IsVip == string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase);
+            if (cached != null && cacheMatchesRole)
             {
                 return cached;
             }
@@ -113,6 +116,7 @@ public class UserBenefitService : IUserBenefitService
         var chatLimit = await _settings.GetIntSettingAsync("CHAT_LIMIT_DAILY_FREE", 20, ct);
         var mealLimit = await _settings.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_FREE", 1, ct);
         var fridgeLimit = await _settings.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_FREE", 10, ct);
+        var barcodeLimit = await _settings.GetIntSettingAsync("BARCODE_SCAN_LIMIT_DAILY_FREE", 20, ct);
 
         return new VipBenefitFeaturesDto
         {
@@ -122,6 +126,7 @@ public class UserBenefitService : IUserBenefitService
             ChatLimitDaily = chatLimit,
             MealPlanLimitWeekly = mealLimit,
             FridgeScanLimitDaily = fridgeLimit,
+            BarcodeScanLimitDaily = barcodeLimit,
             ExclusiveBadge = false,
             AdFree = false,
             PriorityAiResponse = false,
@@ -140,19 +145,21 @@ public class UserBenefitService : IUserBenefitService
             .AsNoTracking()
             .Include(pt => pt.Plan)
             .Where(pt => pt.UserId == userId &&
-                         (pt.TransactionStatus == "SUCCESS" || pt.TransactionStatus == "COMPLETED") &&
+                         pt.TransactionStatus == "SUCCESS" &&
                          pt.StartsAt <= now && now < pt.EndsAt)
             .OrderByDescending(pt => pt.EndsAt)
             .FirstOrDefaultAsync(ct);
 
-        // Giá trị dự phòng từ SystemSettings nếu thiếu thuộc tính
-        var defaultVipChat = await _settings.GetIntSettingAsync("CHAT_LIMIT_DAILY_VIP", 200, ct);
-        var defaultVipMeal = await _settings.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_VIP", 3, ct);
-        var defaultVipFridge = await _settings.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_VIP", 30, ct);
+        // Giá trị dự phòng từ SystemSettings: chỉ dùng khi không có giao dịch active hoặc snapshot cũ thiếu khóa
+        var defaultVipChat = await _settings.GetIntSettingAsync(VipBenefitJson.ChatSettingKey, VipBenefitJson.DefaultChat, ct);
+        var defaultVipMeal = await _settings.GetIntSettingAsync(VipBenefitJson.MealSettingKey, VipBenefitJson.DefaultMeal, ct);
+        var defaultVipFridge = await _settings.GetIntSettingAsync(VipBenefitJson.FridgeSettingKey, VipBenefitJson.DefaultFridge, ct);
+        var defaultVipBarcode = await _settings.GetIntSettingAsync(VipBenefitJson.BarcodeSettingKey, VipBenefitJson.DefaultBarcode, ct);
 
         if (activeTx == null)
         {
             // Trường hợp tài khoản mang Role VIP nhưng không tìm thấy giao dịch active -> Fallback SystemSettings VIP
+            _logger.LogWarning("[ResolveVipBenefitsFromSnapshotAsync] User {UserId} mang role VIP nhưng không có giao dịch SUCCESS đang hiệu lực, dùng hạn mức SystemSettings.", userId);
             return new VipBenefitFeaturesDto
             {
                 IsVip = true,
@@ -161,6 +168,7 @@ public class UserBenefitService : IUserBenefitService
                 ChatLimitDaily = defaultVipChat,
                 MealPlanLimitWeekly = defaultVipMeal,
                 FridgeScanLimitDaily = defaultVipFridge,
+                BarcodeScanLimitDaily = defaultVipBarcode,
                 ExclusiveBadge = true,
                 AdFree = true,
                 PriorityAiResponse = true,
@@ -171,8 +179,9 @@ public class UserBenefitService : IUserBenefitService
         }
 
         var planName = activeTx.SnapshotPlanName ?? activeTx.Plan?.PlanName ?? "Gói VIP";
-        var planVersion = activeTx.Plan?.Version ?? 1;
-        var featuresJson = activeTx.SnapshotFeaturesJson ?? activeTx.Plan?.FeaturesJson;
+        // Quyền lợi và phiên bản chỉ đọc từ giao dịch (D121): không fallback sang gói hay SystemSettings hiện hành
+        var planVersion = activeTx.PlanVersion;
+        var featuresJson = activeTx.SnapshotFeaturesJson;
 
         var benefit = new VipBenefitFeaturesDto
         {
@@ -182,6 +191,7 @@ public class UserBenefitService : IUserBenefitService
             ChatLimitDaily = defaultVipChat,
             MealPlanLimitWeekly = defaultVipMeal,
             FridgeScanLimitDaily = defaultVipFridge,
+            BarcodeScanLimitDaily = defaultVipBarcode,
             ExclusiveBadge = true,
             AdFree = true,
             PriorityAiResponse = true,
@@ -192,6 +202,7 @@ public class UserBenefitService : IUserBenefitService
 
         if (string.IsNullOrWhiteSpace(featuresJson))
         {
+            _logger.LogWarning("[ResolveVipBenefitsFromSnapshotAsync] Giao dịch #{TransactionId} không có Snapshot_Features_JSON, dùng hạn mức SystemSettings.", activeTx.TransactionId);
             return benefit;
         }
 
@@ -200,19 +211,35 @@ public class UserBenefitService : IUserBenefitService
             using var doc = JsonDocument.Parse(featuresJson);
             var root = doc.RootElement;
 
+            var missingQuotaKeys = 0;
+
             if (TryGetInt(root, "chatLimitDaily", out var chatVal) || TryGetInt(root, "chat_limit_daily", out chatVal))
             {
                 benefit.ChatLimitDaily = chatVal;
             }
+            else missingQuotaKeys++;
 
             if (TryGetInt(root, "mealPlanLimitWeekly", out var mealVal) || TryGetInt(root, "meal_plan_limit_weekly", out mealVal))
             {
                 benefit.MealPlanLimitWeekly = mealVal;
             }
+            else missingQuotaKeys++;
 
             if (TryGetInt(root, "fridgeScanLimitDaily", out var fridgeVal) || TryGetInt(root, "fridge_scan_limit_daily", out fridgeVal))
             {
                 benefit.FridgeScanLimitDaily = fridgeVal;
+            }
+            else missingQuotaKeys++;
+
+            if (TryGetInt(root, VipBenefitJson.BarcodeScanLimitDaily, out var barcodeVal) || TryGetInt(root, "barcode_scan_limit_daily", out barcodeVal))
+            {
+                benefit.BarcodeScanLimitDaily = barcodeVal;
+            }
+            else missingQuotaKeys++;
+
+            if (missingQuotaKeys > 0)
+            {
+                _logger.LogWarning("[ResolveVipBenefitsFromSnapshotAsync] Snapshot của giao dịch #{TransactionId} thiếu {Count} khóa hạn mức, khóa thiếu dùng SystemSettings.", activeTx.TransactionId, missingQuotaKeys);
             }
 
             if (TryGetBool(root, "exclusiveBadge", out var badgeVal) || TryGetBool(root, "exclusive_badge", out badgeVal))

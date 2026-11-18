@@ -8,6 +8,7 @@ public class BenefitDetailDto
     public int MealPlansPerWeek { get; set; }
     public int? ChatPerDay { get; set; }
     public int FridgePhotosPerDay { get; set; }
+    public int BarcodeScansPerDay { get; set; }
 }
 
 /// <summary>

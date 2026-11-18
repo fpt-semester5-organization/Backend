@@ -14,6 +14,7 @@ public class VipBenefitFeaturesDto
     public int ChatLimitDaily { get; set; } = 20;
     public int MealPlanLimitWeekly { get; set; } = 1;
     public int FridgeScanLimitDaily { get; set; } = 10;
+    public int BarcodeScanLimitDaily { get; set; } = 20;
 
     // Đặc quyền tính năng
     public bool ExclusiveBadge { get; set; }
