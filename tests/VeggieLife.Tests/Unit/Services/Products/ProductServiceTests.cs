@@ -763,5 +763,109 @@ public class ProductServiceTests : IDisposable
         _mockOffClient.Verify(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()), Times.Once);
         result.VeganVerdict.Should().Be("GREEN");
     }
+
+    private void SetupGuestQuota()
+    {
+        _mockRedis.Setup(r => r.GetAsync<int?>(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        _mockRedis.Setup(r => r.IncrementAsync(It.IsAny<string>(), 1, It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>())).ReturnsAsync(1);
+    }
+
+    private void SetupAi(string verdict, string text, params AiDetectedAdditiveDto[] additives)
+    {
+        _mockAiClient.Setup(a => a.IsCircuitOpen).Returns(false);
+        _mockAiClient.Setup(a => a.ClassifyBarcodeAsync(It.IsAny<AiBarcodeClassifyRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiBarcodeClassifyResponse
+            {
+                VeganVerdict = verdict,
+                VerdictText = text,
+                Confidence = 0.9,
+                DetectedAdditives = additives.ToList()
+            });
+    }
+
+    // Thành phần tiếng Việt thật của dầu đậu nành Coba (8938526259027): OFF không phân tích được nên gắn vegan-status-unknown
+    private static OpenFoodFactsProductDto VietnameseOilFromOff(string barcode, params string[] analysisTags) => new()
+    {
+        Barcode = barcode,
+        ProductName = "Dầu đậu nành tự nhiên",
+        Brand = "Coba",
+        IngredientsText = "Thành Phần: 100% Dầu Đậu Nành tinh luyện, Vitamin A palmitat.",
+        VeganVerdict = "DOUBTFUL",
+        IngredientsAnalysisTags = analysisTags.ToList()
+    };
+
+    [Fact]
+    public async Task ScanBarcode_OffVeganStatusUnknownButAiVegan_ReturnsGreenWithAiText()
+    {
+        // Arrange
+        var barcode = "8938526259027";
+        _mockOffClient.Setup(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(VietnameseOilFromOff(barcode, "en:vegan-status-unknown", "en:vegetarian-status-unknown"));
+        SetupAi("VEGAN", "Sản phẩm thuần chay, không phát hiện thành phần động vật.");
+        SetupGuestQuota();
+
+        // Act
+        var result = await _service.ScanBarcodeAsync(barcode, null, "guest-1");
+
+        // Assert: vegan-status-unknown chỉ là OFF chưa phân tích, không được kéo về Vàng
+        result.VeganVerdict.Should().Be("GREEN");
+        result.VerdictText.Should().Be("Sản phẩm thuần chay, không phát hiện thành phần động vật.");
+    }
+
+    [Fact]
+    public async Task ScanBarcode_OffMaybeVeganAndAiVegan_ReturnsYellowWithoutContradictoryAiText()
+    {
+        // Arrange
+        var barcode = "8938526259028";
+        _mockOffClient.Setup(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(VietnameseOilFromOff(barcode, "en:maybe-vegan"));
+        SetupAi("VEGAN", "Sản phẩm thuần chay, không phát hiện thành phần động vật.");
+        SetupGuestQuota();
+
+        // Act
+        var result = await _service.ScanBarcodeAsync(barcode, null, "guest-1");
+
+        // Assert: kết luận Vàng thì lời giải thích không được nói "thuần chay"
+        result.VeganVerdict.Should().Be("YELLOW");
+        result.VerdictText.Should().Contain("Open Food Facts");
+    }
+
+    [Fact]
+    public async Task ScanBarcode_DoubtfulAdditiveFromDictionaryAndAiVegan_ReturnsYellowNamingTheAdditive()
+    {
+        // Arrange
+        var barcode = "8938526259029";
+        var off = VietnameseOilFromOff(barcode, "en:vegan-status-unknown");
+        off.IngredientsText = "Dầu đậu nành, chất nhũ hóa (E471)";
+        _mockOffClient.Setup(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>())).ReturnsAsync(off);
+        SetupAi("VEGAN", "Sản phẩm thuần chay.",
+            new AiDetectedAdditiveDto { Code = "E471", Name = "E471", VeganStatus = "VEGAN", Source = "MODEL" });
+        SetupGuestQuota();
+
+        // Act
+        var result = await _service.ScanBarcodeAsync(barcode, null, "guest-1");
+
+        // Assert: từ điển (DOUBTFUL) thắng AI (BR-ADM-AI-005)
+        result.VeganVerdict.Should().Be("YELLOW");
+        result.VerdictText.Should().Contain("E471");
+    }
+
+    [Fact]
+    public async Task ScanBarcode_AiUnavailableAndOffVeganStatusUnknown_ReturnsYellow()
+    {
+        // Arrange: AI lỗi, chỉ còn luật từ khóa; OFF chưa xác nhận thì chưa đủ để kết luận Xanh
+        var barcode = "8938526259030";
+        _mockOffClient.Setup(c => c.GetProductByBarcodeAsync(barcode, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(VietnameseOilFromOff(barcode, "en:vegan-status-unknown"));
+        _mockAiClient.Setup(a => a.IsCircuitOpen).Returns(true);
+        SetupGuestQuota();
+
+        // Act
+        var result = await _service.ScanBarcodeAsync(barcode, null, "guest-1");
+
+        // Assert
+        result.VeganVerdict.Should().Be("YELLOW");
+        result.VerdictText.Should().NotContain("thuần chay,");
+    }
 }
 

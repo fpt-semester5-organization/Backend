@@ -448,28 +448,54 @@ public class ProductService : IProductService
                            string.Equals(offProduct?.VeganVerdict, "NON_VEGAN", StringComparison.OrdinalIgnoreCase) ||
                            hasAnimalAllergen;
 
-        string calculatedVerdict;
-        if (hasNonVeganAdditive || hasAnimalIngredients || offNonVegan)
-        {
-            calculatedVerdict = "NON_VEGAN";
-        }
-        else if (hasDoubtfulAdditive || (aiResponse != null && aiResponse.VeganVerdict == "DOUBTFUL") ||
-                 string.Equals(offProduct?.VeganVerdict, "DOUBTFUL", StringComparison.OrdinalIgnoreCase))
-        {
-            calculatedVerdict = "DOUBTFUL";
-        }
-        else
-        {
-            calculatedVerdict = "VEGAN";
-        }
+        // OFF chỉ là tín hiệu nghi vấn khi gắn en:maybe-vegan. en:vegan-status-unknown (hoặc không có tag) nghĩa là OFF
+        // chưa phân tích được — thường gặp với thành phần tiếng Việt — nên không được kéo kết luận về DOUBTFUL.
+        bool offMaybeVegan = offProduct?.IngredientsAnalysisTags?.Contains("en:maybe-vegan") == true;
+        bool offConfirmedVegan = offProduct?.IngredientsAnalysisTags?.Contains("en:vegan") == true ||
+                                 string.Equals(offProduct?.VeganVerdict, "VEGAN", StringComparison.OrdinalIgnoreCase);
+        bool aiDoubtful = aiResponse != null && !usedFallback && aiResponse.VeganVerdict != "VEGAN";
 
         // Nếu OFF không có ingredients_text và không có additives_tags thì kết luận DOUBTFUL, không được đoán VEGAN
         bool hasNoIngredientsAndNoAdditives = string.IsNullOrWhiteSpace(offProduct?.IngredientsText) &&
                                               (offProduct?.Additives == null || offProduct.Additives.Count == 0) &&
                                               (offProduct?.AdditivesTags == null || offProduct.AdditivesTags.Count == 0);
-        if (hasNoIngredientsAndNoAdditives && calculatedVerdict == "VEGAN")
+
+        string calculatedVerdict;
+        string? backendVerdictText = null;
+        if (hasNonVeganAdditive || hasAnimalIngredients || offNonVegan)
+        {
+            calculatedVerdict = "NON_VEGAN";
+        }
+        else if (hasDoubtfulAdditive)
         {
             calculatedVerdict = "DOUBTFUL";
+            var doubtfulCodes = detectedAdditives.Where(a => a.VeganStatus == "DOUBTFUL").Select(a => a.Code).Distinct().ToList();
+            backendVerdictText = $"Chứa phụ gia nghi vấn ({string.Join(", ", doubtfulCodes)}) có thể có nguồn gốc động vật, cần kiểm tra nhãn.";
+        }
+        else if (hasNoIngredientsAndNoAdditives)
+        {
+            calculatedVerdict = "DOUBTFUL";
+            backendVerdictText = "Chưa có dữ liệu thành phần để xác nhận thuần chay. Hãy đọc kỹ nhãn trên bao bì.";
+        }
+        else if (aiDoubtful || offMaybeVegan)
+        {
+            calculatedVerdict = "DOUBTFUL";
+            // AI kết luận NON_VEGAN mà tầng mã không có bằng chứng (từ điển/từ khóa/OFF) thì chỉ hạ xuống Vàng
+            backendVerdictText = aiDoubtful && aiResponse!.VeganVerdict == "NON_VEGAN"
+                ? "Có thể chứa thành phần có nguồn gốc động vật theo đánh giá của AI, cần kiểm tra nhãn."
+                : offMaybeVegan && !aiDoubtful
+                    ? "Open Food Facts đánh giá có thể chứa thành phần không thuần chay, cần kiểm tra nhãn."
+                    : null;
+        }
+        else if (usedFallback && !offConfirmedVegan)
+        {
+            // Không có AI thẩm định thành phần và OFF chưa xác nhận: chỉ có luật từ khóa, chưa đủ để kết luận xanh
+            calculatedVerdict = "DOUBTFUL";
+            backendVerdictText = "Chưa thể thẩm định đầy đủ thành phần lúc này, không phát hiện thành phần động vật. Hãy đọc kỹ nhãn.";
+        }
+        else
+        {
+            calculatedVerdict = "VEGAN";
         }
 
         // Sản phẩm Admin_Verified = 1 thì không bao giờ bị ghi đè
@@ -691,9 +717,16 @@ public class ProductService : IProductService
         var quota = await ConsumeQuotaAsync(guestQuotaKey, effectiveGuestId, dailyLimit, memberUsedToday, ct);
 
         // 11. Trả HTTP 200 đúng envelope mẫu
-        var verdictText = !string.IsNullOrWhiteSpace(aiResponse?.VerdictText)
+        // Chỉ dùng lời giải thích của AI khi kết luận cuối trùng với kết luận của AI, tránh "Cần xem lại" kèm "thuần chay"
+        bool aiAgrees = aiResponse != null && !usedFallback
+                        && string.Equals(MapToApiVerdict(aiResponse.VeganVerdict), apiVerdict, StringComparison.OrdinalIgnoreCase);
+        bool useBackendText = !product!.AdminVerified && !string.IsNullOrWhiteSpace(backendVerdictText)
+                              && apiVerdict == MapToApiVerdict(calculatedVerdict);
+        var verdictText = aiAgrees && !string.IsNullOrWhiteSpace(aiResponse!.VerdictText)
             ? aiResponse.VerdictText
-            : (apiVerdict switch
+            : useBackendText
+                ? backendVerdictText!
+                : (apiVerdict switch
             {
                 "RED" => "Chứa phụ gia hoặc thành phần có nguồn gốc động vật.",
                 "YELLOW" => "Có chứa thành phần nghi vấn hoặc phụ gia cần lưu ý kiểm tra.",
