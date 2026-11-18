@@ -35,6 +35,8 @@ public partial class PaymentTransaction
 
     public string? SnapshotPlanName { get; set; }
 
+    public int PlanVersion { get; set; } = 1;
+
     public virtual SubscriptionPlan Plan { get; set; } = null!;
 
     public virtual User User { get; set; } = null!;

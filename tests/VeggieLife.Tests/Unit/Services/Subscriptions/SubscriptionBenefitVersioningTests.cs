@@ -158,6 +158,7 @@ public class SubscriptionBenefitVersioningTests
             SignatureHash = "HASH",
             SnapshotPlanName = "Gói VIP 1 Tháng - Bản V1",
             SnapshotFeaturesJson = "{\"chatLimitDaily\":200,\"mealPlanLimitWeekly\":3,\"fridgeScanLimitDaily\":30,\"videoToRecipeStt\":false}",
+            PlanVersion = 1,
             CreatedAt = DateTime.UtcNow.AddDays(-10),
             StartsAt = DateTime.UtcNow.AddDays(-10),
             EndsAt = DateTime.UtcNow.AddDays(20) // Còn hạn 20 ngày
@@ -171,7 +172,7 @@ public class SubscriptionBenefitVersioningTests
         // Assert: Khách V1 phải được bảo lưu đúng hạn mức Version 1 (200 chat, 3 meal, 30 fridge, video STT = false)
         benefits.Should().NotBeNull();
         benefits.IsVip.Should().BeTrue();
-        benefits.PlanVersion.Should().Be(plan.Version);
+        benefits.PlanVersion.Should().Be(1, "phiên bản lấy theo giao dịch lúc mua, không theo gói hiện hành (Version 2)");
         benefits.PlanName.Should().Be("Gói VIP 1 Tháng - Bản V1");
         benefits.ChatLimitDaily.Should().Be(200);
         benefits.MealPlanLimitWeekly.Should().Be(3);
@@ -225,6 +226,7 @@ public class SubscriptionBenefitVersioningTests
             SignatureHash = "HASH",
             SnapshotPlanName = "Gói VIP 1 Tháng - Nâng Cấp V2",
             SnapshotFeaturesJson = "{\"chatLimitDaily\":300,\"mealPlanLimitWeekly\":5,\"fridgeScanLimitDaily\":50,\"videoToRecipeStt\":true}",
+            PlanVersion = 2,
             CreatedAt = DateTime.UtcNow.AddDays(-2),
             StartsAt = DateTime.UtcNow.AddDays(-2),
             EndsAt = DateTime.UtcNow.AddDays(28)
@@ -284,11 +286,11 @@ public class SubscriptionBenefitVersioningTests
         db.SubscriptionPlans.Add(plan);
         await db.SaveChangesAsync();
 
-        // Act: Admin cập nhật giá từ 49k lên 59k và tăng chat lên 300
+        // Act: Admin cập nhật giá từ 49k lên 59k và bổ sung mô tả (hạn mức VIP giữ theo SystemSettings - D121 Q1-B)
         var updateRequest = new UpdateAdminSubscriptionPlanRequest
         {
             PriceVnd = 59000,
-            FeaturesJson = "{\"chatLimitDaily\":300}",
+            FeaturesJson = "{\"chatLimitDaily\":200,\"description\":\"Bổ sung mô tả\"}",
             ChangeReason = "Tăng giá do bổ sung thêm lượt chat AI"
         };
         var updateResult = await adminService.UpdateSubscriptionPlanAsync(plan.PlanId, updateRequest, adminUser.UserId);
@@ -301,7 +303,7 @@ public class SubscriptionBenefitVersioningTests
         var updatedPlan = await db.SubscriptionPlans.FindAsync(plan.PlanId);
         updatedPlan!.Version.Should().Be(2);
         updatedPlan.Price.Should().Be(59000);
-        updatedPlan.FeaturesJson.Should().Be("{\"chatLimitDaily\":300}");
+        updatedPlan.FeaturesJson.Should().Be("{\"chatLimitDaily\":200,\"description\":\"Bổ sung mô tả\",\"mealPlanLimitWeekly\":3,\"fridgeScanLimitDaily\":30,\"barcodeScanLimitDaily\":50}");
 
         // Kiểm tra AuditLogs được ghi nhận với UPDATE_VIP_PRICE
         var audit = await db.AuditLogs.FirstOrDefaultAsync(a => a.TargetTable == "SubscriptionPlans" && a.TargetId == plan.PlanId.ToString());
@@ -407,7 +409,9 @@ public class SubscriptionBenefitVersioningTests
         var createdTx = await db.PaymentTransactions.FirstAsync(t => t.TransactionId == checkoutResult.TransactionId);
         createdTx.SnapshotPlanName.Should().Be("Gói VIP Đặc Biệt");
         createdTx.AmountVnd.Should().Be(89000);
-        createdTx.SnapshotFeaturesJson.Should().Be("{\"chatLimitDaily\":500,\"exclusiveBadge\":true}");
+        createdTx.PlanVersion.Should().Be(3);
+        // Khóa đã có giữ nguyên (500), khóa thiếu lấy SystemSettings VIP lúc checkout (3, 30, 50)
+        createdTx.SnapshotFeaturesJson.Should().Be("{\"chatLimitDaily\":500,\"exclusiveBadge\":true,\"mealPlanLimitWeekly\":3,\"fridgeScanLimitDaily\":30,\"barcodeScanLimitDaily\":50}");
     }
 
     [Fact]
@@ -461,6 +465,7 @@ public class SubscriptionBenefitVersioningTests
             SignatureHash = "HASH",
             SnapshotPlanName = "Gói VIP Ban Đầu (V1 Giá 49k)",
             SnapshotFeaturesJson = "{\"chatLimitDaily\":200}",
+            PlanVersion = 1,
             CreatedAt = DateTime.UtcNow.AddDays(-5),
             CompletedAt = DateTime.UtcNow.AddDays(-5),
             StartsAt = DateTime.UtcNow.AddDays(-5),
@@ -474,11 +479,178 @@ public class SubscriptionBenefitVersioningTests
 
         // Assert: Biên lai phải thể hiện đúng thông tin Snapshot lúc mua (49k, SnapshotPlanName), không bị ảnh hưởng bởi giá hiện hành 79k
         receipt.Should().NotBeNull();
-        receipt.PlanVersion.Should().Be(plan.Version);
+        receipt.PlanVersion.Should().Be(1, "biên lai in phiên bản lúc mua, không theo gói hiện hành (Version 2)");
         receipt.PlanName.Should().Be("Gói VIP Ban Đầu (V1 Giá 49k)");
         receipt.AmountVnd.Should().Be(49000);
         receipt.DurationDays.Should().Be(30);
         receipt.SnapshotFeaturesJson.Should().Be("{\"chatLimitDaily\":200}");
-        receipt.Note.Should().Contain($"Version {plan.Version}");
+        receipt.Note.Should().Contain("Version 1", "Note ghi phiên bản lúc mua");
+    }
+
+
+    // =========================================================================
+    // 4. TÁCH BIỆT NGƯỜI MUA TRƯỚC / SAU KHI GÓI CẬP NHẬT (D121, 2.plan solving GĐ2)
+    // =========================================================================
+
+    private static User NewMember(int id) => new()
+    {
+        UserId = id,
+        Email = $"member{id}@veggielife.vn",
+        FullName = $"Thành viên {id}",
+        Role = UserRoles.Member,
+        AccountStatus = "ACTIVE",
+        CreatedAt = DateTime.UtcNow
+    };
+
+    [Fact]
+    public async Task Checkout_BeforeAndAfterPlanUpdate_SeparatesBenefitsAndVersion()
+    {
+        // Arrange
+        using var db = CreateInMemoryDb();
+        var redisMock = new Mock<IRedisService>();
+        var settingsMock = CreateMockSettingService();
+        var benefitService = new UserBenefitService(db, redisMock.Object, settingsMock.Object, NullLogger<UserBenefitService>.Instance);
+        var subService = new SubscriptionService(
+            db, redisMock.Object, CreateMockPaymentGateway().Object, new Mock<IEmailService>().Object,
+            NullLogger<SubscriptionService>.Instance, settingsMock.Object, benefitService);
+
+        var userA = NewMember(501);
+        var userB = NewMember(502);
+        db.Users.AddRange(userA, userB);
+        var plan = new SubscriptionPlan
+        {
+            PlanId = 50,
+            AdminId = 1,
+            PlanName = "Gói VIP 1 Tháng",
+            Price = 49000,
+            DurationDays = 30,
+            FeaturesJson = "{\"chatLimitDaily\":200,\"mealPlanLimitWeekly\":3,\"fridgeScanLimitDaily\":30}",
+            Version = 1,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow.AddDays(-30)
+        };
+        db.SubscriptionPlans.Add(plan);
+        await db.SaveChangesAsync();
+
+        // A mua khi gói ở Version 1
+        var checkoutA = await subService.CheckoutSubscriptionAsync(userA.UserId, userA.Role, new CheckoutSubscriptionRequest { PlanId = plan.PlanId, Gateway = "MOMO" });
+
+        // Admin nâng gói lên Version 2 với quyền lợi mới
+        plan.FeaturesJson = "{\"chatLimitDaily\":300,\"mealPlanLimitWeekly\":5,\"fridgeScanLimitDaily\":50}";
+        plan.Version = 2;
+        await db.SaveChangesAsync();
+
+        // B mua sau khi gói cập nhật
+        var checkoutB = await subService.CheckoutSubscriptionAsync(userB.UserId, userB.Role, new CheckoutSubscriptionRequest { PlanId = plan.PlanId, Gateway = "MOMO" });
+
+        // Kích hoạt cả hai giao dịch như IPN thành công
+        foreach (var tx in db.PaymentTransactions)
+        {
+            tx.TransactionStatus = "SUCCESS";
+            tx.CompletedAt = DateTime.UtcNow;
+            tx.StartsAt = DateTime.UtcNow.AddMinutes(-1);
+        }
+        userA.Role = UserRoles.Vip;
+        userB.Role = UserRoles.Vip;
+        await db.SaveChangesAsync();
+
+        // Act
+        var benefitsA = await benefitService.GetUserBenefitsAsync(userA.UserId, UserRoles.Vip);
+        var benefitsB = await benefitService.GetUserBenefitsAsync(userB.UserId, UserRoles.Vip);
+        var receiptA = await subService.GetPaymentReceiptAsync(checkoutA.TransactionId, userA.UserId, UserRoles.Vip);
+        var receiptB = await subService.GetPaymentReceiptAsync(checkoutB.TransactionId, userB.UserId, UserRoles.Vip);
+
+        // Assert: A giữ Version 1, B nhận Version 2
+        benefitsA.PlanVersion.Should().Be(1);
+        benefitsA.ChatLimitDaily.Should().Be(200);
+        benefitsA.MealPlanLimitWeekly.Should().Be(3);
+        benefitsA.FridgeScanLimitDaily.Should().Be(30);
+        receiptA.PlanVersion.Should().Be(1);
+        receiptA.SnapshotFeaturesJson.Should().Contain("\"chatLimitDaily\":200");
+
+        benefitsB.PlanVersion.Should().Be(2);
+        benefitsB.ChatLimitDaily.Should().Be(300);
+        benefitsB.MealPlanLimitWeekly.Should().Be(5);
+        benefitsB.FridgeScanLimitDaily.Should().Be(50);
+        receiptB.PlanVersion.Should().Be(2);
+        receiptB.SnapshotFeaturesJson.Should().Contain("\"chatLimitDaily\":300");
+    }
+
+    [Fact]
+    public async Task UserBenefitService_SnapshotMissing_DoesNotLeakCurrentPlanFeatures()
+    {
+        // Arrange
+        using var db = CreateInMemoryDb();
+        var settingsMock = CreateMockSettingService();
+        var service = new UserBenefitService(db, new Mock<IRedisService>().Object, settingsMock.Object, NullLogger<UserBenefitService>.Instance);
+
+        var user = NewMember(601);
+        user.Role = UserRoles.Vip;
+        db.Users.Add(user);
+        db.SubscriptionPlans.Add(new SubscriptionPlan
+        {
+            PlanId = 60,
+            AdminId = 1,
+            PlanName = "Gói VIP Đã Đổi",
+            Price = 49000,
+            DurationDays = 30,
+            FeaturesJson = "{\"chatLimitDaily\":999,\"mealPlanLimitWeekly\":9,\"fridgeScanLimitDaily\":99}",
+            Version = 5,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        });
+        db.PaymentTransactions.Add(new PaymentTransaction
+        {
+            TransactionId = 6001,
+            PlanId = 60,
+            UserId = user.UserId,
+            GatewayProvider = "MOMO",
+            PartnerTransactionCode = "LEGACY_6001",
+            AmountVnd = 49000,
+            TransactionStatus = "SUCCESS",
+            SignatureHash = "HASH",
+            SnapshotFeaturesJson = null,
+            PlanVersion = 1,
+            CreatedAt = DateTime.UtcNow.AddDays(-3),
+            StartsAt = DateTime.UtcNow.AddDays(-3),
+            EndsAt = DateTime.UtcNow.AddDays(27)
+        });
+        await db.SaveChangesAsync();
+
+        // Act
+        var benefits = await service.GetUserBenefitsAsync(user.UserId, UserRoles.Vip);
+
+        // Assert: không lấy quyền lợi hiện hành của gói (999/9/99), chỉ dùng SystemSettings dự phòng
+        benefits.PlanVersion.Should().Be(1);
+        benefits.ChatLimitDaily.Should().Be(200);
+        benefits.MealPlanLimitWeekly.Should().Be(3);
+        benefits.FridgeScanLimitDaily.Should().Be(30);
+    }
+
+    [Fact]
+    public async Task UserBenefitService_CachedVipBenefits_IgnoredWhenRoleIsMember()
+    {
+        // Arrange
+        using var db = CreateInMemoryDb();
+        var redisMock = new Mock<IRedisService>();
+        redisMock.Setup(r => r.GetAsync<VeggieLife.BLL.DTOs.Subscriptions.Responses.VipBenefitFeaturesDto>("user_benefits:701", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VeggieLife.BLL.DTOs.Subscriptions.Responses.VipBenefitFeaturesDto { IsVip = true, ChatLimitDaily = 200 });
+        var service = new UserBenefitService(db, redisMock.Object, CreateMockSettingService().Object, NullLogger<UserBenefitService>.Instance);
+
+        // Act: VIP vừa hết hạn, role truyền vào là MEMBER nhưng cache còn bản VIP
+        var benefits = await service.GetUserBenefitsAsync(701, UserRoles.Member);
+
+        // Assert
+        benefits.IsVip.Should().BeFalse();
+        benefits.ChatLimitDaily.Should().Be(20);
+    }
+
+    [Theory]
+    [InlineData(null, "{\"chatLimitDaily\":200,\"mealPlanLimitWeekly\":3,\"fridgeScanLimitDaily\":30,\"barcodeScanLimitDaily\":50}")]
+    [InlineData("{\"chat_limit_daily\":50,\"mealPlanLimitWeekly\":2}", "{\"chat_limit_daily\":50,\"mealPlanLimitWeekly\":2,\"fridgeScanLimitDaily\":30,\"barcodeScanLimitDaily\":50}")]
+    [InlineData("{\"chatLimitDaily\":1,\"mealPlanLimitWeekly\":1,\"fridgeScanLimitDaily\":1,\"barcodeScanLimitDaily\":1,\"description\":\"Gói tiết kiệm\"}", "{\"chatLimitDaily\":1,\"mealPlanLimitWeekly\":1,\"fridgeScanLimitDaily\":1,\"barcodeScanLimitDaily\":1,\"description\":\"Gói tiết kiệm\"}")]
+    public void VipBenefitJson_EnsureQuotas_AddsOnlyMissingKeys(string? input, string expected)
+    {
+        VipBenefitJson.EnsureQuotas(input, 200, 3, 30, 50).Should().Be(expected);
     }
 }

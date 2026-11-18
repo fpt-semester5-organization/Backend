@@ -92,6 +92,7 @@ public class VipExpiryService : IVipExpiryService
                 try
                 {
                     await _redis.RemoveAsync($"vip_status:{user.UserId}", ct);
+                    await _redis.RemoveAsync($"user_benefits:{user.UserId}", ct);
                     await _redis.RemoveAsync($"cache:profile:{user.UserId}", ct);
                     await _redis.RemoveAsync($"user_sessions:{user.UserId}", ct);
                 }

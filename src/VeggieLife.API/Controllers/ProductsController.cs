@@ -25,6 +25,26 @@ public class ProductsController : BaseApiController
     }
 
     /// <summary>
+    /// FN-BAR-01: Lượt quét mã vạch còn lại hôm nay (D122), để màn Quét mã vạch hiện ngay khi chưa quét.
+    /// </summary>
+    [HttpGet("barcode/quota")]
+    [Authorize(Policy = PolicyNames.RequireGuestOrAbove)]
+    [ProducesResponseType(typeof(ApiResponse<ScanQuotaDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetBarcodeQuota(CancellationToken ct = default)
+    {
+        int? userId = CurrentUserId.HasValue ? (int)CurrentUserId.Value : null;
+        var guestId = CurrentGuestUuid;
+        if (!userId.HasValue && string.IsNullOrWhiteSpace(guestId))
+        {
+            guestId = Request.Headers["X-Guest-UUID"].ToString();
+        }
+
+        var result = await _productService.GetBarcodeQuotaAsync(userId, guestId, ct);
+        return OkResponse(result, "Lấy hạn mức quét mã vạch thành công.");
+    }
+
+    /// <summary>
     /// FN-BAR-01: Tra cứu sản phẩm đóng gói theo mã vạch (EAN-8, EAN-13, UPC-A).
     /// Yêu cầu xác thực Bearer token (GUEST, MEMBER, VIP, ADMIN) - không cho phép truy cập công khai vô danh.
     /// Khách vãng lai tối đa 03 lần/ngày (BR-GUEST-07); Thành viên được kèm cảnh báo dị ứng cá nhân.

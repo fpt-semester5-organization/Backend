@@ -12,6 +12,7 @@ using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.Admin.Subscriptions;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.Email;
+using VeggieLife.BLL.Services.Subscriptions;
 using VeggieLife.BLL.Validators.Admin;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
@@ -110,6 +111,8 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             throw AppException.Conflict(ErrorCodes.ErrPlanDuplicate, "Tên gói đã tồn tại.");
         }
 
+        var featuresJson = await ResolvePlanFeaturesAsync(request.FeaturesJson, ct);
+
         var now = DateTime.UtcNow;
         var plan = new SubscriptionPlan
         {
@@ -117,7 +120,7 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             PlanName = trimmedName,
             DurationDays = request.DurationDays,
             Price = request.PriceVnd,
-            FeaturesJson = request.FeaturesJson,
+            FeaturesJson = featuresJson,
             IsActive = true,
             Version = 1,
             CreatedAt = now
@@ -241,10 +244,14 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             isPlanSpecificationChanged = true;
         }
 
-        if (request?.FeaturesJson != null && !string.Equals(plan.FeaturesJson, request.FeaturesJson, StringComparison.Ordinal))
+        if (request?.FeaturesJson != null)
         {
-            plan.FeaturesJson = request.FeaturesJson;
-            isPlanSpecificationChanged = true;
+            var featuresJson = await ResolvePlanFeaturesAsync(request.FeaturesJson, ct);
+            if (!string.Equals(plan.FeaturesJson, featuresJson, StringComparison.Ordinal))
+            {
+                plan.FeaturesJson = featuresJson;
+                isPlanSpecificationChanged = true;
+            }
         }
 
         if (request?.IsActive.HasValue == true)
@@ -332,10 +339,20 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             .Where(u => adminIds.Contains(u.UserId))
             .ToDictionaryAsync(u => u.UserId, u => !string.IsNullOrWhiteSpace(u.FullName) ? u.FullName : u.Email, ct);
 
-        var versions = new List<AdminSubscriptionPlanVersionDto>();
-        var seenVersions = new HashSet<int>();
+        // Chỉ các lần sửa làm tăng Version mới tạo phiên bản; bật/tắt bán không đổi phiên bản
+        var changes = auditLogs
+            .Select(log => (Log: log, Old: ParsePlanSnapshot(log.OldValue), New: ParsePlanSnapshot(log.NewValue)))
+            .Where(c => c.Old?.Version != null && c.New?.Version != null && c.New.Version > c.Old.Version)
+            .ToList(); // mới nhất trước
 
-        // 1. Phiên bản hiện hành
+        string? AdminName(int? id) => id.HasValue && adminNames.TryGetValue(id.Value, out var name) ? name : null;
+
+        var versions = new List<AdminSubscriptionPlanVersionDto>();
+        var seenVersions = new HashSet<int> { plan.Version };
+
+        // 1. Phiên bản hiện hành: có hiệu lực từ lần tăng Version gần nhất
+        var latest = changes.FirstOrDefault();
+        var currentAdminId = latest.Log?.ActorUserId ?? plan.AdminId;
         versions.Add(new AdminSubscriptionPlanVersionDto
         {
             VersionId = plan.PlanId * 1000 + plan.Version,
@@ -345,83 +362,77 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             Price = plan.Price,
             DurationDays = plan.DurationDays,
             FeaturesJson = plan.FeaturesJson,
-            EffectiveFrom = plan.UpdatedAt ?? plan.CreatedAt,
+            EffectiveFrom = latest.Log?.CreatedAt ?? plan.CreatedAt,
             EffectiveTo = null,
-            UpdatedByAdminId = plan.AdminId,
-            UpdatedByAdminName = adminNames.TryGetValue(plan.AdminId, out var curAdminName) ? curAdminName : null,
-            ChangeReason = $"Phiên bản hiện hành (Version {plan.Version})",
-            CreatedAt = plan.UpdatedAt ?? plan.CreatedAt
+            UpdatedByAdminId = currentAdminId,
+            UpdatedByAdminName = AdminName(currentAdminId),
+            ChangeReason = latest.Log?.Note ?? $"Phiên bản hiện hành (Version {plan.Version})",
+            CreatedAt = latest.Log?.CreatedAt ?? plan.CreatedAt
         });
-        seenVersions.Add(plan.Version);
 
-        // 2. Trích xuất các phiên bản lịch sử từ AuditLogs
-        foreach (var log in auditLogs)
+        // 2. Phiên bản cũ (Old_Value của mỗi lần tăng Version): hiệu lực từ lần tăng Version trước đó đến lần này
+        for (var i = 0; i < changes.Count; i++)
         {
-            var adminName = log.ActorUserId.HasValue && adminNames.TryGetValue(log.ActorUserId.Value, out var aName) ? aName : null;
-            ParseAndAddVersionFromAuditJson(log.OldValue, plan.CreatedAt, log.CreatedAt, log.ActorUserId ?? plan.AdminId, adminName, log.Note, versions, seenVersions, plan);
+            var (log, old, _) = changes[i];
+            if (!seenVersions.Add(old!.Version!.Value)) continue;
+
+            var previous = i + 1 < changes.Count ? changes[i + 1].Log : null;
+            var effectiveFrom = previous?.CreatedAt ?? plan.CreatedAt;
+            var adminId = previous?.ActorUserId ?? plan.AdminId;
+            versions.Add(new AdminSubscriptionPlanVersionDto
+            {
+                VersionId = plan.PlanId * 1000 + old.Version.Value,
+                PlanId = plan.PlanId,
+                Version = old.Version.Value,
+                PlanName = old.PlanName ?? plan.PlanName,
+                Price = old.Price ?? plan.Price,
+                DurationDays = old.DurationDays ?? plan.DurationDays,
+                FeaturesJson = old.FeaturesJson,
+                EffectiveFrom = effectiveFrom,
+                EffectiveTo = log.CreatedAt,
+                UpdatedByAdminId = adminId,
+                UpdatedByAdminName = AdminName(adminId),
+                ChangeReason = previous?.Note ?? $"Phiên bản {old.Version.Value}",
+                CreatedAt = effectiveFrom
+            });
         }
 
         return versions.OrderByDescending(v => v.Version).ToList();
     }
 
-    private static void ParseAndAddVersionFromAuditJson(
-        string? json,
-        DateTime effFrom,
-        DateTime? effTo,
-        int adminId,
-        string? adminName,
-        string? note,
-        List<AdminSubscriptionPlanVersionDto> versions,
-        HashSet<int> seenVersions,
-        SubscriptionPlan plan)
+    private sealed record PlanAuditSnapshot(int? Version, string? PlanName, decimal? Price, int? DurationDays, string? FeaturesJson);
+
+    /// <summary>Đọc ảnh chụp gói trong Old_Value/New_Value của AuditLogs; JSON hỏng thì trả null.</summary>
+    private static PlanAuditSnapshot? ParsePlanSnapshot(string? json)
     {
-        if (string.IsNullOrWhiteSpace(json)) return;
+        if (string.IsNullOrWhiteSpace(json)) return null;
         try
         {
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            int version = 1;
-            if (root.TryGetProperty("version", out var vProp) && vProp.TryGetInt32(out var vVal))
-            {
-                version = vVal;
-            }
+            if (root.ValueKind != JsonValueKind.Object) return null;
 
-            if (!seenVersions.Add(version)) return;
+            int? version = root.TryGetProperty("version", out var vProp) && vProp.TryGetInt32(out var vVal) ? vVal : null;
+            string? name = root.TryGetProperty("planName", out var nProp) && nProp.ValueKind == JsonValueKind.String ? nProp.GetString() : null;
+            decimal? price = root.TryGetProperty("price", out var pProp) && pProp.TryGetDecimal(out var pVal) ? pVal : null;
+            int? duration = root.TryGetProperty("durationDays", out var dProp) && dProp.TryGetInt32(out var dVal) ? dVal : null;
 
-            string name = root.TryGetProperty("planName", out var nProp) ? nProp.GetString() ?? plan.PlanName : plan.PlanName;
-            decimal price = root.TryGetProperty("price", out var pProp) && pProp.TryGetDecimal(out var pVal) ? pVal : plan.Price;
-            int duration = root.TryGetProperty("durationDays", out var dProp) && dProp.TryGetInt32(out var dVal) ? dVal : plan.DurationDays;
-            
             string? features = null;
-            if (root.TryGetProperty("features", out var fProp))
+            if (root.TryGetProperty("features", out var fProp) || root.TryGetProperty("featuresJson", out fProp))
             {
-                features = fProp.ValueKind == JsonValueKind.String ? fProp.GetString() : fProp.GetRawText();
-            }
-            else if (root.TryGetProperty("featuresJson", out var fjProp))
-            {
-                features = fjProp.GetString();
+                features = fProp.ValueKind switch
+                {
+                    JsonValueKind.String => fProp.GetString(),
+                    JsonValueKind.Null => null,
+                    _ => fProp.GetRawText()
+                };
             }
 
-            versions.Add(new AdminSubscriptionPlanVersionDto
-            {
-                VersionId = plan.PlanId * 1000 + version,
-                PlanId = plan.PlanId,
-                Version = version,
-                PlanName = name,
-                Price = price,
-                DurationDays = duration,
-                FeaturesJson = features ?? plan.FeaturesJson,
-                EffectiveFrom = effFrom,
-                EffectiveTo = effTo,
-                UpdatedByAdminId = adminId,
-                UpdatedByAdminName = adminName,
-                ChangeReason = note ?? $"Phiên bản {version}",
-                CreatedAt = effFrom
-            });
+            return new PlanAuditSnapshot(version, name, price, duration, features);
         }
-        catch
+        catch (JsonException)
         {
-            // Bỏ qua nếu json parse không hợp lệ
+            return null;
         }
     }
 
@@ -912,6 +923,46 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             VipStartsAt = startsAt,
             VipEndsAt = endsAt
         };
+    }
+
+    /// <summary>
+    /// Features_JSON của gói khi tạo/sửa (D121 Q1-B): ba hạn mức VIP luôn theo SystemSettings.
+    /// Request ghi hạn mức khác SystemSettings thì từ chối; khóa thiếu được bổ sung; các khóa khác giữ nguyên.
+    /// </summary>
+    private async Task<string> ResolvePlanFeaturesAsync(string? requestedJson, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(requestedJson);
+                if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    throw AppException.BadRequest(ErrorCodes.ErrValidation, "Quyền lợi gói (featuresJson) phải là một đối tượng JSON.");
+                }
+            }
+            catch (JsonException)
+            {
+                throw AppException.BadRequest(ErrorCodes.ErrValidation, "Quyền lợi gói (featuresJson) không phải JSON hợp lệ.");
+            }
+        }
+
+        var (chat, meal, fridge, barcode) = await VipPlanBenefitSync.ReadVipQuotasAsync(_db, ct);
+        var expected = new[]
+        {
+            (Key: VipBenefitJson.ChatLimitDaily, Value: chat),
+            (Key: VipBenefitJson.MealPlanLimitWeekly, Value: meal),
+            (Key: VipBenefitJson.FridgeScanLimitDaily, Value: fridge),
+            (Key: VipBenefitJson.BarcodeScanLimitDaily, Value: barcode)
+        };
+        if (expected.Any(q => VipBenefitJson.ReadQuota(requestedJson, q.Key) is int requested && requested != q.Value))
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Hạn mức VIP (Trợ lý AI, Thực đơn tuần, Quét tủ lạnh, Quét mã vạch) chỉnh tại Cấu hình hệ thống > Chỉ số hệ thống và áp dụng cho mọi gói, không sửa riêng từng gói.");
+        }
+
+        return VipBenefitJson.EnsureQuotas(requestedJson, chat, meal, fridge, barcode);
     }
 
     private async Task InvalidatePlanCacheAsync(CancellationToken ct)
