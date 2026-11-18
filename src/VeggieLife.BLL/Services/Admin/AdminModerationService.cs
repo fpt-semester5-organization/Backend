@@ -79,10 +79,10 @@ public class AdminModerationService : IAdminModerationService
             var tType = request.TargetType.Trim().ToUpperInvariant();
             query = tType switch
             {
-                "POST" => query.Where(r => r.PostId != null),
-                "RECIPE" => query.Where(r => r.RecipeId != null),
-                "VIDEO" => query.Where(r => r.VideoId != null),
                 "COMMENT" => query.Where(r => r.CommentId != null),
+                "VIDEO" => query.Where(r => r.VideoId != null),
+                "RECIPE" => query.Where(r => r.RecipeId != null),
+                "POST" => query.Where(r => r.PostId != null && r.CommentId == null && r.VideoId == null && r.RecipeId == null),
                 _ => query
             };
         }
@@ -104,7 +104,24 @@ public class AdminModerationService : IAdminModerationService
             string? targetContent = null;
             string? authorName = null;
 
-            if (r.RecipeId.HasValue)
+            if (r.CommentId.HasValue)
+            {
+                targetType = "COMMENT";
+                targetId = r.CommentId.Value;
+                targetContent = r.Comment?.Content;
+                authorName = r.Comment?.User?.FullName;
+                parentPostId = r.Comment?.PostId ?? r.PostId;
+                targetTitle = r.Comment?.Post?.Title;
+            }
+            else if (r.VideoId.HasValue)
+            {
+                targetType = "VIDEO";
+                targetId = r.VideoId.Value;
+                targetTitle = r.Video?.Title;
+                authorName = r.Video?.Post?.User?.FullName;
+                parentPostId = r.Video?.PostId ?? r.PostId;
+            }
+            else if (r.RecipeId.HasValue)
             {
                 targetType = "RECIPE";
                 targetId = r.RecipeId.Value;
@@ -119,22 +136,6 @@ public class AdminModerationService : IAdminModerationService
                 targetTitle = r.Post?.Title;
                 targetContent = r.Post?.Content;
                 authorName = r.Post?.User?.FullName;
-            }
-            else if (r.VideoId.HasValue)
-            {
-                targetType = "VIDEO";
-                targetId = r.VideoId.Value;
-                targetTitle = r.Video?.Title;
-                authorName = r.Video?.Post?.User?.FullName;
-            }
-            else if (r.CommentId.HasValue)
-            {
-                targetType = "COMMENT";
-                targetId = r.CommentId.Value;
-                targetContent = r.Comment?.Content;
-                authorName = r.Comment?.User?.FullName;
-                parentPostId = r.Comment?.PostId;
-                targetTitle = r.Comment?.Post?.Title;
             }
 
             return new AdminModerationQueueItemDto
@@ -201,50 +202,82 @@ public class AdminModerationService : IAdminModerationService
             report.Status = "APPROVE";
             report.AdminId = adminId;
 
-            if (report.RecipeId.HasValue && report.Recipe != null)
+            if (report.CommentId.HasValue)
             {
-                report.Recipe.Status = "REJECTED";
-                report.Recipe.UpdatedAt = DateTime.UtcNow;
-                targetStatus = "REJECTED";
-                authorUserId = report.Recipe.UserId;
-                contentType = "RECIPE";
-                contentId = report.Recipe.RecipeId;
-
-                // Đồng bộ cập nhật trạng thái bài viết đại diện liên kết
-                var repPost = await _db.Posts.FirstOrDefaultAsync(p => p.RecipeId == report.RecipeId.Value, ct);
-                if (repPost != null)
+                var comment = report.Comment ?? await _db.Comments.FirstOrDefaultAsync(c => c.CommentId == report.CommentId.Value, ct);
+                if (comment != null)
                 {
-                    repPost.ModerationStatus = "REJECTED";
-                    repPost.UpdatedAt = DateTime.UtcNow;
+                    targetStatus = "HIDDEN";
+                    authorUserId = comment.UserId;
+                    contentType = "COMMENT";
+                    contentId = comment.CommentId;
+
+                    // Xóa mềm toàn bộ cây bình luận phản hồi con bên dưới (BR-ADM-CMT-001)
+                    await CascadeSoftDeleteCommentInternalAsync(comment.CommentId, ct);
+                }
+                else
+                {
+                    targetStatus = "HIDDEN";
                 }
             }
-            else if (report.PostId.HasValue && report.Post != null)
+            else if (report.VideoId.HasValue)
             {
-                report.Post.ModerationStatus = "REJECTED";
-                report.Post.UpdatedAt = DateTime.UtcNow;
-                targetStatus = "REJECTED";
-                authorUserId = report.Post.UserId;
-                contentType = "POST";
-                contentId = report.Post.PostId;
+                var video = report.Video ?? await _db.Videos.Include(v => v.Post).FirstOrDefaultAsync(v => v.VideoId == report.VideoId.Value, ct);
+                if (video != null)
+                {
+                    video.Status = "BANNED";
+                    video.UpdatedAt = DateTime.UtcNow;
+                    targetStatus = "BANNED";
+                    authorUserId = video.Post?.UserId;
+                    contentType = "VIDEO";
+                    contentId = video.VideoId;
+                }
+                else
+                {
+                    targetStatus = "BANNED";
+                }
             }
-            else if (report.VideoId.HasValue && report.Video != null)
+            else if (report.RecipeId.HasValue)
             {
-                report.Video.Status = "BANNED";
-                report.Video.UpdatedAt = DateTime.UtcNow;
-                targetStatus = "BANNED";
-                authorUserId = report.Video.Post?.UserId;
-                contentType = "VIDEO";
-                contentId = report.Video.VideoId;
-            }
-            else if (report.CommentId.HasValue && report.Comment != null)
-            {
-                targetStatus = "HIDDEN";
-                authorUserId = report.Comment.UserId;
-                contentType = "COMMENT";
-                contentId = report.Comment.CommentId;
+                var recipe = report.Recipe ?? await _db.Recipes.FirstOrDefaultAsync(r => r.RecipeId == report.RecipeId.Value, ct);
+                if (recipe != null)
+                {
+                    recipe.Status = "REJECTED";
+                    recipe.UpdatedAt = DateTime.UtcNow;
+                    targetStatus = "REJECTED";
+                    authorUserId = recipe.UserId;
+                    contentType = "RECIPE";
+                    contentId = recipe.RecipeId;
 
-                // Xóa mềm toàn bộ cây bình luận phản hồi con bên dưới (BR-ADM-CMT-001)
-                await CascadeSoftDeleteCommentInternalAsync(report.Comment.CommentId, ct);
+                    // Đồng bộ cập nhật trạng thái bài viết đại diện liên kết
+                    var repPost = await _db.Posts.FirstOrDefaultAsync(p => p.RecipeId == report.RecipeId.Value, ct);
+                    if (repPost != null)
+                    {
+                        repPost.ModerationStatus = "REJECTED";
+                        repPost.UpdatedAt = DateTime.UtcNow;
+                    }
+                }
+                else
+                {
+                    targetStatus = "REJECTED";
+                }
+            }
+            else if (report.PostId.HasValue)
+            {
+                var post = report.Post ?? await _db.Posts.FirstOrDefaultAsync(p => p.PostId == report.PostId.Value, ct);
+                if (post != null)
+                {
+                    post.ModerationStatus = "REJECTED";
+                    post.UpdatedAt = DateTime.UtcNow;
+                    targetStatus = "REJECTED";
+                    authorUserId = post.UserId;
+                    contentType = "POST";
+                    contentId = post.PostId;
+                }
+                else
+                {
+                    targetStatus = "REJECTED";
+                }
             }
             else
             {
@@ -290,46 +323,78 @@ public class AdminModerationService : IAdminModerationService
             report.Status = "REJECT";
             report.AdminId = adminId;
 
-            if (report.RecipeId.HasValue && report.Recipe != null)
+            if (report.CommentId.HasValue)
             {
-                report.Recipe.Status = "APPROVED_ACTIVE";
-                report.Recipe.UpdatedAt = DateTime.UtcNow;
-                targetStatus = "APPROVED_ACTIVE";
-                contentType = "RECIPE";
-                contentId = report.Recipe.RecipeId;
-
-                // Đồng bộ khôi phục trạng thái bài viết đại diện liên kết nếu có
-                var repPost = await _db.Posts.FirstOrDefaultAsync(p => p.RecipeId == report.RecipeId.Value, ct);
-                if (repPost != null)
+                var comment = report.Comment ?? await _db.Comments.FirstOrDefaultAsync(c => c.CommentId == report.CommentId.Value, ct);
+                if (comment != null)
                 {
-                    repPost.ModerationStatus = "APPROVED_ACTIVE";
-                    repPost.UpdatedAt = DateTime.UtcNow;
+                    comment.Status = "ACTIVE";
+                    comment.IsSoftDeleted = false;
+                    comment.UpdatedAt = DateTime.UtcNow;
+                    targetStatus = "ACTIVE";
+                    contentType = "COMMENT";
+                    contentId = comment.CommentId;
+                }
+                else
+                {
+                    targetStatus = "ACTIVE";
                 }
             }
-            else if (report.PostId.HasValue && report.Post != null)
+            else if (report.VideoId.HasValue)
             {
-                report.Post.ModerationStatus = "APPROVED_ACTIVE";
-                report.Post.UpdatedAt = DateTime.UtcNow;
-                targetStatus = "APPROVED_ACTIVE";
-                contentType = "POST";
-                contentId = report.Post.PostId;
+                var video = report.Video ?? await _db.Videos.FirstOrDefaultAsync(v => v.VideoId == report.VideoId.Value, ct);
+                if (video != null)
+                {
+                    video.Status = "READY";
+                    video.UpdatedAt = DateTime.UtcNow;
+                    targetStatus = "READY";
+                    contentType = "VIDEO";
+                    contentId = video.VideoId;
+                }
+                else
+                {
+                    targetStatus = "READY";
+                }
             }
-            else if (report.VideoId.HasValue && report.Video != null)
+            else if (report.RecipeId.HasValue)
             {
-                report.Video.Status = "READY";
-                report.Video.UpdatedAt = DateTime.UtcNow;
-                targetStatus = "READY";
-                contentType = "VIDEO";
-                contentId = report.Video.VideoId;
+                var recipe = report.Recipe ?? await _db.Recipes.FirstOrDefaultAsync(r => r.RecipeId == report.RecipeId.Value, ct);
+                if (recipe != null)
+                {
+                    recipe.Status = "APPROVED_ACTIVE";
+                    recipe.UpdatedAt = DateTime.UtcNow;
+                    targetStatus = "APPROVED_ACTIVE";
+                    contentType = "RECIPE";
+                    contentId = recipe.RecipeId;
+
+                    // Đồng bộ khôi phục trạng thái bài viết đại diện liên kết nếu có
+                    var repPost = await _db.Posts.FirstOrDefaultAsync(p => p.RecipeId == report.RecipeId.Value, ct);
+                    if (repPost != null)
+                    {
+                        repPost.ModerationStatus = "APPROVED_ACTIVE";
+                        repPost.UpdatedAt = DateTime.UtcNow;
+                    }
+                }
+                else
+                {
+                    targetStatus = "APPROVED_ACTIVE";
+                }
             }
-            else if (report.CommentId.HasValue && report.Comment != null)
+            else if (report.PostId.HasValue)
             {
-                report.Comment.Status = "ACTIVE";
-                report.Comment.IsSoftDeleted = false;
-                report.Comment.UpdatedAt = DateTime.UtcNow;
-                targetStatus = "ACTIVE";
-                contentType = "COMMENT";
-                contentId = report.Comment.CommentId;
+                var post = report.Post ?? await _db.Posts.FirstOrDefaultAsync(p => p.PostId == report.PostId.Value, ct);
+                if (post != null)
+                {
+                    post.ModerationStatus = "APPROVED_ACTIVE";
+                    post.UpdatedAt = DateTime.UtcNow;
+                    targetStatus = "APPROVED_ACTIVE";
+                    contentType = "POST";
+                    contentId = post.PostId;
+                }
+                else
+                {
+                    targetStatus = "APPROVED_ACTIVE";
+                }
             }
             else
             {
