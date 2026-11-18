@@ -11,6 +11,7 @@ using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Exceptions;
 using VeggieLife.BLL.DTOs.Admin.Settings;
 using VeggieLife.BLL.Services.Cache;
+using VeggieLife.BLL.Services.Subscriptions;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
 
@@ -169,7 +170,14 @@ public class SystemSettingService : ISystemSettingService
             CreatedAt = DateTime.UtcNow
         });
 
+        // D121 Q1-B: hạn mức VIP đổi thì các gói lên phiên bản mới, lưu chung một lần với SystemSettings
+        var syncedPlans = await VipPlanBenefitSync.SyncSettingToPlansAsync(_db, key, trimmedNewValue, adminId, DateTime.UtcNow, ct);
+
         await _db.SaveChangesAsync(ct);
+        if (syncedPlans > 0)
+        {
+            _logger.LogInformation("Đồng bộ {Key} = {Value} vào {Count} gói VIP (tăng Version).", key, trimmedNewValue, syncedPlans);
+        }
 
         // Đồng bộ cập nhật Redis Cache
         var cacheKey = CacheKeyPrefix + key;
@@ -221,7 +229,14 @@ public class SystemSettingService : ISystemSettingService
             CreatedAt = DateTime.UtcNow
         });
 
+        // D121 Q1-B: hạn mức VIP đổi thì các gói lên phiên bản mới, lưu chung một lần với SystemSettings
+        var syncedPlans = await VipPlanBenefitSync.SyncSettingToPlansAsync(_db, key, setting.DefaultValue, adminId, DateTime.UtcNow, ct);
+
         await _db.SaveChangesAsync(ct);
+        if (syncedPlans > 0)
+        {
+            _logger.LogInformation("Đồng bộ {Key} = {Value} vào {Count} gói VIP (tăng Version).", key, setting.DefaultValue, syncedPlans);
+        }
 
         var cacheKey = CacheKeyPrefix + key;
         try
@@ -497,8 +512,12 @@ public class SystemSettingService : ISystemSettingService
         result.ChatLimitDailyGuest = await GetIntSettingAsync("CHAT_LIMIT_DAILY_GUEST", 3, ct);
         result.ChatLimitDailyFree = await GetIntSettingAsync("CHAT_LIMIT_DAILY_FREE", 20, ct);
         result.ChatLimitDailyVip = await GetIntSettingAsync("CHAT_LIMIT_DAILY_VIP", 200, ct);
+        result.FridgeScanLimitDailyGuest = await GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_GUEST", 3, ct);
         result.FridgeScanLimitDailyFree = await GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_FREE", 10, ct);
         result.FridgeScanLimitDailyVip = await GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_VIP", 30, ct);
+        result.BarcodeScanLimitDailyGuest = await GetIntSettingAsync("BARCODE_SCAN_LIMIT_DAILY_GUEST", 3, ct);
+        result.BarcodeScanLimitDailyFree = await GetIntSettingAsync("BARCODE_SCAN_LIMIT_DAILY_FREE", 20, ct);
+        result.BarcodeScanLimitDailyVip = await GetIntSettingAsync("BARCODE_SCAN_LIMIT_DAILY_VIP", 50, ct);
 
         var legalDocs = await GetLegalDocumentsAsync(ct);
         result.LegalUserAgreementUrl = legalDocs.UserAgreementUrl;

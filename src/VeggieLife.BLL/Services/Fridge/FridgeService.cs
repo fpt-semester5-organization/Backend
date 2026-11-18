@@ -117,7 +117,7 @@ public class FridgeService : IFridgeService
             var usedLong = await _redisService.GetAsync<long?>(guestRedisKey, ct) ?? 0;
             currentUsed = (int)usedLong;
             quotaLimit = _settingService != null
-                ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_GUEST", GuestAiTrialLimit, ct)
+                ? await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_GUEST", GuestAiTrialLimit, ct)
                 : GuestAiTrialLimit;
 
             if (currentUsed >= quotaLimit)
@@ -1587,7 +1587,7 @@ public class FridgeService : IFridgeService
         if (isGuest)
         {
             var guestLimit = _settingService != null
-                ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_GUEST", GuestAiTrialLimit, ct)
+                ? await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_GUEST", GuestAiTrialLimit, ct)
                 : GuestAiTrialLimit;
 
             long guestUsed = 0;

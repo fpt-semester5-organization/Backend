@@ -107,6 +107,12 @@ public class GuestService : IGuestService
         };
     }
 
+    /// <summary>Hạn mức quét mã vạch/ngày của Khách, cấu hình ở SystemSettings (D122).</summary>
+    private async Task<int> GetBarcodeDailyLimitAsync(CancellationToken ct) =>
+        _settingService != null
+            ? await _settingService.GetIntSettingAsync("BARCODE_SCAN_LIMIT_DAILY_GUEST", DefaultBarcodeDailyLimit, ct)
+            : DefaultBarcodeDailyLimit;
+
     public async Task<GetGuestQuotaResponse> GetGuestQuotaAsync(string guestUuid, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(guestUuid))
@@ -133,6 +139,10 @@ public class GuestService : IGuestService
         var chatbotLimit = _settingService != null
             ? await _settingService.GetIntSettingAsync("CHAT_LIMIT_DAILY_GUEST", DefaultChatbotTrialLimit, ct)
             : DefaultChatbotTrialLimit;
+        var fridgeLimit = _settingService != null
+            ? await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_GUEST", DefaultFridgeVisionTrialLimit, ct)
+            : DefaultFridgeVisionTrialLimit;
+        var barcodeLimit = await GetBarcodeDailyLimitAsync(ct);
 
         return new GetGuestQuotaResponse
         {
@@ -145,8 +155,8 @@ public class GuestService : IGuestService
             FridgeVision = new GuestQuotaItemDto
             {
                 Used = (int)fridgeUsed,
-                Limit = DefaultFridgeVisionTrialLimit,
-                Remaining = Math.Max(0, DefaultFridgeVisionTrialLimit - (int)fridgeUsed)
+                Limit = fridgeLimit,
+                Remaining = Math.Max(0, fridgeLimit - (int)fridgeUsed)
             },
             VideoStt = new GuestQuotaItemDto
             {
@@ -157,8 +167,8 @@ public class GuestService : IGuestService
             BarcodeDaily = new GuestQuotaItemDto
             {
                 Used = (int)barcodeUsed,
-                Limit = DefaultBarcodeDailyLimit,
-                Remaining = Math.Max(0, DefaultBarcodeDailyLimit - (int)barcodeUsed)
+                Limit = barcodeLimit,
+                Remaining = Math.Max(0, barcodeLimit - (int)barcodeUsed)
             },
             MapSearch = new GuestQuotaItemDto
             {
@@ -200,10 +210,12 @@ public class GuestService : IGuestService
 
             case GuestTrialType.FridgeVision:
                 key = $"guest_quota:fridge:{guestUuid}";
-                limit = DefaultFridgeVisionTrialLimit;
+                limit = _settingService != null
+                    ? await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_GUEST", DefaultFridgeVisionTrialLimit, ct)
+                    : DefaultFridgeVisionTrialLimit;
                 expiry = TimeSpan.FromHours(24);
                 errorCode = ErrorCodes.ErrQuotaFridgeExceeded;
-                exceededMessage = $"Khách đã dùng hết {DefaultFridgeVisionTrialLimit:D2} lượt nhận diện nguyên liệu tủ lạnh dùng thử (FN-AUTH-02). Vui lòng đăng ký tài khoản để nhận diện nguyên liệu tủ lạnh không giới hạn.";
+                exceededMessage = $"Khách đã dùng hết {limit:D2} lượt nhận diện nguyên liệu tủ lạnh dùng thử (FN-AUTH-02). Vui lòng đăng ký tài khoản để nhận diện nguyên liệu tủ lạnh không giới hạn.";
                 successMessage = "Sử dụng thành công 01 lượt nhận diện nguyên liệu tủ lạnh dùng thử.";
                 break;
 
@@ -218,10 +230,10 @@ public class GuestService : IGuestService
 
             case GuestTrialType.BarcodeDaily:
                 key = $"guest_quota:barcode:{guestUuid}:{DateTime.UtcNow:yyyyMMdd}";
-                limit = DefaultBarcodeDailyLimit;
+                limit = await GetBarcodeDailyLimitAsync(ct);
                 expiry = TimeSpan.FromHours(24);
                 errorCode = ErrorCodes.ErrQuotaBarcodeExceeded;
-                exceededMessage = "Khách đã quét đủ 03 lần/ngày (FN-AUTH-02). Vui lòng đăng ký tài khoản để quét không giới hạn mã vạch thực phẩm.";
+                exceededMessage = $"Khách đã quét đủ {limit:D2} lần/ngày (FN-AUTH-02). Vui lòng đăng ký tài khoản để quét thêm mã vạch thực phẩm.";
                 successMessage = "Sử dụng thành công 01 lượt quét mã vạch dùng thử.";
                 break;
 

@@ -17,8 +17,12 @@ public class PublicSystemSettingsDto
     public int ChatLimitDailyGuest { get; set; } = 3;
     public int ChatLimitDailyFree { get; set; } = 20;
     public int ChatLimitDailyVip { get; set; } = 200;
+    public int FridgeScanLimitDailyGuest { get; set; } = 3;
     public int FridgeScanLimitDailyFree { get; set; } = 10;
     public int FridgeScanLimitDailyVip { get; set; } = 30;
+    public int BarcodeScanLimitDailyGuest { get; set; } = 3;
+    public int BarcodeScanLimitDailyFree { get; set; } = 20;
+    public int BarcodeScanLimitDailyVip { get; set; } = 50;
 
     // Tài liệu Pháp lý & Chính sách công khai (GENERAL / LEGAL)
     public string? LegalUserAgreementUrl { get; set; }
