@@ -258,6 +258,7 @@ public partial class AppDbContext
         {
             entity.Property(e => e.SnapshotFeaturesJson).HasColumnName("Snapshot_Features_JSON");
             entity.Property(e => e.SnapshotPlanName).HasColumnName("Snapshot_Plan_Name").HasMaxLength(200);
+            entity.Property(e => e.PlanVersion).HasColumnName("Plan_Version");
         });
     }
 

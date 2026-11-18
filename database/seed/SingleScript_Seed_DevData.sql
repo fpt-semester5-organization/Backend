@@ -310,21 +310,21 @@ BEGIN
                 N'Gói VIP 1 Tháng - Mở Khóa AI Dinh Dưỡng',
                 49000.00,
                 30,
-                N'{"chatLimitDaily":200,"mealPlanLimitWeekly":3,"fridgeScanLimitDaily":30,"exclusiveBadge":true,"adFree":true,"priorityAiResponse":true,"description":"Gói trải nghiệm linh hoạt 30 ngày mở khóa toàn diện các tiện ích AI dinh dưỡng."}',
+                N'{"chatLimitDaily":200,"mealPlanLimitWeekly":3,"fridgeScanLimitDaily":30,"barcodeScanLimitDaily":50,"exclusiveBadge":true,"adFree":true,"priorityAiResponse":true,"description":"Gói trải nghiệm linh hoạt 30 ngày mở khóa toàn diện các tiện ích AI dinh dưỡng."}',
                 1
             ),
             (
                 N'Gói VIP 3 Tháng - Lộ Trình Sống Khỏe',
                 129000.00,
                 90,
-                N'{"chatLimitDaily":200,"mealPlanLimitWeekly":3,"fridgeScanLimitDaily":30,"exclusiveBadge":true,"adFree":true,"priorityAiResponse":true,"dietitianConsultation":true,"description":"Gói tiết kiệm 90 ngày (tiết kiệm 12%), đồng hành xây dựng thói quen ăn chay khoa học."}',
+                N'{"chatLimitDaily":200,"mealPlanLimitWeekly":3,"fridgeScanLimitDaily":30,"barcodeScanLimitDaily":50,"exclusiveBadge":true,"adFree":true,"priorityAiResponse":true,"dietitianConsultation":true,"description":"Gói tiết kiệm 90 ngày (tiết kiệm 12%), đồng hành xây dựng thói quen ăn chay khoa học."}',
                 1
             ),
             (
                 N'Gói VIP 1 Năm - Thuần Chay Bền Vững',
                 449000.00,
                 365,
-                N'{"chatLimitDaily":200,"mealPlanLimitWeekly":3,"fridgeScanLimitDaily":30,"exclusiveBadge":true,"adFree":true,"priorityAiResponse":true,"dietitianConsultation":true,"earlyFeatureAccess":true,"description":"Gói toàn diện 365 ngày (tiết kiệm gần 25%), đặc quyền cao cấp nhất dành cho hội viên thân thiết."}',
+                N'{"chatLimitDaily":200,"mealPlanLimitWeekly":3,"fridgeScanLimitDaily":30,"barcodeScanLimitDaily":50,"exclusiveBadge":true,"adFree":true,"priorityAiResponse":true,"dietitianConsultation":true,"earlyFeatureAccess":true,"description":"Gói toàn diện 365 ngày (tiết kiệm gần 25%), đặc quyền cao cấp nhất dành cho hội viên thân thiết."}',
                 1
             )
     ) AS source (Plan_Name, Price, Duration_Days, Features_JSON, Is_Active)
