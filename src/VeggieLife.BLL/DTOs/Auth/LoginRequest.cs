@@ -23,7 +23,7 @@ public class LoginRequest
     public string Password { get; set; } = string.Empty;
 
     /// <summary>
-    /// Khôi phục tài khoản nếu đang trong 30 ngày ân hạn xóa (mặc định false).
+    /// Khôi phục tài khoản nếu đang trong thời gian chờ xóa 30 ngày (có thể khôi phục) (mặc định false).
     /// </summary>
     public bool RestoreAccount { get; set; } = false;
 

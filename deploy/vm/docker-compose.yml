@@ -1,0 +1,35 @@
+# VM veggielife-core-vm (Ubuntu 24.04, GCP): SQL Server 2022 + Redis cho Backend chạy ở Cloud Run.
+# Chỉ lắng nghe trên IP nội bộ của VM (mặc định 10.148.0.2) — Cloud Run vào qua Direct VPC egress, không mở ra Internet.
+#   cp .env.example .env   # điền mật khẩu rồi:  docker compose up -d
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?đặt MSSQL_SA_PASSWORD trong .env}
+      MSSQL_PID: ${MSSQL_PID:-Express}
+      MSSQL_MEMORY_LIMIT_MB: ${MSSQL_MEMORY_LIMIT_MB:-2048}
+    ports:
+      - "${VM_INTERNAL_IP:-10.148.0.2}:1433:1433"
+    volumes:
+      - sqlserverdata:/var/opt/mssql
+      - ./backup:/var/opt/mssql/backup
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?đặt REDIS_PASSWORD trong .env}", "--appendonly", "yes"]
+    ports:
+      - "${VM_INTERNAL_IP:-10.148.0.2}:6379:6379"
+    volumes:
+      - redisdata:/data
+
+volumes:
+  sqlserverdata: {}
+  redisdata: {}

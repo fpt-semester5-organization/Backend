@@ -488,6 +488,7 @@ public class AdminSubscriptionServiceTests
         items.Should().NotBeNull();
         items.Should().HaveCount(2);
         meta.Total.Should().Be(2);
+        meta.TotalRevenueVnd.Should().Be(49000);
 
         var pendingItem = items.First(x => x.TransactionId == 1001);
         pendingItem.CanApprove.Should().BeTrue();
@@ -511,6 +512,32 @@ public class AdminSubscriptionServiceTests
         items.Should().HaveCount(1);
         items[0].TransactionId.Should().Be(1001);
         meta.Total.Should().Be(1);
+        meta.TotalRevenueVnd.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetPaymentTransactionsAsync_FilterByDateRange_ReturnsMatchingAndCalculatesRevenue()
+    {
+        // Arrange: Lọc trong khoảng ngày chứa txnSuccess (-5 ngày)
+        var nowVn = DateTime.UtcNow.AddHours(7);
+        var fromDate = nowVn.AddDays(-6).ToString("yyyy-MM-dd");
+        var toDate = nowVn.AddDays(-4).ToString("yyyy-MM-dd");
+        var filter = new AdminPaymentListFilterRequest
+        {
+            Page = 1,
+            Size = 10,
+            From = fromDate,
+            To = toDate
+        };
+
+        // Act
+        var (items, meta) = await _service.GetPaymentTransactionsAsync(filter);
+
+        // Assert
+        items.Should().HaveCount(1);
+        items[0].TransactionId.Should().Be(1002);
+        meta.Total.Should().Be(1);
+        meta.TotalRevenueVnd.Should().Be(49000);
     }
 
     [Fact]

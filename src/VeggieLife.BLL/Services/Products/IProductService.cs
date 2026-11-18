@@ -22,6 +22,11 @@ public interface IProductService
         CancellationToken ct = default);
 
     /// <summary>
+    /// FN-BAR-01: Hạn mức quét mã vạch hôm nay (đã dùng, tối đa, còn lại) của Khách hoặc Thành viên (D122).
+    /// </summary>
+    Task<ScanQuotaDto> GetBarcodeQuotaAsync(int? userId, string? guestId, CancellationToken ct = default);
+
+    /// <summary>
     /// FN-BAR-02: Lấy lịch sử quét mã vạch của Thành viên kèm kết luận và cảnh báo dị ứng.
     /// </summary>
     Task<PagedResult<UserScanHistoryResponse>> GetUserScanHistoryAsync(

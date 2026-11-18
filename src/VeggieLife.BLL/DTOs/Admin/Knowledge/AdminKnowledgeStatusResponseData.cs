@@ -12,6 +12,9 @@ public class AdminKnowledgeStatusResponseData
     public string Collection { get; set; } = "veggielife_knowledge";
     public int TotalPoints { get; set; }
     public Dictionary<string, int> BySource { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Số điểm bị Admin ẩn (payload active=false) — không được tìm khi chat; TotalPoints/BySource chỉ tính điểm đang dùng.</summary>
+    public int InactivePoints { get; set; }
     public string? LastIndexedAt { get; set; }
     public int Pending { get; set; }
     public int Failed { get; set; }

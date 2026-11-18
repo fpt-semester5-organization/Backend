@@ -294,6 +294,132 @@ public class AiServiceClient : IAiServiceClient
         }
     }
 
+    public async Task<int> UpsertKnowledgeChunksAsync(
+        string sourceType,
+        string sourceId,
+        string title,
+        string text,
+        DateTime? updatedAt = null,
+        CancellationToken ct = default)
+    {
+        _circuitBreaker.ThrowIfOpen();
+        HttpResponseMessage response;
+        try
+        {
+            var payload = new { sourceType, sourceId, title, text, updatedAt = updatedAt ?? DateTime.UtcNow };
+            response = await _httpClient.PostAsJsonAsync("/rag/upsert", payload, CamelCaseOptions, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "[AiServiceClient] Lỗi mạng khi gọi /rag/upsert [{Type} #{Id}]", sourceType, sourceId);
+            _circuitBreaker.RecordFailure();
+            throw AppException.ServiceUnavailable(ErrorCodes.ErrExtQdrantUnavailable, "Không kết nối được AI service để vector hoá tài liệu.");
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            _logger.LogWarning("[AiServiceClient] POST /rag/upsert [{Type} #{Id}] lỗi HTTP {Code}: {Body}",
+                sourceType, sourceId, (int)response.StatusCode, errorBody);
+            if ((int)response.StatusCode >= 500) _circuitBreaker.RecordFailure();
+            throw AppException.ServiceUnavailable(ErrorCodes.ErrExtQdrantUnavailable,
+                $"AI service không vector hoá được tài liệu (HTTP {(int)response.StatusCode}).");
+        }
+
+        _circuitBreaker.RecordSuccess();
+        var jsonDoc = await response.Content.ReadFromJsonAsync<JsonDocument>(CamelCaseOptions, ct);
+        return jsonDoc?.RootElement.TryGetProperty("chunks", out var cProp) == true ? cProp.GetInt32() : 0;
+    }
+
+    public async Task<AiOcrPdfResult> OcrPdfAsync(byte[] pdf, string fileName, CancellationToken ct = default)
+    {
+        _circuitBreaker.ThrowIfOpen();
+        HttpResponseMessage response;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var file = new ByteArrayContent(pdf);
+            file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+            content.Add(file, "file", string.IsNullOrWhiteSpace(fileName) ? "document.pdf" : fileName);
+            // OCR sách dài mất vài phút (AI service chạy song song từng lô trang) — không áp timeout 10 giây của chat
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromMinutes(15));
+            response = await _httpClient.PostAsync("/rag/ocr-pdf", content, cts.Token);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "[AiServiceClient] Lỗi mạng khi gọi /rag/ocr-pdf ({File})", fileName);
+            _circuitBreaker.RecordFailure();
+            throw AppException.ServiceUnavailable(ErrorCodes.ErrExtSourceUnavailable, "Không kết nối được AI service để nhận dạng chữ trong PDF.");
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw AppException.ServiceUnavailable(ErrorCodes.ErrExtSourceUnavailable, "Nhận dạng chữ PDF quá thời gian (15 phút).");
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            _logger.LogWarning("[AiServiceClient] POST /rag/ocr-pdf ({File}) lỗi HTTP {Code}: {Body}", fileName, (int)response.StatusCode, errorBody);
+            string message = $"AI service không nhận dạng được chữ trong PDF (HTTP {(int)response.StatusCode}).";
+            try
+            {
+                using var err = JsonDocument.Parse(errorBody);
+                if (err.RootElement.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String) message = m.GetString()!;
+            }
+            catch (JsonException) { }
+            if ((int)response.StatusCode >= 500)
+            {
+                _circuitBreaker.RecordFailure();
+                throw AppException.ServiceUnavailable(ErrorCodes.ErrExtSourceUnavailable, message);
+            }
+            throw AppException.UnprocessableEntity(ErrorCodes.ErrMediaInvalidFile, message);
+        }
+
+        _circuitBreaker.RecordSuccess();
+        return await response.Content.ReadFromJsonAsync<AiOcrPdfResult>(CamelCaseOptions, ct)
+               ?? throw AppException.ServiceUnavailable(ErrorCodes.ErrExtSourceUnavailable, "AI service trả kết quả OCR rỗng.");
+    }
+
+    public async Task<int> SetKnowledgeVisibilityAsync(
+        string sourceType,
+        IReadOnlyCollection<string> sourceIds,
+        int? bookNo,
+        string? sourceIdPrefix,
+        bool active,
+        CancellationToken ct = default)
+    {
+        _circuitBreaker.ThrowIfOpen();
+        HttpResponseMessage response;
+        try
+        {
+            var payload = new { sourceType, sourceIds, bookNo, sourceIdPrefix, active };
+            response = await _httpClient.PostAsJsonAsync("/rag/visibility", payload, CamelCaseOptions, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "[AiServiceClient] Lỗi mạng khi gọi /rag/visibility [{Type}]", sourceType);
+            _circuitBreaker.RecordFailure();
+            throw AppException.ServiceUnavailable(ErrorCodes.ErrExtQdrantUnavailable, "Không kết nối được AI service để cập nhật trạng thái tài liệu.");
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            _logger.LogWarning("[AiServiceClient] POST /rag/visibility [{Type}] lỗi HTTP {Code}: {Body}",
+                sourceType, (int)response.StatusCode, errorBody);
+            if ((int)response.StatusCode >= 500) _circuitBreaker.RecordFailure();
+            throw AppException.ServiceUnavailable(ErrorCodes.ErrExtQdrantUnavailable,
+                $"AI service không cập nhật được trạng thái tài liệu (HTTP {(int)response.StatusCode}).");
+        }
+
+        _circuitBreaker.RecordSuccess();
+        var jsonDoc = await response.Content.ReadFromJsonAsync<JsonDocument>(CamelCaseOptions, ct);
+        var updated = jsonDoc?.RootElement.TryGetProperty("updated", out var uProp) == true ? uProp.GetInt32() : 0;
+        _logger.LogInformation("[AiServiceClient] {Action} {Count} điểm [{Type}] trên Qdrant.", active ? "Bật" : "Ẩn", updated, sourceType);
+        return updated;
+    }
+
     /// <summary>
     /// FN-CHAT-07: Kích hoạt nạp lại toàn bộ tài liệu dinh dưỡng chuẩn từ thư mục knowledge/nutrition/ của AI Service.
     /// </summary>

@@ -84,11 +84,6 @@ public class AuthLoginRefreshLogoutIntegrationTests : IClassFixture<WebApplicati
             return Task.FromResult((true, 1L, 2L));
         }
 
-        public Task<(bool Allowed, bool IsBanned, long CurrentCount, TimeSpan? RetryAfter)> CheckIpRateLimitAsync(string clientIp, int maxRequestsPerMinute = 10, int banDurationMinutes = 10, CancellationToken ct = default)
-        {
-            return Task.FromResult((true, false, 1L, (TimeSpan?)null));
-        }
-
         public Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default)
         {
             return Task.CompletedTask;

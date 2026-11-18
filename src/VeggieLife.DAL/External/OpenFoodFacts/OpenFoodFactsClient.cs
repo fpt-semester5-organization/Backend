@@ -148,14 +148,8 @@ public class OpenFoodFactsClient : IOpenFoodFactsClient
                 brand = bProp.GetString()?.Trim();
             }
 
-            // Thành phần nguyên liệu
-            string? ingredientsText = null;
-            if (product.TryGetProperty("ingredients_text_vi", out var ingVi) && !string.IsNullOrWhiteSpace(ingVi.GetString()))
-                ingredientsText = ingVi.GetString()!.Trim();
-            else if (product.TryGetProperty("ingredients_text", out var ingDef) && !string.IsNullOrWhiteSpace(ingDef.GetString()))
-                ingredientsText = ingDef.GetString()!.Trim();
-            else if (product.TryGetProperty("ingredients_text_en", out var ingEn) && !string.IsNullOrWhiteSpace(ingEn.GetString()))
-                ingredientsText = ingEn.GetString()!.Trim();
+            // Thành phần nguyên liệu (ưu tiên vi -> mặc định -> en; nếu bản đó bị cụt thì lấy bản ngôn ngữ khác đầy đủ hơn)
+            string? ingredientsText = SelectIngredientsText(product);
 
             // Ảnh sản phẩm (FN-BAR-01: trích xuất toàn diện từ image_front_url, image_url, selected_images, images)
             string? imageUrl = ExtractProductImageUrl(product, barcode);
@@ -298,6 +292,46 @@ public class OpenFoodFactsClient : IOpenFoodFactsClient
     /// 2. Object selected_images: front/general -> display/small/thumb (ưu tiên vi, en hoặc bất kỳ ngôn ngữ nào)
     /// 3. Object images: tìm khóa front hoặc số và sinh URL đầy đủ theo cấu trúc Open Food Facts CDN.
     /// </summary>
+    // Ngôn ngữ dùng chữ Latinh: bộ lọc từ khóa động vật ở BLL đọc được các ngôn ngữ này
+    private static readonly HashSet<string> LatinScriptLanguages = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "en", "fr", "es", "it", "de", "nl", "pt", "ro", "pl", "id", "ms", "tl", "sv", "da", "no", "fi", "cs", "hu", "tr"
+    };
+
+    private static readonly Regex LanguageIngredientsKey = new(@"^ingredients_text_([a-z]{2})$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Chọn chuỗi thành phần đầy đủ nhất. OFF đôi khi chỉ có bản tiếng Anh bị cụt (ví dụ Nutella: "sugar, palm oil")
+    /// trong khi bản tiếng Pháp/Ý... đầy đủ; khi bản ưu tiên ngắn hơn một nửa bản dài nhất thì dùng bản dài nhất,
+    /// ưu tiên ngôn ngữ chữ Latinh.
+    /// </summary>
+    private static string? SelectIngredientsText(JsonElement product)
+    {
+        static string? Read(JsonElement p, string key) =>
+            p.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(v.GetString())
+                ? v.GetString()!.Trim()
+                : null;
+
+        var preferred = Read(product, "ingredients_text_vi") ?? Read(product, "ingredients_text") ?? Read(product, "ingredients_text_en");
+
+        string? longestLatin = null, longestAny = null;
+        foreach (var prop in product.EnumerateObject())
+        {
+            var m = LanguageIngredientsKey.Match(prop.Name);
+            if (!m.Success || prop.Value.ValueKind != JsonValueKind.String) continue;
+            var text = prop.Value.GetString()?.Trim();
+            if (string.IsNullOrWhiteSpace(text)) continue;
+            if (longestAny == null || text.Length > longestAny.Length) longestAny = text;
+            if (LatinScriptLanguages.Contains(m.Groups[1].Value) && (longestLatin == null || text.Length > longestLatin.Length))
+                longestLatin = text;
+        }
+
+        var fallback = longestLatin ?? longestAny;
+        if (preferred == null) return fallback;
+        if (fallback != null && preferred.Length * 2 < fallback.Length) return fallback;
+        return preferred;
+    }
+
     private static string? ExtractProductImageUrl(JsonElement product, string barcode)
     {
         // 1. Kiểm tra các thuộc tính ảnh trực tiếp

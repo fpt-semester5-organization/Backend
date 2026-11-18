@@ -205,4 +205,85 @@ public class AdminAuditLogServiceTests
             }
         }
     }
+
+    [Fact]
+    public async Task GetAuditLogsAsync_ResolvesActorAndTargetDetailsProperly()
+    {
+        // Arrange: Tạo Actor User và Target User, Target Post, Target Recipe
+        var actor = new User
+        {
+            UserId = 101,
+            FullName = "Nguyễn Văn Admin",
+            Email = "admin@veggielife.vn",
+            AvatarUrl = "https://cdn.veggielife.vn/avatars/admin101.png",
+            Role = "ADMIN",
+            AccountStatus = "ACTIVE"
+        };
+        var targetUser = new User
+        {
+            UserId = 202,
+            FullName = "Trần Thị Khách",
+            Email = "khach@veggielife.vn",
+            AvatarUrl = "https://cdn.veggielife.vn/avatars/user202.png",
+            Role = "MEMBER",
+            AccountStatus = "ACTIVE"
+        };
+        var targetPost = new Post
+        {
+            PostId = 303,
+            UserId = 202,
+            Title = "Cách nấu canh chua chay thanh đạm",
+            Content = "Nội dung bài viết...",
+            ImageUrl = "https://cdn.veggielife.vn/posts/post303.jpg",
+            ModerationStatus = "APPROVED",
+            Visibility = "PUBLIC",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Users.AddRange(actor, targetUser);
+        _db.Posts.Add(targetPost);
+
+        _db.AuditLogs.AddRange(
+            new AuditLog
+            {
+                AuditId = 1,
+                ActorUserId = actor.UserId,
+                ActorRole = "ADMIN",
+                Action = "USER_SANCTION",
+                TargetTable = "Users",
+                TargetId = targetUser.UserId.ToString(),
+                CreatedAt = DateTime.UtcNow
+            },
+            new AuditLog
+            {
+                AuditId = 2,
+                ActorUserId = actor.UserId,
+                ActorRole = "ADMIN",
+                Action = "DELETE_POST",
+                TargetTable = "Posts",
+                TargetId = targetPost.PostId.ToString(),
+                CreatedAt = DateTime.UtcNow
+            }
+        );
+        await _db.SaveChangesAsync();
+
+        // Act
+        var filter = new AdminAuditLogFilterRequest { Page = 1, Size = 10 };
+        var (logs, _) = await _service.GetAuditLogsAsync(filter);
+
+        // Assert
+        logs.Should().HaveCount(2);
+
+        // Check log 1 (Target: User)
+        var userLog = logs.First(l => l.TargetTable == "Users");
+        userLog.ActorName.Should().Be("Nguyễn Văn Admin");
+        userLog.ActorAvatarUrl.Should().Be("https://cdn.veggielife.vn/avatars/admin101.png");
+        userLog.TargetName.Should().Be("Trần Thị Khách");
+        userLog.TargetAvatarUrl.Should().Be("https://cdn.veggielife.vn/avatars/user202.png");
+
+        // Check log 2 (Target: Post)
+        var postLog = logs.First(l => l.TargetTable == "Posts");
+        postLog.ActorName.Should().Be("Nguyễn Văn Admin");
+        postLog.TargetName.Should().Be("Cách nấu canh chua chay thanh đạm");
+        postLog.TargetAvatarUrl.Should().Be("https://cdn.veggielife.vn/posts/post303.jpg");
+    }
 }

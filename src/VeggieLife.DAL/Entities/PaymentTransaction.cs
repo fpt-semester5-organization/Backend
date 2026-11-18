@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace VeggieLife.DAL.Entities;
@@ -30,6 +30,12 @@ public partial class PaymentTransaction
     public DateTime StartsAt { get; set; }
 
     public DateTime EndsAt { get; set; }
+
+    public string? SnapshotFeaturesJson { get; set; }
+
+    public string? SnapshotPlanName { get; set; }
+
+    public int PlanVersion { get; set; } = 1;
 
     public virtual SubscriptionPlan Plan { get; set; } = null!;
 

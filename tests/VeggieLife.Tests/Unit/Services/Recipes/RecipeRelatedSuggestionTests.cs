@@ -90,6 +90,12 @@ public class RecipeRelatedSuggestionTests : IDisposable
         };
         _db.FoodCategories.AddRange(soupCategory, stirFryCategory, inactiveCategory);
 
+        // 2b. Món ăn (Food) liên kết CategoryId
+        var foodSoup = new Food { FoodId = 1, CategoryId = 1, FoodName = "Món Canh Mẫu" };
+        var foodStirFry = new Food { FoodId = 2, CategoryId = 2, FoodName = "Món Xào Mẫu" };
+        var foodInactive = new Food { FoodId = 99, CategoryId = 99, FoodName = "Món Thuộc Danh Mục Ẩn" };
+        _db.Foods.AddRange(foodSoup, foodStirFry, foodInactive);
+
         // 3. Nguyên liệu
         var tofu = new Ingredient { IngredientId = 101, IngredientName = "Đậu phụ non", StandardUnit = "g", DefaultStallType = "PLANT_PROTEIN", FoodGroup = "PLANT" };
         var mushroom = new Ingredient { IngredientId = 102, IngredientName = "Nấm đông cô", StandardUnit = "g", DefaultStallType = "PRODUCE", FoodGroup = "PLANT" };
@@ -118,6 +124,7 @@ public class RecipeRelatedSuggestionTests : IDisposable
             RecipeId = 100,
             UserId = 1,
             DietarySchoolId = 7, // VEGAN
+            FoodId = 1,
             Title = "Canh nấm rong biển hạt sen",
             Description = "Món canh bổ dưỡng thanh mát",
             Instructions = "[\"B1\", \"B2\"]",
@@ -142,6 +149,7 @@ public class RecipeRelatedSuggestionTests : IDisposable
             RecipeId = 101,
             UserId = 1,
             DietarySchoolId = 7,
+            FoodId = 1,
             Title = "Canh đậu hũ nấm rơm",
             Instructions = "[\"B1\"]",
             DifficultyLevel = "EASY",
@@ -164,6 +172,7 @@ public class RecipeRelatedSuggestionTests : IDisposable
             RecipeId = 102,
             UserId = 1,
             DietarySchoolId = 7,
+            FoodId = 2,
             Title = "Đậu hũ sốt nấm xào thập cẩm",
             Instructions = "[\"B1\"]",
             DifficultyLevel = "MEDIUM",
@@ -186,6 +195,7 @@ public class RecipeRelatedSuggestionTests : IDisposable
             RecipeId = 103,
             UserId = 1,
             DietarySchoolId = 7,
+            FoodId = 1,
             Title = "Canh rong biển đậu nành",
             Instructions = "[\"B1\"]",
             DifficultyLevel = "EASY",
@@ -207,6 +217,7 @@ public class RecipeRelatedSuggestionTests : IDisposable
             RecipeId = 104,
             UserId = 1,
             DietarySchoolId = 1, // BUDDHIST
+            FoodId = 1,
             Title = "Canh thanh tịnh chay Phật giáo",
             Instructions = "[\"B1\"]",
             DifficultyLevel = "MEDIUM",
@@ -229,6 +240,7 @@ public class RecipeRelatedSuggestionTests : IDisposable
             RecipeId = 105,
             UserId = 1,
             DietarySchoolId = 7,
+            FoodId = 1,
             Title = "Canh nháp chưa duyệt",
             Instructions = "[\"B1\"]",
             DifficultyLevel = "EASY",
@@ -244,6 +256,7 @@ public class RecipeRelatedSuggestionTests : IDisposable
             RecipeId = 106,
             UserId = 1,
             DietarySchoolId = 7,
+            FoodId = 99,
             Title = "Canh trong danh mục bị ẩn",
             Instructions = "[\"B1\"]",
             DifficultyLevel = "EASY",

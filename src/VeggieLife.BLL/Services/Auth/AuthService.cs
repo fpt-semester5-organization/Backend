@@ -514,7 +514,7 @@ public class AuthService : IAuthService
             {
                 throw AppException.Forbidden(
                     ErrorCodes.ErrAuthAccountBanned,
-                    "Tài khoản đã vượt quá thời gian ân hạn 30 ngày và đã bị xóa vĩnh viễn.");
+                    "Tài khoản đã vượt quá thời gian chờ xóa 30 ngày (có thể khôi phục) và đã bị xóa vĩnh viễn.");
             }
 
             if (request.RestoreAccount)
@@ -528,7 +528,7 @@ public class AuthService : IAuthService
                 var remainingGraceDays = Math.Max(0, gracePeriodDays - (int)daysSinceDeleted);
                 throw AppException.Conflict(
                     ErrorCodes.ErrAuthAccountPendingDeletion,
-                    "Tài khoản đang trong thời gian ân hạn xóa 30 ngày. Vui lòng xác nhận khôi phục tài khoản để tiếp tục đăng nhập.",
+                    "Tài khoản đang trong thời gian chờ xóa 30 ngày (có thể khôi phục). Vui lòng xác nhận khôi phục tài khoản để tiếp tục đăng nhập.",
                     new { gracePeriodRemainingDays = remainingGraceDays });
             }
         }

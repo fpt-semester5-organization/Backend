@@ -55,7 +55,7 @@ public interface IProfileService
     Task SendDeactivateOtpAsync(int userId, CancellationToken ct = default);
 
     /// <summary>
-    /// Vô hiệu hóa tài khoản cá nhân có thời gian ân hạn 30 ngày (FN-PROF-07).
+    /// Vô hiệu hóa tài khoản cá nhân có thời gian chờ xóa 30 ngày (có thể khôi phục) (FN-PROF-07).
     /// </summary>
     Task<DeleteCurrentUserResponseData> DeleteCurrentUserAsync(
         int userId,

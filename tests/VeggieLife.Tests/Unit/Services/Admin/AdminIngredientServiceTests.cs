@@ -446,4 +446,115 @@ public class AdminIngredientServiceTests : IDisposable
     }
 
     #endregion
+
+    #region Ảnh ứng viên từ tủ lạnh (plan/1.Implement/32 — BR-ADM-ING-02/03, TC-E2E-05)
+
+    private async Task<List<IngredientCandidateImage>> SeedCandidatesAsync(int ingredientId, int count, string status = CandidateStatus.Pending)
+    {
+        var session = new FridgeSession
+        {
+            UserId = 10,
+            ImageCdnUrl = "https://res.cloudinary.com/demo/image/upload/v1/veggielife/fridge/a.jpg",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.FridgeSessions.Add(session);
+        await _db.SaveChangesAsync();
+
+        var list = Enumerable.Range(0, count).Select(k => new IngredientCandidateImage
+        {
+            IngredientId = ingredientId,
+            SessionId = session.SessionId,
+            CroppedImageUrl = $"https://res.cloudinary.com/demo/image/upload/c_crop,x_0.{k}00/v1/veggielife/fridge/a.jpg",
+            ConfidenceScore = 0.9m,
+            Status = status,
+            CreatedAt = DateTime.UtcNow.AddMinutes(k)
+        }).ToList();
+        _db.IngredientCandidateImages.AddRange(list);
+        await _db.SaveChangesAsync();
+        return list;
+    }
+
+    [Fact]
+    public async Task GetIngredientsAsync_ReturnsPendingCandidateCount()
+    {
+        await SeedCandidatesAsync(ingredientId: 1, count: 3);
+        await SeedCandidatesAsync(ingredientId: 1, count: 1, status: CandidateStatus.Approved);
+
+        var (items, _) = await _service.GetIngredientsAsync(new AdminIngredientFilterRequest { Page = 1, Size = 20 });
+
+        items.Single(i => i.IngredientId == 1).CandidateCount.Should().Be(3);
+        items.Single(i => i.IngredientId == 2).CandidateCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetCandidatesAsync_ReturnsNewestPendingOnly()
+    {
+        await SeedCandidatesAsync(ingredientId: 1, count: 3);
+        await SeedCandidatesAsync(ingredientId: 1, count: 1, status: CandidateStatus.Rejected);
+
+        var result = await _service.GetCandidatesAsync(1);
+
+        result.Should().HaveCount(3);
+        result.Should().OnlyContain(c => c.Status == CandidateStatus.Pending);
+        result.Should().BeInDescendingOrder(c => c.CreatedAt);
+    }
+
+    [Fact]
+    public async Task GetCandidatesAsync_UnknownIngredient_Throws404()
+    {
+        var act = () => _service.GetCandidatesAsync(999);
+        (await act.Should().ThrowAsync<AppException>()).Which.StatusCode.Should().Be(404);
+    }
+
+    [Fact] // TC-E2E-05
+    public async Task ApplyCandidateAsync_SetsImageUrl_MarksApproved_AndWritesAudit()
+    {
+        var candidates = await SeedCandidatesAsync(ingredientId: 1, count: 2);
+        var chosen = candidates[1];
+
+        var url = await _service.ApplyCandidateAsync(1, chosen.CandidateId, adminId: 99);
+
+        url.Should().Be(chosen.CroppedImageUrl);
+        (await _db.Ingredients.AsNoTracking().SingleAsync(i => i.IngredientId == 1)).ImageUrl.Should().Be(chosen.CroppedImageUrl);
+        var statuses = await _db.IngredientCandidateImages.AsNoTracking().ToDictionaryAsync(c => c.CandidateId, c => c.Status);
+        statuses[chosen.CandidateId].Should().Be(CandidateStatus.Approved);
+        statuses[candidates[0].CandidateId].Should().Be(CandidateStatus.Pending);
+        (await _db.AuditLogs.AnyAsync(a => a.Action == "APPLY_INGREDIENT_CANDIDATE" && a.TargetId == "1")).Should().BeTrue();
+    }
+
+    [Fact] // BR-ADM-ING-01
+    public async Task ApplyCandidateAsync_LockedIngredient_Throws403_AndKeepsImage()
+    {
+        var candidates = await SeedCandidatesAsync(ingredientId: 1, count: 1);
+        var ing = await _db.Ingredients.SingleAsync(i => i.IngredientId == 1);
+        ing.IsLocked = true;
+        await _db.SaveChangesAsync();
+
+        var act = () => _service.ApplyCandidateAsync(1, candidates[0].CandidateId, adminId: 99);
+
+        (await act.Should().ThrowAsync<AppException>()).Which.StatusCode.Should().Be(403);
+        (await _db.Ingredients.AsNoTracking().SingleAsync(i => i.IngredientId == 1)).ImageUrl.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ApplyCandidateAsync_CandidateOfAnotherIngredient_Throws404()
+    {
+        var candidates = await SeedCandidatesAsync(ingredientId: 2, count: 1);
+
+        var act = () => _service.ApplyCandidateAsync(1, candidates[0].CandidateId, adminId: 99);
+
+        (await act.Should().ThrowAsync<AppException>()).Which.StatusCode.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task ApplyCandidateAsync_AlreadyApproved_Throws400()
+    {
+        var candidates = await SeedCandidatesAsync(ingredientId: 1, count: 1, status: CandidateStatus.Approved);
+
+        var act = () => _service.ApplyCandidateAsync(1, candidates[0].CandidateId, adminId: 99);
+
+        (await act.Should().ThrowAsync<AppException>()).Which.StatusCode.Should().Be(400);
+    }
+
+    #endregion
 }

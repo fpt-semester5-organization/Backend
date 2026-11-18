@@ -362,7 +362,7 @@ public class AdminAiController : BaseApiController
         [FromForm] UploadNutritionDocumentForm form,
         CancellationToken ct = default)
     {
-        EnsureAdmin();
+        var adminId = EnsureAdmin();
 
         if (form.File == null || form.File.Length == 0)
         {
@@ -376,7 +376,8 @@ public class AdminAiController : BaseApiController
             Author = form.Author,
             FileName = form.File.FileName,
             FileStream = stream,
-            FileLength = form.File.Length
+            FileLength = form.File.Length,
+            ActorUserId = adminId
         };
 
         var result = await _nutritionDocumentService.UploadDocumentAsync(request, ct);

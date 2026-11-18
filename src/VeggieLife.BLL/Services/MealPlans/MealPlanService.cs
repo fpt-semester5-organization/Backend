@@ -41,6 +41,19 @@ public class MealPlanService : IMealPlanService
         var trimmed = reason.Trim();
         return trimmed.Length <= SwapReasonMaxLength ? trimmed : trimmed[..(SwapReasonMaxLength - 1)] + "…";
     }
+
+    /// <summary>
+    /// Chuẩn hóa hạn mức đổi món theo tỷ lệ số ngày (Math.Ceiling — Ưu ái trải nghiệm người dùng).
+    /// Hạn mức baseSevenDayLimit là chuẩn 7 ngày (từ SystemSettings). Thực đơn N ngày sẽ nhận:
+    /// Max(1, Ceiling(baseLimit * N / 7.0)).
+    /// </summary>
+    private static int CalculateScaledLimit(int baseSevenDayLimit, int durationDays)
+    {
+        var safeDays = Math.Clamp(durationDays, 1, 30);
+        return (safeDays == 7)
+            ? baseSevenDayLimit
+            : Math.Max(1, (int)Math.Ceiling((double)baseSevenDayLimit * safeDays / 7.0));
+    }
     private static readonly HashSet<string> RedMeatFoodGroups = new(StringComparer.OrdinalIgnoreCase) { "MEAT", "RED_MEAT", "BEEF", "PORK", "MAM" };
 
     private static string MapDayOfWeek(DayOfWeek dayOfWeek) => dayOfWeek switch
@@ -59,6 +72,7 @@ public class MealPlanService : IMealPlanService
     private readonly IAiServiceClient _aiClient;
     private readonly IRedisService _redisService;
     private readonly ISystemSettingService _settingService;
+    private readonly VeggieLife.BLL.Services.Subscriptions.IUserBenefitService? _userBenefitService;
     private readonly ILogger<MealPlanService> _logger;
 
     public MealPlanService(
@@ -66,13 +80,15 @@ public class MealPlanService : IMealPlanService
         IAiServiceClient aiClient,
         IRedisService redisService,
         ISystemSettingService settingService,
-        ILogger<MealPlanService> logger)
+        ILogger<MealPlanService> logger,
+        VeggieLife.BLL.Services.Subscriptions.IUserBenefitService? userBenefitService = null)
     {
         _db = db;
         _aiClient = aiClient;
         _redisService = redisService;
         _settingService = settingService;
         _logger = logger;
+        _userBenefitService = userBenefitService;
     }
 
     public async Task<CreateMealPlanResponseData> CreateMealPlanAsync(
@@ -149,7 +165,7 @@ public class MealPlanService : IMealPlanService
 
             // 8. Lọc trước kho Recipes (APPROVED_ACTIVE) loại trừ 100% món vi phạm trường phái hoặc dị ứng
             var allActiveRecipes = await _db.Recipes
-                .Include(r => r.Food).ThenInclude(f => f.Category)
+                .Include(r => r.Food).ThenInclude(f => f!.Category)
                 .Include(r => r.Food)
                 .Include(r => r.RecipeIngredients)
                     .ThenInclude(ri => ri.Ingredient)
@@ -171,13 +187,20 @@ public class MealPlanService : IMealPlanService
 
             // 9. Lấy nguyên liệu tủ lạnh ảo nếu useFridge = true (BR-USR-08, BR-USR-VIS-FRESH-01)
             var fridgeIngredientIds = new HashSet<int>();
+            var fridgeIngredientNames = new List<string>();
             if (request.UseFridge)
             {
-                fridgeIngredientIds = (await _db.FridgeInventories
+                var fridgeInventories = await _db.FridgeInventories
                     .Where(f => f.UserId == userId)
-                    .Select(f => f.IngredientId)
-                    .ToListAsync(ct))
-                    .ToHashSet();
+                    .Include(f => f.Ingredient)
+                    .ToListAsync(ct);
+
+                fridgeIngredientIds = fridgeInventories.Select(f => f.IngredientId).ToHashSet();
+                fridgeIngredientNames = fridgeInventories
+                    .Where(f => f.Ingredient != null && !string.IsNullOrWhiteSpace(f.Ingredient.IngredientName))
+                    .Select(f => f.Ingredient.IngredientName)
+                    .Distinct()
+                    .ToList();
 
                 if (fridgeIngredientIds.Count == 0)
                 {
@@ -196,16 +219,17 @@ public class MealPlanService : IMealPlanService
                 .Take(100)
                 .ToList();
 
-            var (slots, usedAi, tokensConsumed, modelVersion) = await ScheduleMealsAsync(
+            var (slots, usedAi, tokensConsumed, modelVersion, aiCostUsd) = await ScheduleMealsAsync(
                 selectedCandidates,
                 profile,
                 targetCalories,
                 forbiddenFoodGroups,
                 requiresAlliumFree,
                 fridgeIngredientIds,
-
+                fridgeIngredientNames,
                 durationDays,
                 startDate,
+                request.BudgetTier,
                 request.CustomInstructions,
                 ct);
             sw.Stop();
@@ -220,10 +244,15 @@ public class MealPlanService : IMealPlanService
                 targetCalories,
                 request.BudgetTier.ToUpperInvariant(),
                 request.CustomInstructions,
+                profile.HealthGoal,
+                profile.RegionPreference,
+                request.UseFridge,
+                requiresAlliumFree,
                 usedAi,
                 slots,
                 selectedCandidates,
                 tokensConsumed,
+                aiCostUsd,
                 modelVersion,
                 (int)sw.ElapsedMilliseconds,
                 ct);
@@ -275,20 +304,29 @@ public class MealPlanService : IMealPlanService
         request.DurationDays = duration;
         request.NumberOfDays = duration;
 
-        if (!string.IsNullOrWhiteSpace(request.CustomInstructions) && request.CustomInstructions.Length > 200)
+        if (!string.IsNullOrWhiteSpace(request.CustomInstructions) && request.CustomInstructions.Length > 500)
         {
             throw AppException.BadRequest(
                 ErrorCodes.ErrValidation,
-                "Ghi chú tùy chỉnh cho AI không được vượt quá 200 ký tự.");
+                "Ghi chú tùy chỉnh cho AI không được vượt quá 500 ký tự.");
         }
     }
 
     private async Task CheckWeeklyQuotaAsync(int userId, string userRole, DateOnly startDate, int durationDays, CancellationToken ct)
     {
         var isVip = string.Equals(userRole, UserRoles.Vip, StringComparison.OrdinalIgnoreCase);
-        var weeklyLimit = isVip
-            ? await _settingService.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_VIP", 3, ct)
-            : await _settingService.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_FREE", 1, ct);
+        int weeklyLimit;
+        if (_userBenefitService != null)
+        {
+            var benefits = await _userBenefitService.GetUserBenefitsAsync(userId, userRole, ct);
+            weeklyLimit = benefits.MealPlanLimitWeekly;
+        }
+        else
+        {
+            weeklyLimit = isVip
+                ? await _settingService.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_VIP", 3, ct)
+                : await _settingService.GetIntSettingAsync("MEAL_PLAN_WEEKLY_LIMIT_FREE", 1, ct);
+        }
 
         var weekStart = startDate;
         var weekEnd = startDate.AddDays(durationDays - 1);
@@ -422,7 +460,7 @@ public class MealPlanService : IMealPlanService
         return candidates;
     }
 
-    private async Task<(List<(string DayOfWeek, string MealType, int RecipeId)> Slots, bool UsedAi, int TokensConsumed, string ModelVersion)>
+    private async Task<(List<(string DayOfWeek, string MealType, int RecipeId, string? MatchReason)> Slots, bool UsedAi, int TokensConsumed, string ModelVersion, decimal CostUsd)>
         ScheduleMealsAsync(
             List<Recipe> candidateRecipes,
             HealthProfile profile,
@@ -430,8 +468,10 @@ public class MealPlanService : IMealPlanService
             HashSet<string> forbiddenFoodGroups,
             bool requiresAlliumFree,
             HashSet<int> fridgeIngredientIds,
+            List<string> fridgeIngredientNames,
             int durationDays,
             DateOnly startDate,
+            string budgetTier,
             string? customInstructions,
             CancellationToken ct)
     {
@@ -444,19 +484,25 @@ public class MealPlanService : IMealPlanService
             {
                 TargetDailyCalories = targetCalories,
                 DietarySchoolCode = profile.DietarySchool.SchoolCode,
+                DietarySchoolName = profile.DietarySchool.SchoolName,
                 RequiresAlliumFree = requiresAlliumFree,
+                HealthGoal = profile.HealthGoal,
+                RegionPreference = profile.RegionPreference,
+                BudgetTier = budgetTier,
+                TargetWeightKg = profile.TargetWeightKg,
                 DurationDays = durationDays,
                 StartDate = startDate.ToString("yyyy-MM-dd"),
                 ForbiddenFoodGroups = forbiddenFoodGroups.ToList(),
+                FridgeIngredients = fridgeIngredientNames,
                 CustomInstructions = customInstructions,
                 CandidateRecipes = candidateRecipes.Select(r => new AiCandidateRecipeDto
                 {
                     RecipeId = r.RecipeId,
                     Title = r.Title,
                     CaloriesKcal = r.CaloriesKcal,
-                    CategoryName = r.Food?.Category?.CategoryName,
+                    CategoryName = r.Food?.Category?.CategoryName ?? "Món chay",
                     FoodId = r.FoodId,
-                    FoodName = r.Food?.FoodName,
+                    FoodName = r.Food?.FoodName ?? r.Title,
                     Description = r.Description,
                     Instructions = r.Instructions,
                     PrepTimeMinutes = r.PrepTimeMinutes,
@@ -490,7 +536,7 @@ public class MealPlanService : IMealPlanService
                 }
 
                 // Kiểm tra 21 vị trí món ăn do AI xếp
-                var candidateSlots = new List<(string DayOfWeek, string MealType, int RecipeId)>();
+                var candidateSlots = new List<(string DayOfWeek, string MealType, int RecipeId, string? MatchReason)>();
                 var allSlotsValid = true;
 
                 for (var i = 0; i < aiResponse.Slots.Count; i++)
@@ -504,7 +550,7 @@ public class MealPlanService : IMealPlanService
                     var dayIdx = i / 3;
                     var slotDate = startDate.AddDays(dayIdx);
                     var dayCode = MapDayOfWeek(slotDate.DayOfWeek);
-                    candidateSlots.Add((dayCode, s.MealType, s.RecipeId));
+                    candidateSlots.Add((dayCode, s.MealType, s.RecipeId, s.MatchReason));
                 }
 
                 if (!allSlotsValid)
@@ -518,7 +564,9 @@ public class MealPlanService : IMealPlanService
                 if (caloCompliant)
                 {
                     _logger.LogInformation("[MealPlanService] AI xếp 21 bữa thành công tại lần thử {Attempt}.", attempt);
-                    return (candidateSlots, true, aiResponse.TokensConsumed, aiResponse.ModelVersion);
+                    // Tính chi phí theo giá riêng Input/Output (không ước lượng 70/30 từ tổng)
+                    var mealCostUsd = AiCostCalculator.Calculate(aiResponse.Usage?.PromptTokens ?? 0, aiResponse.Usage?.CompletionTokens ?? 0);
+                    return (candidateSlots, true, aiResponse.TokensConsumed, aiResponse.ModelVersion, mealCostUsd);
                 }
 
                 _logger.LogWarning("[MealPlanService] AI lần {Attempt} có ngày lệch calo > 10%. Thử lại...", attempt);
@@ -539,11 +587,11 @@ public class MealPlanService : IMealPlanService
             startDate,
             ct);
 
-        return (fallbackSlots, false, 0, "fallback-template-engine");
+        return (fallbackSlots, false, 0, "fallback-template-engine", 0m);
     }
 
     private static bool CheckCalorieCompliance(
-        List<(string DayOfWeek, string MealType, int RecipeId)> slots,
+        List<(string DayOfWeek, string MealType, int RecipeId, string? MatchReason)> slots,
         Dictionary<int, Recipe> candidateLookup,
         decimal targetCalories,
         int durationDays = 7,
@@ -622,7 +670,7 @@ public class MealPlanService : IMealPlanService
         return true;
     }
 
-    private async Task<List<(string DayOfWeek, string MealType, int RecipeId)>> FallbackEngineScheduleAsync(
+    private async Task<List<(string DayOfWeek, string MealType, int RecipeId, string? MatchReason)>> FallbackEngineScheduleAsync(
         int dietarySchoolId,
         List<Recipe> candidateRecipes,
         decimal targetCalories,
@@ -646,7 +694,7 @@ public class MealPlanService : IMealPlanService
             if (templatePlan != null)
             {
                 var templateSlots = templatePlan.MealSlots
-                    .Select(s => (s.DayOfWeek, s.MealType, s.RecipeId))
+                    .Select(s => (s.DayOfWeek, s.MealType, s.RecipeId, (string?)(s.Notes ?? "Thực đơn mẫu thanh đạm.")))
                     .ToList();
 
                 // Kiểm tra thực đơn mẫu có hoàn toàn nằm trong tập ứng viên hợp lệ hay không
@@ -666,7 +714,7 @@ public class MealPlanService : IMealPlanService
             .ThenBy(r => r.CaloriesKcal)
             .ToList();
 
-        var fallbackSlots = new List<(string DayOfWeek, string MealType, int RecipeId)>();
+        var fallbackSlots = new List<(string DayOfWeek, string MealType, int RecipeId, string? MatchReason)>();
         var minKcal = targetCalories * 0.85m; // Dung sai ±15% cho Fallback Engine
         var maxKcal = targetCalories * 1.15m;
 
@@ -711,9 +759,9 @@ public class MealPlanService : IMealPlanService
 
             var (b, l, d) = bestTriplet.Value;
 
-            fallbackSlots.Add((day, "BREAKFAST", b.RecipeId));
-            fallbackSlots.Add((day, "LUNCH", l.RecipeId));
-            fallbackSlots.Add((day, "DINNER", d.RecipeId));
+            fallbackSlots.Add((day, "BREAKFAST", b.RecipeId, "Món ăn thanh đạm, cân đối dinh dưỡng."));
+            fallbackSlots.Add((day, "LUNCH", l.RecipeId, "Món ăn thanh đạm, cân đối dinh dưỡng."));
+            fallbackSlots.Add((day, "DINNER", d.RecipeId, "Món ăn thanh đạm, cân đối dinh dưỡng."));
 
             // Cập nhật lịch sử và tần suất
             var todayRecipes = new HashSet<int> { b.RecipeId, l.RecipeId, d.RecipeId };
@@ -892,21 +940,26 @@ public class MealPlanService : IMealPlanService
         decimal targetDailyKcal,
         string budgetTier,
         string? customInstructions,
+        string? healthGoal,
+        string? regionPreference,
+        bool useFridge,
+        bool requiresAlliumFree,
         bool generatedByAi,
-        List<(string DayOfWeek, string MealType, int RecipeId)> slots,
+        List<(string DayOfWeek, string MealType, int RecipeId, string? MatchReason)> slots,
         List<Recipe> candidateRecipes,
         int tokensConsumed,
+        decimal aiCostUsd,
         string modelVersion,
         int executionTimeMs,
         CancellationToken ct)
     {
         var candidateLookup = candidateRecipes.ToDictionary(r => r.RecipeId);
 
-        var preDeployLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct);
-        var postDeployLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
-        var swapLimit = (durationDays == 7)
-            ? preDeployLimit
-            : Math.Max(1, (int)Math.Round((double)preDeployLimit * durationDays / 7.0));
+        var baseDraftLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct);
+        var baseActiveLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
+        var preDeployLimit = CalculateScaledLimit(baseDraftLimit, durationDays);
+        var postDeployLimit = CalculateScaledLimit(baseActiveLimit, durationDays);
+        var swapLimit = preDeployLimit;
 
         var safeDays = Math.Clamp(durationDays, 1, 30);
         var mealPlan = new MealPlan
@@ -920,6 +973,10 @@ public class MealPlanService : IMealPlanService
             TargetDailyKcal = Math.Round(targetDailyKcal, 1),
             BudgetTier = budgetTier,
             CustomInstructions = customInstructions,
+            HealthGoal = healthGoal,
+            RegionPreference = regionPreference,
+            UseFridge = useFridge,
+            RequiresAlliumFree = requiresAlliumFree,
             PlanStatus = "DRAFT",
             GeneratedByAi = generatedByAi,
             CreatedAt = DateTime.UtcNow,
@@ -930,7 +987,7 @@ public class MealPlanService : IMealPlanService
         _db.MealPlans.Add(mealPlan);
         await _db.SaveChangesAsync(ct);
 
-        var finalSlots = new List<(string DayOfWeek, string MealType, int RecipeId)>();
+        var finalSlots = new List<(string DayOfWeek, string MealType, int RecipeId, string? MatchReason)>();
         for (var dayIndex = 0; dayIndex < safeDays; dayIndex++)
         {
             var dayCode = GetDayOfWeekCode(startDate.AddDays(dayIndex));
@@ -938,7 +995,7 @@ public class MealPlanService : IMealPlanService
             {
                 var slotIdx = finalSlots.Count;
                 var sourceSlot = slots[slotIdx % slots.Count];
-                finalSlots.Add((dayCode, mealType, sourceSlot.RecipeId));
+                finalSlots.Add((dayCode, mealType, sourceSlot.RecipeId, sourceSlot.MatchReason));
             }
         }
 
@@ -948,7 +1005,8 @@ public class MealPlanService : IMealPlanService
             RecipeId = s.RecipeId,
             DayOfWeek = s.DayOfWeek,
             MealType = s.MealType,
-            IsCompleted = false
+            IsCompleted = false,
+            Notes = s.MatchReason
         }).ToList();
 
         _db.MealSlots.AddRange(mealSlotEntities);
@@ -959,7 +1017,7 @@ public class MealPlanService : IMealPlanService
             UserId = userId,
             FeatureCode = "MEAL_PLAN_GEN",
             TokensConsumed = generatedByAi ? (tokensConsumed > 0 ? tokensConsumed : 450) : 0,
-            CostEstimateUsd = generatedByAi ? AiCostCalculator.CalculateFromTotal(tokensConsumed > 0 ? tokensConsumed : 450) : 0m,
+            CostEstimateUsd = generatedByAi ? (aiCostUsd > 0 ? aiCostUsd : AiCostCalculator.CalculateFromTotal(tokensConsumed > 0 ? tokensConsumed : 450)) : 0m,
             RequestStatus = "SUCCESS",
             ExecutionTimeMs = executionTimeMs,
             CreatedAt = DateTime.UtcNow
@@ -1007,10 +1065,10 @@ public class MealPlanService : IMealPlanService
                     CaloriesKcal = recipe.CaloriesKcal,
                     ImageUrl = recipe.ImageUrl ?? recipe.Food?.ImageUrl,
                     FoodId = recipe.FoodId,
-                    FoodName = recipe.Food?.FoodName,
-                    FoodImageUrl = recipe.Food?.ImageUrl,
-                    CategoryId = recipe.Food?.CategoryId,
-                    CategoryName = recipe.Food?.Category?.CategoryName
+                    FoodName = recipe.Food?.FoodName ?? recipe.Title,
+                    FoodImageUrl = recipe.Food?.ImageUrl ?? recipe.ImageUrl,
+                    CategoryId = recipe.Food?.CategoryId ?? 1,
+                    CategoryName = recipe.Food?.Category?.CategoryName ?? "Món chay"
                 } : null
             };
         }).ToList();
@@ -1024,6 +1082,10 @@ public class MealPlanService : IMealPlanService
             DurationDays = mealPlan.DurationDays,
             BudgetTier = mealPlan.BudgetTier,
             CustomInstructions = mealPlan.CustomInstructions,
+            HealthGoal = mealPlan.HealthGoal,
+            RegionPreference = mealPlan.RegionPreference,
+            UseFridge = mealPlan.UseFridge,
+            RequiresAlliumFree = mealPlan.RequiresAlliumFree,
             TargetDailyKcal = mealPlan.TargetDailyKcal,
             PlanStatus = mealPlan.PlanStatus,
             GeneratedByAi = mealPlan.GeneratedByAi,
@@ -1079,7 +1141,8 @@ public class MealPlanService : IMealPlanService
                 PlanName = p.PlanName,
                 StartDate = p.StartDate.ToString("yyyy-MM-dd"),
                 PlanStatus = p.PlanStatus,
-                DurationDays = p.DurationDays
+                DurationDays = p.DurationDays,
+                UseFridge = p.UseFridge
             })
             .ToListAsync(ct);
 
@@ -1146,10 +1209,10 @@ public class MealPlanService : IMealPlanService
                     CaloriesKcal = s.Recipe.CaloriesKcal,
                     ImageUrl = s.Recipe.ImageUrl ?? s.Recipe.Food?.ImageUrl,
                     FoodId = s.Recipe.FoodId,
-                    FoodName = s.Recipe.Food?.FoodName,
-                    FoodImageUrl = s.Recipe.Food?.ImageUrl,
-                    CategoryId = s.Recipe.Food?.CategoryId,
-                    CategoryName = s.Recipe.Food?.Category?.CategoryName
+                    FoodName = s.Recipe.Food?.FoodName ?? s.Recipe.Title,
+                    FoodImageUrl = s.Recipe.Food?.ImageUrl ?? s.Recipe.ImageUrl,
+                    CategoryId = s.Recipe.Food?.CategoryId ?? 1,
+                    CategoryName = s.Recipe.Food?.Category?.CategoryName ?? "Món chay"
                 } : null,
                 SwapCount = s.SwapHistories.Count,
                 SwapHistories = s.SwapHistories
@@ -1169,7 +1232,10 @@ public class MealPlanService : IMealPlanService
                             CaloriesKcal = h.OldRecipe.CaloriesKcal,
                             ImageUrl = h.OldRecipe.ImageUrl ?? h.OldRecipe.Food?.ImageUrl,
                             FoodId = h.OldRecipe.FoodId,
-                            FoodName = h.OldRecipe.Food?.FoodName
+                            FoodName = h.OldRecipe.Food?.FoodName ?? h.OldRecipe.Title,
+                            FoodImageUrl = h.OldRecipe.Food?.ImageUrl ?? h.OldRecipe.ImageUrl,
+                            CategoryId = h.OldRecipe.Food?.CategoryId ?? 1,
+                            CategoryName = h.OldRecipe.Food?.Category?.CategoryName ?? "Món chay"
                         } : null,
                         NewRecipeId = h.NewRecipeId,
                         NewRecipeTitle = h.NewRecipe?.Title ?? string.Empty,
@@ -1182,7 +1248,10 @@ public class MealPlanService : IMealPlanService
                             CaloriesKcal = h.NewRecipe.CaloriesKcal,
                             ImageUrl = h.NewRecipe.ImageUrl ?? h.NewRecipe.Food?.ImageUrl,
                             FoodId = h.NewRecipe.FoodId,
-                            FoodName = h.NewRecipe.Food?.FoodName
+                            FoodName = h.NewRecipe.Food?.FoodName ?? h.NewRecipe.Title,
+                            FoodImageUrl = h.NewRecipe.Food?.ImageUrl ?? h.NewRecipe.ImageUrl,
+                            CategoryId = h.NewRecipe.Food?.CategoryId ?? 1,
+                            CategoryName = h.NewRecipe.Food?.Category?.CategoryName ?? "Món chay"
                         } : null,
                         SwapReason = h.SwapReason,
                         CaloriesDelta = h.CaloriesDelta,
@@ -1192,8 +1261,14 @@ public class MealPlanService : IMealPlanService
             })
             .ToList();
 
-        var preDeployLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct);
-        var postDeployLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
+        var baseDraftLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct);
+        var baseActiveLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
+        var preDeployLimit = CalculateScaledLimit(baseDraftLimit, plan.DurationDays);
+        var postDeployLimit = CalculateScaledLimit(baseActiveLimit, plan.DurationDays);
+
+        var currentLimit = string.Equals(plan.PlanStatus, "DRAFT", StringComparison.OrdinalIgnoreCase) ? preDeployLimit : postDeployLimit;
+        var currentUsed = string.Equals(plan.PlanStatus, "DRAFT", StringComparison.OrdinalIgnoreCase) ? preDeployUsed : postDeployUsed;
+        var dynamicSwapsRemaining = Math.Max(0, currentLimit - currentUsed);
 
         return new CreateMealPlanResponseData
         {
@@ -1204,6 +1279,10 @@ public class MealPlanService : IMealPlanService
             DurationDays = plan.DurationDays,
             BudgetTier = plan.BudgetTier,
             CustomInstructions = plan.CustomInstructions,
+            HealthGoal = plan.HealthGoal,
+            RegionPreference = plan.RegionPreference,
+            UseFridge = plan.UseFridge,
+            RequiresAlliumFree = plan.RequiresAlliumFree,
             TargetDailyKcal = plan.TargetDailyKcal,
             PlanStatus = plan.PlanStatus,
             GeneratedByAi = plan.GeneratedByAi,
@@ -1215,8 +1294,8 @@ public class MealPlanService : IMealPlanService
                 PostDeployUsed = postDeployUsed,
                 PostDeployLimit = postDeployLimit
             },
-            MaxSwapsAllowed = plan.MaxSwapsAllowed,
-            SwapsRemaining = plan.SwapsRemaining
+            MaxSwapsAllowed = currentLimit,
+            SwapsRemaining = dynamicSwapsRemaining
         };
     }
 
@@ -1253,7 +1332,10 @@ public class MealPlanService : IMealPlanService
         }
 
         plan.PlanStatus = "ACTIVE";
-        plan.SwapsRemaining = plan.MaxSwapsAllowed;
+        var baseActiveLimit = await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
+        var postDeployLimit = CalculateScaledLimit(baseActiveLimit, plan.DurationDays);
+        plan.MaxSwapsAllowed = postDeployLimit;
+        plan.SwapsRemaining = postDeployLimit;
 
         var auditLog = new AuditLog
         {
@@ -1325,6 +1407,10 @@ public class MealPlanService : IMealPlanService
             EndDate = detail.EndDate,
             BudgetTier = detail.BudgetTier,
             CustomInstructions = detail.CustomInstructions,
+            HealthGoal = detail.HealthGoal,
+            RegionPreference = detail.RegionPreference,
+            UseFridge = detail.UseFridge,
+            RequiresAlliumFree = detail.RequiresAlliumFree,
             TargetDailyKcal = detail.TargetDailyKcal,
             PlanStatus = detail.PlanStatus,
             GeneratedByAi = detail.GeneratedByAi,
@@ -1375,19 +1461,26 @@ public class MealPlanService : IMealPlanService
 
         // Kiểm tra hạn mức đổi món linh hoạt theo MaxSwapsAllowed & SwapsRemaining kết hợp SystemSettings
         var currentPhase = plan.PlanStatus;
-        var swapLimit = string.Equals(currentPhase, "DRAFT", StringComparison.OrdinalIgnoreCase)
+        var baseLimit = string.Equals(currentPhase, "DRAFT", StringComparison.OrdinalIgnoreCase)
             ? await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct)
             : await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
 
-        var swapsUsedInPhase = await _db.AuditLogs.CountAsync(a =>
+        var auditCount = await _db.AuditLogs.CountAsync(a =>
             a.TargetTable == "MealPlans" &&
             a.TargetId == id.ToString() &&
             a.Action == "MEAL_SLOT_SWAPPED" &&
             a.Note == currentPhase, ct);
 
-        var effectiveLimit = swapLimit != 21 ? swapLimit : (plan.MaxSwapsAllowed > 0 ? plan.MaxSwapsAllowed : 21);
+        var scaledLimit = CalculateScaledLimit(baseLimit, plan.DurationDays);
+        var effectiveLimit = baseLimit != 21
+            ? scaledLimit
+            : (plan.MaxSwapsAllowed > 0 && plan.MaxSwapsAllowed != 21 ? plan.MaxSwapsAllowed : scaledLimit);
 
-        if (plan.SwapsRemaining <= 0 || swapsUsedInPhase >= effectiveLimit)
+        var swapsUsedInPhase = Math.Max(
+            auditCount,
+            plan.MaxSwapsAllowed > 0 ? Math.Max(0, plan.MaxSwapsAllowed - plan.SwapsRemaining) : 0);
+
+        if (swapsUsedInPhase >= effectiveLimit)
         {
             throw AppException.Forbidden(
                 ErrorCodes.ErrQuotaMealSwapExceeded,
@@ -1607,7 +1700,10 @@ public class MealPlanService : IMealPlanService
 
         var newRecipeId = newRecipe.RecipeId;
         slot.RecipeId = newRecipeId;
-        plan.SwapsRemaining--;
+
+        var remainingAfterSwap = Math.Max(0, effectiveLimit - swapsUsedInPhase - 1);
+        plan.SwapsRemaining = remainingAfterSwap;
+        plan.MaxSwapsAllowed = effectiveLimit;
 
         if (!string.IsNullOrWhiteSpace(request?.CustomNote))
         {
@@ -1703,16 +1799,16 @@ public class MealPlanService : IMealPlanService
                     CaloriesKcal = newRecipe.CaloriesKcal,
                     ImageUrl = newRecipe.ImageUrl ?? newRecipe.Food?.ImageUrl,
                     FoodId = newRecipe.FoodId,
-                    FoodName = newRecipe.Food?.FoodName,
-                    FoodImageUrl = newRecipe.Food?.ImageUrl,
-                    CategoryId = newRecipe.Food?.CategoryId,
-                    CategoryName = newRecipe.Food?.Category?.CategoryName
+                    FoodName = newRecipe.Food?.FoodName ?? newRecipe.Title,
+                    FoodImageUrl = newRecipe.Food?.ImageUrl ?? newRecipe.ImageUrl,
+                    CategoryId = newRecipe.Food?.CategoryId ?? 1,
+                    CategoryName = newRecipe.Food?.Category?.CategoryName ?? "Món chay"
                 },
                 SwapCount = slotHistories.Count,
                 SwapHistories = slotHistories
             },
-            SwapsRemaining = plan.SwapsRemaining,
-            MaxSwapsAllowed = plan.MaxSwapsAllowed
+            SwapsRemaining = remainingAfterSwap,
+            MaxSwapsAllowed = effectiveLimit
         };
     }
 
@@ -1735,7 +1831,7 @@ public class MealPlanService : IMealPlanService
             .Include(s => s.Plan)
                 .ThenInclude(p => p.DietarySchool)
             .Include(s => s.Recipe)
-                .ThenInclude(r => r.Food).ThenInclude(f => f.Category)
+                .ThenInclude(r => r.Food).ThenInclude(f => f!.Category)
             .Include(s => s.Recipe)
                 .ThenInclude(r => r.RecipeIngredients)
                     .ThenInclude(ri => ri.Ingredient)
@@ -1770,19 +1866,26 @@ public class MealPlanService : IMealPlanService
         }
 
         var currentPhase = plan.PlanStatus;
-        var swapLimit = string.Equals(currentPhase, "DRAFT", StringComparison.OrdinalIgnoreCase)
+        var baseLimit = string.Equals(currentPhase, "DRAFT", StringComparison.OrdinalIgnoreCase)
             ? await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, ct)
             : await _settingService.GetIntSettingAsync("MEAL_SWAP_LIMIT_ACTIVE", 21, ct);
 
-        var swapsUsedInPhase = await _db.AuditLogs.CountAsync(a =>
+        var auditCount = await _db.AuditLogs.CountAsync(a =>
             a.TargetTable == "MealPlans" &&
             a.TargetId == plan.PlanId.ToString() &&
             a.Action == "MEAL_SLOT_SWAPPED" &&
             a.Note == currentPhase, ct);
 
-        var effectiveLimit = swapLimit != 21 ? swapLimit : (plan.MaxSwapsAllowed > 0 ? plan.MaxSwapsAllowed : 21);
+        var scaledLimit = CalculateScaledLimit(baseLimit, plan.DurationDays);
+        var effectiveLimit = baseLimit != 21
+            ? scaledLimit
+            : (plan.MaxSwapsAllowed > 0 && plan.MaxSwapsAllowed != 21 ? plan.MaxSwapsAllowed : scaledLimit);
 
-        if (plan.SwapsRemaining <= 0 || swapsUsedInPhase >= effectiveLimit)
+        var swapsUsedInPhase = Math.Max(
+            auditCount,
+            plan.MaxSwapsAllowed > 0 ? Math.Max(0, plan.MaxSwapsAllowed - plan.SwapsRemaining) : 0);
+
+        if (swapsUsedInPhase >= effectiveLimit)
         {
             throw AppException.Forbidden(
                 ErrorCodes.ErrQuotaMealSwapExceeded,
@@ -1823,7 +1926,7 @@ public class MealPlanService : IMealPlanService
 
         // Cào database khoảng 100 món APPROVED_ACTIVE phù hợp
         var allActiveRecipes = await _db.Recipes
-            .Include(r => r.Food).ThenInclude(f => f.Category)
+            .Include(r => r.Food).ThenInclude(f => f!.Category)
             .Include(r => r.Food)
             .Include(r => r.RecipeIngredients)
                 .ThenInclude(ri => ri.Ingredient)
@@ -1883,6 +1986,11 @@ public class MealPlanService : IMealPlanService
                 CurrentRecipeId = oldRecipe.RecipeId,
                 SwapNote = request.Note,
                 DietarySchoolCode = plan.DietarySchool?.SchoolCode ?? "VEGAN",
+                DietarySchoolName = plan.DietarySchool?.SchoolName,
+                HealthGoal = hp?.HealthGoal,
+                RegionPreference = hp?.RegionPreference,
+                BudgetTier = plan.BudgetTier,
+                RequiresAlliumFree = requiresAlliumFree,
                 MealType = slot.MealType,
                 TargetCalories = oldRecipe.CaloriesKcal,
                 ExcludedRecipeIds = excludedIds.ToList(),
@@ -1978,7 +2086,10 @@ public class MealPlanService : IMealPlanService
             var trimmedNote = request.Note.Trim();
             slot.Notes = trimmedNote.Length > 200 ? trimmedNote.Substring(0, 200) : trimmedNote;
         }
-        plan.SwapsRemaining--;
+
+        var remainingAfterSwap = Math.Max(0, effectiveLimit - swapsUsedInPhase - 1);
+        plan.SwapsRemaining = remainingAfterSwap;
+        plan.MaxSwapsAllowed = effectiveLimit;
 
         var caloriesDelta = Math.Round(selectedRecipe.CaloriesKcal - oldRecipe.CaloriesKcal, 1);
 
@@ -2062,16 +2173,16 @@ public class MealPlanService : IMealPlanService
                     CaloriesKcal = selectedRecipe.CaloriesKcal,
                     ImageUrl = selectedRecipe.ImageUrl ?? selectedRecipe.Food?.ImageUrl,
                     FoodId = selectedRecipe.FoodId,
-                    FoodName = selectedRecipe.Food?.FoodName,
-                    FoodImageUrl = selectedRecipe.Food?.ImageUrl,
-                    CategoryId = selectedRecipe.Food?.CategoryId,
-                    CategoryName = selectedRecipe.Food?.Category?.CategoryName
+                    FoodName = selectedRecipe.Food?.FoodName ?? selectedRecipe.Title,
+                    FoodImageUrl = selectedRecipe.Food?.ImageUrl ?? selectedRecipe.ImageUrl,
+                    CategoryId = selectedRecipe.Food?.CategoryId ?? 1,
+                    CategoryName = selectedRecipe.Food?.Category?.CategoryName ?? "Món chay"
                 },
                 SwapCount = slotHistories.Count,
                 SwapHistories = slotHistories
             },
-            SwapsRemaining = plan.SwapsRemaining,
-            MaxSwapsAllowed = plan.MaxSwapsAllowed
+            SwapsRemaining = remainingAfterSwap,
+            MaxSwapsAllowed = effectiveLimit
         };
     }
 

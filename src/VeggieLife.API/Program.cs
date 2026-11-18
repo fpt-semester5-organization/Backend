@@ -46,6 +46,7 @@ builder.Services.AddRedisCaching(builder.Configuration);
 builder.Services.AddApplicationServices(builder.Configuration);
 
 // 4. Cấu hình Xác thực JWT Bearer & Phân quyền Roles (GUEST, MEMBER, VIP, ADMIN)
+builder.Services.AddConfiguredCors(builder.Configuration);
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddRoleAuthorization();
 

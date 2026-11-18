@@ -714,8 +714,32 @@ public class VideoService : IVideoService
                     segments = new List<TranscriptSegmentDto>();
                     foreach (var s in segElem.EnumerateArray())
                     {
-                        var start = s.TryGetProperty("start", out var st) ? st.GetDouble() : 0.0;
-                        var end = s.TryGetProperty("end", out var en) ? en.GetDouble() : 0.0;
+                        double start = 0.0;
+                        if (s.TryGetProperty("start", out var st))
+                        {
+                            if (st.ValueKind == System.Text.Json.JsonValueKind.Number && st.TryGetDouble(out var stVal))
+                            {
+                                start = stVal;
+                            }
+                            else if (st.ValueKind == System.Text.Json.JsonValueKind.String && double.TryParse(st.GetString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var stParsed))
+                            {
+                                start = stParsed;
+                            }
+                        }
+
+                        double end = 0.0;
+                        if (s.TryGetProperty("end", out var en))
+                        {
+                            if (en.ValueKind == System.Text.Json.JsonValueKind.Number && en.TryGetDouble(out var enVal))
+                            {
+                                end = enVal;
+                            }
+                            else if (en.ValueKind == System.Text.Json.JsonValueKind.String && double.TryParse(en.GetString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var enParsed))
+                            {
+                                end = enParsed;
+                            }
+                        }
+
                         var text = s.TryGetProperty("text", out var tx) ? tx.GetString() ?? string.Empty : string.Empty;
                         if (!string.IsNullOrWhiteSpace(text))
                         {
@@ -759,9 +783,16 @@ public class VideoService : IVideoService
                         {
                             var name = (item.TryGetProperty("name", out var n) || item.TryGetProperty("Name", out n)) ? n.GetString() ?? string.Empty : string.Empty;
                             decimal? qty = null;
-                            if ((item.TryGetProperty("quantity", out var q) || item.TryGetProperty("Quantity", out q)) && q.TryGetDecimal(out var dec))
+                            if (item.TryGetProperty("quantity", out var q) || item.TryGetProperty("Quantity", out q))
                             {
-                                qty = dec;
+                                if (q.ValueKind == System.Text.Json.JsonValueKind.Number && q.TryGetDecimal(out var dec))
+                                {
+                                    qty = dec;
+                                }
+                                else if (q.ValueKind == System.Text.Json.JsonValueKind.String && decimal.TryParse(q.GetString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var decParsed))
+                                {
+                                    qty = decParsed;
+                                }
                             }
                             var unit = (item.TryGetProperty("unit", out var u) || item.TryGetProperty("Unit", out u)) ? u.GetString() : null;
                             ingredients.Add(new ExtractedIngredientDto { Name = name, Quantity = qty, Unit = unit });
@@ -770,15 +801,29 @@ public class VideoService : IVideoService
                 }
 
                 int? servings = null;
-                if ((recipeElem.TryGetProperty("servings", out var sElem) || recipeElem.TryGetProperty("Servings", out sElem)) && sElem.TryGetInt32(out var sVal))
+                if (recipeElem.TryGetProperty("servings", out var sElem) || recipeElem.TryGetProperty("Servings", out sElem))
                 {
-                    servings = sVal;
+                    if (sElem.ValueKind == System.Text.Json.JsonValueKind.Number && sElem.TryGetInt32(out var sVal))
+                    {
+                        servings = sVal;
+                    }
+                    else if (sElem.ValueKind == System.Text.Json.JsonValueKind.String && int.TryParse(sElem.GetString(), out var sParsed))
+                    {
+                        servings = sParsed;
+                    }
                 }
 
                 int? cookTime = null;
-                if ((recipeElem.TryGetProperty("cookTimeMinutes", out var ctElem) || recipeElem.TryGetProperty("CookTimeMinutes", out ctElem)) && ctElem.TryGetInt32(out var ctVal))
+                if (recipeElem.TryGetProperty("cookTimeMinutes", out var ctElem) || recipeElem.TryGetProperty("CookTimeMinutes", out ctElem))
                 {
-                    cookTime = ctVal;
+                    if (ctElem.ValueKind == System.Text.Json.JsonValueKind.Number && ctElem.TryGetInt32(out var ctVal))
+                    {
+                        cookTime = ctVal;
+                    }
+                    else if (ctElem.ValueKind == System.Text.Json.JsonValueKind.String && int.TryParse(ctElem.GetString(), out var ctParsed))
+                    {
+                        cookTime = ctParsed;
+                    }
                 }
 
                 var tips = new List<string>();

@@ -107,6 +107,13 @@ public class AdminIngredientService : IAdminIngredientService
             .Take(request.Size)
             .ToListAsync(ct);
 
+        var pageIds = entities.Select(i => i.IngredientId).ToList();
+        var candidateCounts = await _db.IngredientCandidateImages
+            .Where(c => pageIds.Contains(c.IngredientId) && c.Status == CandidateStatus.Pending)
+            .GroupBy(c => c.IngredientId)
+            .Select(g => new { IngredientId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.IngredientId, x => x.Count, ct);
+
         var items = entities.Select(i => new AdminIngredientListItemDto
         {
             IngredientId = i.IngredientId,
@@ -117,6 +124,7 @@ public class AdminIngredientService : IAdminIngredientService
             FoodGroup = i.FoodGroup,
             ImageUrl = i.ImageUrl,
             IsLocked = i.IsLocked,
+            CandidateCount = candidateCounts.TryGetValue(i.IngredientId, out var n) ? n : 0,
             Allergens = i.IngredientAllergens
                 .OrderBy(ia => ia.AllergenId)
                 .Select(ia => new AdminIngredientAllergenItemDto
@@ -575,6 +583,86 @@ public class AdminIngredientService : IAdminIngredientService
             adminId, id, ingredient.IngredientName, cdnUrl);
 
         return cdnUrl;
+    }
+
+    /// <summary>
+    /// FN-ADM-12-CAND: tối đa 05 ảnh ứng viên PENDING mới nhất cắt từ ảnh tủ lạnh người dùng.
+    /// </summary>
+    public async Task<IReadOnlyList<AdminIngredientCandidateDto>> GetCandidatesAsync(int id, CancellationToken ct = default)
+    {
+        if (!await _db.Ingredients.AnyAsync(i => i.IngredientId == id, ct))
+        {
+            throw AppException.NotFound(ErrorCodes.ErrAdmNotFound, "Không tìm thấy nguyên liệu.");
+        }
+
+        return await _db.IngredientCandidateImages
+            .AsNoTracking()
+            .Where(c => c.IngredientId == id && c.Status == CandidateStatus.Pending)
+            .OrderByDescending(c => c.CreatedAt).ThenByDescending(c => c.CandidateId)
+            .Take(VeggieLife.BLL.Services.Fridge.FridgeService.MaxPendingCandidatesPerIngredient)
+            .Select(c => new AdminIngredientCandidateDto
+            {
+                CandidateId = c.CandidateId,
+                CroppedImageUrl = c.CroppedImageUrl,
+                ConfidenceScore = c.ConfidenceScore,
+                Status = c.Status,
+                SessionId = c.SessionId,
+                CreatedAt = c.CreatedAt
+            })
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// FN-ADM-12-APPLY (BR-ADM-ING-03): Admin chủ động duyệt 01 ảnh ứng viên làm Ingredients.Image_Url.
+    /// Chặn khi nguyên liệu đang khóa (BR-ADM-ING-01). Ảnh được duyệt chuyển APPROVED; các ảnh PENDING khác giữ nguyên.
+    /// </summary>
+    public async Task<string> ApplyCandidateAsync(int id, int candidateId, int adminId, CancellationToken ct = default)
+    {
+        if (candidateId <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "candidateId phải là số nguyên dương.");
+        }
+
+        var ingredient = await _db.Ingredients.FirstOrDefaultAsync(i => i.IngredientId == id, ct)
+            ?? throw AppException.NotFound(ErrorCodes.ErrAdmNotFound, "Không tìm thấy nguyên liệu.");
+
+        if (ingredient.IsLocked)
+        {
+            throw AppException.Forbidden(ErrorCodes.ErrAdmForbidden, "Nguyên liệu đang bị KHÓA. Hãy mở khóa trước khi đổi ảnh đại diện.");
+        }
+
+        var candidate = await _db.IngredientCandidateImages
+            .FirstOrDefaultAsync(c => c.CandidateId == candidateId && c.IngredientId == id, ct)
+            ?? throw AppException.NotFound(ErrorCodes.ErrAdmNotFound, "Không tìm thấy ảnh ứng viên của nguyên liệu này.");
+
+        if (candidate.Status != CandidateStatus.Pending)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Ảnh ứng viên này đã được xử lý.");
+        }
+
+        var oldUrl = ingredient.ImageUrl;
+        ingredient.ImageUrl = candidate.CroppedImageUrl;
+        candidate.Status = CandidateStatus.Approved;
+
+        _db.AuditLogs.Add(new AuditLog
+        {
+            ActorUserId = adminId,
+            ActorRole = UserRoles.Admin,
+            Action = "APPLY_INGREDIENT_CANDIDATE",
+            TargetTable = "Ingredients",
+            TargetId = id.ToString(),
+            OldValue = JsonSerializer.Serialize(new { ImageUrl = oldUrl }),
+            NewValue = JsonSerializer.Serialize(new { ImageUrl = candidate.CroppedImageUrl, candidate.CandidateId }),
+            CreatedAt = DateTime.UtcNow
+        });
+
+        await _db.SaveChangesAsync(ct);
+        await InvalidateIngredientCachesAsync(ct);
+
+        _logger.LogInformation("Admin ID {AdminId} đã duyệt ảnh ứng viên {CandidateId} cho nguyên liệu {Id} ({Name})",
+            adminId, candidateId, id, ingredient.IngredientName);
+
+        return ingredient.ImageUrl;
     }
 
     private async Task InvalidateIngredientCachesAsync(CancellationToken ct)

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using VeggieLife.BLL.Common.Constants;
+using VeggieLife.BLL.Services.AI;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
 
@@ -954,14 +955,25 @@ public static class DevDataSeeder
         // 7. Nạp dữ liệu mẫu AIQuotaLogs (FN-ADM-16)
         if (!db.AiquotaLogs.Any())
         {
+            // Log chức năng khách hàng phải thuộc MEMBER/VIP, không gán cho Admin (Admin không dùng chức năng khách hàng)
+            var customerId = db.Users
+                .Where(u => u.Role == "MEMBER" || u.Role == "VIP")
+                .OrderBy(u => u.UserId)
+                .Select(u => u.UserId)
+                .FirstOrDefault();
+            if (customerId == 0)
+            {
+                return;
+            }
+
             var now = DateTime.UtcNow;
             db.AiquotaLogs.AddRange(
-                new AiquotaLog { UserId = 1, FeatureCode = "AI_CHAT", TokensConsumed = 120000, CostEstimateUsd = 4.2m, RequestStatus = "SUCCESS", ExecutionTimeMs = 600, CreatedAt = now.AddDays(-2) },
-                new AiquotaLog { UserId = 1, FeatureCode = "MEAL_PLAN_GEN", TokensConsumed = 30000, CostEstimateUsd = 1.2m, RequestStatus = "SUCCESS", ExecutionTimeMs = 1200, CreatedAt = now.AddDays(-2) },
-                new AiquotaLog { UserId = 1, FeatureCode = "AI_FRIDGE", TokensConsumed = 45000, CostEstimateUsd = 1.8m, RequestStatus = "SUCCESS", ExecutionTimeMs = 800, CreatedAt = now.AddDays(-1) },
-                new AiquotaLog { UserId = 1, FeatureCode = "AI_BARCODE", TokensConsumed = 15000, CostEstimateUsd = 0.6m, RequestStatus = "SUCCESS", ExecutionTimeMs = 350, CreatedAt = now.AddDays(-1) },
-                new AiquotaLog { UserId = 1, FeatureCode = "AI_CHAT", TokensConsumed = 80000, CostEstimateUsd = 2.75m, RequestStatus = "SUCCESS", ExecutionTimeMs = 700, CreatedAt = now.AddHours(-3) },
-                new AiquotaLog { UserId = 1, FeatureCode = "CONTENT_MODERATION", TokensConsumed = 20000, CostEstimateUsd = 0.85m, RequestStatus = "SUCCESS", ExecutionTimeMs = 400, CreatedAt = now.AddHours(-1) }
+                new AiquotaLog { UserId = customerId, FeatureCode = "AI_CHAT", TokensConsumed = 120000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(120000), RequestStatus = "SUCCESS", ExecutionTimeMs = 600, CreatedAt = now.AddDays(-2) },
+                new AiquotaLog { UserId = customerId, FeatureCode = "MEAL_PLAN_GEN", TokensConsumed = 30000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(30000), RequestStatus = "SUCCESS", ExecutionTimeMs = 1200, CreatedAt = now.AddDays(-2) },
+                new AiquotaLog { UserId = customerId, FeatureCode = "AI_FRIDGE", TokensConsumed = 45000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(45000), RequestStatus = "SUCCESS", ExecutionTimeMs = 800, CreatedAt = now.AddDays(-1) },
+                new AiquotaLog { UserId = customerId, FeatureCode = "AI_BARCODE", TokensConsumed = 15000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(15000), RequestStatus = "SUCCESS", ExecutionTimeMs = 350, CreatedAt = now.AddDays(-1) },
+                new AiquotaLog { UserId = customerId, FeatureCode = "AI_CHAT", TokensConsumed = 80000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(80000), RequestStatus = "SUCCESS", ExecutionTimeMs = 700, CreatedAt = now.AddHours(-3) },
+                new AiquotaLog { UserId = customerId, FeatureCode = "CONTENT_MODERATION", TokensConsumed = 20000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(20000), RequestStatus = "SUCCESS", ExecutionTimeMs = 400, CreatedAt = now.AddHours(-1) }
             );
             db.SaveChanges();
         }
@@ -973,16 +985,20 @@ public static class DevDataSeeder
 
         var settings = new List<SystemSetting>
         {
-            new() { SettingKey = "MEAL_SWAP_LIMIT_DRAFT", SettingValue = "21", DefaultValue = "21", DataType = "INT", Category = "MEAL_PLAN", Description = "Hạn mức số lần đổi món thực đơn trong giai đoạn dự thảo (DRAFT)", UpdatedAt = DateTime.UtcNow },
+            new() { SettingKey = "MEAL_SWAP_LIMIT_DRAFT", SettingValue = "21", DefaultValue = "21", DataType = "INT", Category = "MEAL_PLAN", Description = "Hạn mức số lần đổi món thực đơn trong giai đoạn Chưa kích hoạt (DRAFT)", UpdatedAt = DateTime.UtcNow },
             new() { SettingKey = "MEAL_SWAP_LIMIT_ACTIVE", SettingValue = "21", DefaultValue = "21", DataType = "INT", Category = "MEAL_PLAN", Description = "Hạn mức số lần đổi món thực đơn trong giai đoạn đã kích hoạt (ACTIVE)", UpdatedAt = DateTime.UtcNow },
-            new() { SettingKey = "MEAL_PLAN_WEEKLY_LIMIT_FREE", SettingValue = "1", DefaultValue = "1", DataType = "INT", Category = "MEAL_PLAN", Description = "Số lượng thực đơn tối đa được tạo mỗi tuần cho tài khoản Miễn phí", UpdatedAt = DateTime.UtcNow },
+            new() { SettingKey = "MEAL_PLAN_WEEKLY_LIMIT_FREE", SettingValue = "1", DefaultValue = "1", DataType = "INT", Category = "MEAL_PLAN", Description = "Số lượng thực đơn tối đa được tạo mỗi tuần cho tài khoản Thành viên", UpdatedAt = DateTime.UtcNow },
             new() { SettingKey = "MEAL_PLAN_WEEKLY_LIMIT_VIP", SettingValue = "3", DefaultValue = "3", DataType = "INT", Category = "MEAL_PLAN", Description = "Số lượng thực đơn tối đa được tạo mỗi tuần cho tài khoản VIP", UpdatedAt = DateTime.UtcNow },
             new() { SettingKey = "MEAL_SWAP_CALORIE_TOLERANCE_PERCENT", SettingValue = "15", DefaultValue = "15", DataType = "INT", Category = "MEAL_PLAN", Description = "Độ lệch calo tối đa (%) khi thuật toán tự động tìm món thay thế", UpdatedAt = DateTime.UtcNow },
             new() { SettingKey = "CHAT_LIMIT_DAILY_GUEST", SettingValue = "3", DefaultValue = "3", DataType = "INT", Category = "AI_QUOTA", Description = "Số câu hỏi AI Chatbot tối đa cho khách vãng lai (Guest)", UpdatedAt = DateTime.UtcNow },
-            new() { SettingKey = "CHAT_LIMIT_DAILY_FREE", SettingValue = "20", DefaultValue = "20", DataType = "INT", Category = "AI_QUOTA", Description = "Số câu hỏi AI Chatbot tối đa mỗi ngày cho tài khoản Miễn phí", UpdatedAt = DateTime.UtcNow },
+            new() { SettingKey = "CHAT_LIMIT_DAILY_FREE", SettingValue = "20", DefaultValue = "20", DataType = "INT", Category = "AI_QUOTA", Description = "Số câu hỏi AI Chatbot tối đa mỗi ngày cho tài khoản Thành viên", UpdatedAt = DateTime.UtcNow },
             new() { SettingKey = "CHAT_LIMIT_DAILY_VIP", SettingValue = "200", DefaultValue = "200", DataType = "INT", Category = "AI_QUOTA", Description = "Số câu hỏi AI Chatbot tối đa mỗi ngày cho tài khoản VIP", UpdatedAt = DateTime.UtcNow },
-            new() { SettingKey = "FRIDGE_SCAN_LIMIT_DAILY_FREE", SettingValue = "10", DefaultValue = "10", DataType = "INT", Category = "AI_QUOTA", Description = "Số lần quét tủ lạnh AI tối đa mỗi ngày cho tài khoản Miễn phí", UpdatedAt = DateTime.UtcNow },
+            new() { SettingKey = "FRIDGE_SCAN_LIMIT_DAILY_GUEST", SettingValue = "3", DefaultValue = "3", DataType = "INT", Category = "AI_QUOTA", Description = "Số lần quét tủ lạnh AI tối đa mỗi ngày cho khách vãng lai (Guest)", UpdatedAt = DateTime.UtcNow },
+            new() { SettingKey = "FRIDGE_SCAN_LIMIT_DAILY_FREE", SettingValue = "10", DefaultValue = "10", DataType = "INT", Category = "AI_QUOTA", Description = "Số lần quét tủ lạnh AI tối đa mỗi ngày cho tài khoản Thành viên", UpdatedAt = DateTime.UtcNow },
             new() { SettingKey = "FRIDGE_SCAN_LIMIT_DAILY_VIP", SettingValue = "30", DefaultValue = "30", DataType = "INT", Category = "AI_QUOTA", Description = "Số lần quét tủ lạnh AI tối đa mỗi ngày cho tài khoản VIP", UpdatedAt = DateTime.UtcNow },
+            new() { SettingKey = "BARCODE_SCAN_LIMIT_DAILY_GUEST", SettingValue = "3", DefaultValue = "3", DataType = "INT", Category = "AI_QUOTA", Description = "Số lần quét mã vạch tối đa mỗi ngày cho khách vãng lai (Guest)", UpdatedAt = DateTime.UtcNow },
+            new() { SettingKey = "BARCODE_SCAN_LIMIT_DAILY_FREE", SettingValue = "20", DefaultValue = "20", DataType = "INT", Category = "AI_QUOTA", Description = "Số lần quét mã vạch tối đa mỗi ngày cho tài khoản Thành viên", UpdatedAt = DateTime.UtcNow },
+            new() { SettingKey = "BARCODE_SCAN_LIMIT_DAILY_VIP", SettingValue = "50", DefaultValue = "50", DataType = "INT", Category = "AI_QUOTA", Description = "Số lần quét mã vạch tối đa mỗi ngày cho tài khoản VIP", UpdatedAt = DateTime.UtcNow },
             new() { SettingKey = "LLMOPS_DAILY_BUDGET_USD", SettingValue = "12.5", DefaultValue = "12.5", DataType = "DECIMAL", Category = "LLMOPS", Description = "Ngân sách tiêu dùng AI tối đa mỗi ngày của toàn hệ thống (USD)", UpdatedAt = DateTime.UtcNow },
             new() { SettingKey = "LLMOPS_ALERT_THRESHOLD_PERCENT", SettingValue = "80", DefaultValue = "80", DataType = "INT", Category = "LLMOPS", Description = "Ngưỡng cảnh báo chi phí khẩn cấp (%)", UpdatedAt = DateTime.UtcNow },
             new() { SettingKey = "COMMUNITY_REPORT_LIMIT", SettingValue = "10", DefaultValue = "10", DataType = "INT", Category = "COMMUNITY", Description = "Số lượng báo cáo vi phạm tích lũy để bài viết tự động bị tạm ẩn", UpdatedAt = DateTime.UtcNow },
@@ -1005,11 +1021,15 @@ public static class DevDataSeeder
             else
             {
                 existing.LegalDocumentsUrl = item.LegalDocumentsUrl;
+                existing.DefaultValue = item.DefaultValue;
+                existing.Description = item.Description;
                 if (item.SettingKey.StartsWith("LEGAL_"))
                 {
                     existing.SettingValue = item.SettingValue;
-                    existing.DefaultValue = item.DefaultValue;
-                    existing.Description = item.Description;
+                }
+                else if (item.SettingKey == "BARCODE_SCAN_LIMIT_DAILY_VIP" && existing.SettingValue == "100")
+                {
+                    existing.SettingValue = "50";
                 }
             }
         }

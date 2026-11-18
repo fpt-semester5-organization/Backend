@@ -13,7 +13,7 @@ using VeggieLife.DAL.Entities;
 namespace VeggieLife.BLL.Services.AccountAnonymization;
 
 /// <summary>
-/// Dịch vụ ẩn danh hóa dữ liệu cá nhân các tài khoản đã quá 30 ngày ân hạn kể từ khi xóa mềm (FN-PROF-07, BR-ADM-USR-003, BR-ADM-USR-004).
+/// Dịch vụ ẩn danh hóa dữ liệu cá nhân các tài khoản đã quá thời gian chờ xóa 30 ngày (có thể khôi phục) kể từ khi xóa mềm (FN-PROF-07, BR-ADM-USR-003, BR-ADM-USR-004).
 /// </summary>
 public class AccountAnonymizeService : IAccountAnonymizeService
 {
@@ -65,7 +65,7 @@ public class AccountAnonymizeService : IAccountAnonymizeService
             var deletedAt = auditLog?.CreatedAt ?? user.UpdatedAt ?? user.CreatedAt;
             var daysSinceDeleted = (now - deletedAt).TotalDays;
 
-            // Nếu đã quá 30 ngày ân hạn phục hồi
+            // Nếu đã quá thời gian chờ xóa 30 ngày (có thể khôi phục)
             if (daysSinceDeleted >= 30)
             {
                 _logger.LogInformation(
@@ -120,7 +120,7 @@ public class AccountAnonymizeService : IAccountAnonymizeService
                     Action = "ACCOUNT_ANONYMIZED",
                     TargetTable = "Users",
                     TargetId = user.UserId.ToString(),
-                    Note = "Ẩn danh hóa dữ liệu cá nhân sau thời gian ân hạn 30 ngày (BR-ADM-USR-003).",
+                    Note = "Ẩn danh hóa dữ liệu cá nhân sau thời gian chờ xóa 30 ngày (có thể khôi phục) (BR-ADM-USR-003).",
                     CreatedAt = now
                 });
 

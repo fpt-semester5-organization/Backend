@@ -343,8 +343,11 @@ public class AdminLlmopsService : IAdminLlmopsService
         tierDist.MemberCostUsd = Math.Round(tierDist.MemberCostUsd, 4);
         tierDist.SystemCostUsd = Math.Round(tierDist.SystemCostUsd, 4);
 
+        // Top 5 chỉ xét khách hàng (MEMBER/VIP); ADMIN không dùng chức năng khách hàng, chi phí do Admin kích hoạt
+        // (ví dụ đồng bộ kho tri thức) đã tính vào chi phí hệ thống
         var topSpenders = rawLogs
-            .Where(l => l.UserId > 0)
+            .Where(l => l.UserId > 0
+                && !(users.TryGetValue(l.UserId, out var u) && string.Equals(u.Role, "ADMIN", StringComparison.OrdinalIgnoreCase)))
             .GroupBy(l => l.UserId)
             .Select(g =>
             {

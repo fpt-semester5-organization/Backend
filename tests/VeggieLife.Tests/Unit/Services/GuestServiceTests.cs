@@ -96,37 +96,6 @@ public class GuestServiceTests
             }
         }
 
-        public Task<(bool Allowed, bool IsBanned, long CurrentCount, TimeSpan? RetryAfter)> CheckIpRateLimitAsync(
-            string clientIp, int maxRequestsPerMinute = 10, int banDurationMinutes = 10, CancellationToken ct = default)
-        {
-            lock (_lock)
-            {
-                var banKey = $"ban:{clientIp}";
-                if (_storage.ContainsKey(banKey))
-                {
-                    return Task.FromResult((false, true, 0L, (TimeSpan?)TimeSpan.FromMinutes(banDurationMinutes)));
-                }
-
-                var countKey = $"count:{clientIp}";
-                long count = 0;
-                if (_storage.TryGetValue(countKey, out var val) && long.TryParse(val.ToString(), out var parsed))
-                {
-                    count = parsed;
-                }
-
-                count++;
-                _storage[countKey] = count;
-
-                if (count > maxRequestsPerMinute)
-                {
-                    _storage[banKey] = "banned";
-                    return Task.FromResult((false, true, count, (TimeSpan?)TimeSpan.FromMinutes(banDurationMinutes)));
-                }
-
-                return Task.FromResult((true, false, count, (TimeSpan?)null));
-            }
-        }
-
         public Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default)
         {
             return Task.CompletedTask;

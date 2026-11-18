@@ -13,6 +13,9 @@ public class AdminNutritionDocumentDto
     public string FileName { get; set; } = string.Empty;
     public string FileType { get; set; } = "PDF";
     public int Chunks { get; set; }
+
+    /// <summary>Số phần đã nạp lên Qdrant (tài liệu dài được chia: sourceId = Id, Id_P2, Id_P3...).</summary>
+    public int Parts { get; set; } = 1;
     public bool IsActive { get; set; } = true;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public string? FileUrl { get; set; }

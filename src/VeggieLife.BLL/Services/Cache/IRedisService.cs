@@ -45,16 +45,6 @@ public interface IRedisService
     Task<(bool Allowed, long Current, long Remaining)> TryConsumeQuotaAsync(string key, int maxLimit, TimeSpan? expiry = null, CancellationToken ct = default);
 
     /// <summary>
-    /// Kiểm tra Rate Limit theo địa chỉ IP và thực hiện tạm khóa (Ban) 10 phút nếu vượt quá 10 req/phút (BR-GUEST-SEC-01).
-    /// </summary>
-    /// <param name="clientIp">Địa chỉ IP của người dùng.</param>
-    /// <param name="maxRequestsPerMinute">Số yêu cầu tối đa mỗi phút (mặc định: 10).</param>
-    /// <param name="banDurationMinutes">Thời gian tạm khóa (phút, mặc định: 10).</param>
-    /// <param name="ct">CancellationToken.</param>
-    /// <returns>Bộ tuple (Allowed: có được phép, IsBanned: đã bị khóa hay chưa, CurrentCount: số request hiện tại, RetryAfter: thời gian còn lại trước khi hết khóa).</returns>
-    Task<(bool Allowed, bool IsBanned, long CurrentCount, TimeSpan? RetryAfter)> CheckIpRateLimitAsync(string clientIp, int maxRequestsPerMinute = 10, int banDurationMinutes = 10, CancellationToken ct = default);
-
-    /// <summary>
     /// Đưa công việc vào hàng đợi phân tán Redis (tương đương LPUSH cho stt_queue).
     /// </summary>
     Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default) => Task.CompletedTask;

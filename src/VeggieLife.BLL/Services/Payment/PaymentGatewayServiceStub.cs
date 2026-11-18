@@ -64,8 +64,23 @@ public class PaymentGatewayServiceStub : IPaymentGatewayService
         _logger.LogInformation("[PaymentGatewayServiceStub] Tạo yêu cầu thanh toán MoMo cho giao dịch #{TransactionId}, số tiền: {Amount:N0} VND, orderInfo: {OrderInfo}",
             transactionId, amountVnd, orderInfo);
 
-        // Sinh link sandbox MoMo All-in-one payment gateway
-        var payUrl = $"https://test-payment.momo.vn/v2/gateway/pay?orderId={transactionId}&amount={(long)amountVnd}";
+        // Trích xuất mã đơn hàng VL_... từ orderInfo nếu có
+        var match = System.Text.RegularExpressions.Regex.Match(orderInfo, @"(VL_\d+)");
+        var orderCode = match.Success ? match.Value : $"VL_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+
+        // Cổng MoMo Sandbox Gateway nội bộ phục vụ thử nghiệm và kiểm thử tích hợp (Integration Test)
+        var momoEndpoint = _configuration["Payment:MoMo:SandboxCheckoutUrl"];
+        if (string.IsNullOrWhiteSpace(momoEndpoint))
+        {
+            var backendUrl = _configuration["App:BackendUrl"] ?? "http://localhost:5137";
+            momoEndpoint = $"{backendUrl.TrimEnd('/')}/api/v1/payments/momo/sandbox-checkout";
+        }
+
+        var payUrl = $"{momoEndpoint}?orderCode={Uri.EscapeDataString(orderCode)}&amount={(long)amountVnd}";
+        if (!string.IsNullOrWhiteSpace(returnUrl) && returnUrl != "/payment/callback" && returnUrl != "http://localhost:3000/payment/success")
+        {
+            payUrl += $"&returnUrl={Uri.EscapeDataString(returnUrl)}";
+        }
         var qrUrl = $"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={Uri.EscapeDataString(payUrl)}";
 
         var result = new PaymentCheckoutResult

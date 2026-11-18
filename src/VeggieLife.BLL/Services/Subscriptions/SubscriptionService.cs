@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -30,6 +30,7 @@ public class SubscriptionService : ISubscriptionService
     private readonly IEmailService _emailService;
     private readonly ILogger<SubscriptionService> _logger;
     private readonly VeggieLife.BLL.Services.Settings.ISystemSettingService? _settingService;
+    private readonly IUserBenefitService? _userBenefitService;
 
     public SubscriptionService(
         AppDbContext db,
@@ -37,7 +38,8 @@ public class SubscriptionService : ISubscriptionService
         IPaymentGatewayService paymentGateway,
         IEmailService emailService,
         ILogger<SubscriptionService> logger,
-        VeggieLife.BLL.Services.Settings.ISystemSettingService? settingService = null)
+        VeggieLife.BLL.Services.Settings.ISystemSettingService? settingService = null,
+        IUserBenefitService? userBenefitService = null)
     {
         _db = db;
         _redis = redis;
@@ -45,6 +47,7 @@ public class SubscriptionService : ISubscriptionService
         _emailService = emailService;
         _logger = logger;
         _settingService = settingService;
+        _userBenefitService = userBenefitService;
     }
 
     /// <summary>
@@ -68,18 +71,10 @@ public class SubscriptionService : ISubscriptionService
             _logger.LogWarning(ex, "[GetSubscriptionPlansAsync] Không thể đọc cache Redis, chuyển sang truy vấn trực tiếp cơ sở dữ liệu.");
         }
 
-        var plans = await _db.SubscriptionPlans
+        var planRows = await _db.SubscriptionPlans
             .AsNoTracking()
             .Where(p => p.IsActive)
             .OrderBy(p => p.DurationDays)
-            .Select(p => new SubscriptionPlanItemDto
-            {
-                PlanId = p.PlanId,
-                PlanName = p.PlanName,
-                DurationDays = p.DurationDays,
-                PriceVnd = (long)p.Price,
-                IsActive = p.IsActive
-            })
             .ToListAsync(ct);
 
         var freeChat = _settingService != null
@@ -100,6 +95,30 @@ public class SubscriptionService : ISubscriptionService
         var vipFridge = _settingService != null
             ? await _settingService.GetIntSettingAsync("FRIDGE_SCAN_LIMIT_DAILY_VIP", 30, ct)
             : 30;
+        var freeBarcode = _settingService != null
+            ? await _settingService.GetIntSettingAsync("BARCODE_SCAN_LIMIT_DAILY_FREE", 20, ct)
+            : 20;
+        var vipBarcode = _settingService != null
+            ? await _settingService.GetIntSettingAsync(VipBenefitJson.BarcodeSettingKey, VipBenefitJson.DefaultBarcode, ct)
+            : VipBenefitJson.DefaultBarcode;
+
+        // Hạn mức của từng gói lấy từ Features_JSON; khóa thiếu (dữ liệu cũ) hiển thị theo SystemSettings VIP như lúc checkout
+        var plans = planRows.Select(p => new SubscriptionPlanItemDto
+        {
+            PlanId = p.PlanId,
+            PlanName = p.PlanName,
+            DurationDays = p.DurationDays,
+            PriceVnd = (long)p.Price,
+            IsActive = p.IsActive,
+            Version = p.Version,
+            Benefits = new PlanQuotaBenefitsDto
+            {
+                ChatLimitDaily = VipBenefitJson.ReadQuota(p.FeaturesJson, VipBenefitJson.ChatLimitDaily) ?? vipChat,
+                MealPlanLimitWeekly = VipBenefitJson.ReadQuota(p.FeaturesJson, VipBenefitJson.MealPlanLimitWeekly) ?? vipMeal,
+                FridgeScanLimitDaily = VipBenefitJson.ReadQuota(p.FeaturesJson, VipBenefitJson.FridgeScanLimitDaily) ?? vipFridge,
+                BarcodeScanLimitDaily = VipBenefitJson.ReadQuota(p.FeaturesJson, VipBenefitJson.BarcodeScanLimitDaily) ?? vipBarcode
+            }
+        }).ToList();
 
         var response = new ListSubscriptionPlansResponseDto
         {
@@ -110,13 +129,15 @@ public class SubscriptionService : ISubscriptionService
                 {
                     MealPlansPerWeek = freeMeal,
                     ChatPerDay = freeChat,
-                    FridgePhotosPerDay = freeFridge
+                    FridgePhotosPerDay = freeFridge,
+                    BarcodeScansPerDay = freeBarcode
                 },
                 Vip = new BenefitDetailDto
                 {
                     MealPlansPerWeek = vipMeal,
                     ChatPerDay = vipChat,
-                    FridgePhotosPerDay = vipFridge
+                    FridgePhotosPerDay = vipFridge,
+                    BarcodeScansPerDay = vipBarcode
                 }
             }
         };
@@ -230,18 +251,27 @@ public class SubscriptionService : ISubscriptionService
             }
         }
 
-        // 5. Tính thời gian bắt đầu và kết thúc dự kiến của kỳ VIP:
-        // Nếu người dùng VIP còn hạn: nối tiếp từ Ends_At lớn nhất, ngược lại bắt đầu từ hiện tại
-        var maxSuccessEndsAt = await _db.PaymentTransactions
+        // 4.1. Chặn đăng ký khi đang có gói VIP còn hiệu lực:
+        // Người dùng đã có gói VIP đang hoạt động phải đợi đến khi hết chu kỳ gói hiện tại mới được đăng ký tiếp.
+        var activeVipTx = await _db.PaymentTransactions
+            .Include(pt => pt.Plan)
             .Where(pt => pt.UserId == userId &&
                          pt.TransactionStatus == "SUCCESS" &&
                          pt.EndsAt > now)
-            .MaxAsync(pt => (DateTime?)pt.EndsAt, ct);
+            .OrderByDescending(pt => pt.EndsAt)
+            .FirstOrDefaultAsync(ct);
 
-        DateTime startsAt = maxSuccessEndsAt.HasValue && maxSuccessEndsAt.Value > now
-            ? maxSuccessEndsAt.Value
-            : now;
+        if (activeVipTx != null)
+        {
+            var planName = activeVipTx.Plan?.PlanName ?? "VIP";
+            throw AppException.Conflict(
+                ErrorCodes.ErrVipAlreadyActive,
+                $"Bạn đang có gói VIP '{planName}' còn hiệu lực đến {activeVipTx.EndsAt:dd/MM/yyyy HH:mm} UTC. Vui lòng đợi đến khi hết chu kỳ gói hiện tại để đăng ký gói mới.");
+        }
 
+        // 5. Tính thời gian bắt đầu và kết thúc dự kiến của kỳ VIP:
+        // Do đã chặn người dùng đang có VIP ở bước 4.1, kỳ mới luôn bắt đầu từ hiện tại
+        DateTime startsAt = now;
         DateTime endsAt = startsAt.AddDays(plan.DurationDays);
         // BR-PAY-SUB-02: Gói thuê bao VIP tự động hết hạn vào 23:59:59 của ngày kết thúc chu kỳ thanh toán
         endsAt = new DateTime(endsAt.Year, endsAt.Month, endsAt.Day, 23, 59, 59, DateTimeKind.Utc);
@@ -286,7 +316,8 @@ public class SubscriptionService : ISubscriptionService
 
         var payUrl = !string.IsNullOrEmpty(checkoutResult.PaymentUrl) ? checkoutResult.PaymentUrl : checkoutResult.QrCodeUrl;
 
-        // 8. Lưu PaymentTransactions ở trạng thái PENDING
+        // 8. Lưu PaymentTransactions ở trạng thái PENDING, chốt phiên bản và đủ ba hạn mức của gói lúc checkout (D121 Q2)
+        var snapshotFeaturesJson = await BuildBenefitSnapshotAsync(plan.FeaturesJson, ct);
         var transaction = new PaymentTransaction
         {
             PlanId = plan.PlanId,
@@ -299,7 +330,10 @@ public class SubscriptionService : ISubscriptionService
             CreatedAt = now,
             StartsAt = startsAt,
             EndsAt = endsAt,
-            ReceiptUrl = payUrl
+            ReceiptUrl = payUrl != null && payUrl.Length > 255 ? payUrl[..255] : payUrl,
+            SnapshotPlanName = plan.PlanName,
+            SnapshotFeaturesJson = snapshotFeaturesJson,
+            PlanVersion = plan.Version
         };
 
         _db.PaymentTransactions.Add(transaction);
@@ -334,7 +368,7 @@ public class SubscriptionService : ISubscriptionService
             TransactionId = transaction.TransactionId,
             OrderCode = orderCode,
             AmountVnd = (long)plan.Price,
-            PayUrl = payUrl,
+            PayUrl = payUrl ?? string.Empty,
             ExpiresAt = now.AddMinutes(5)
         };
     }
@@ -529,6 +563,7 @@ public class SubscriptionService : ISubscriptionService
         try
         {
             await _redis.RemoveAsync($"vip_status:{user.UserId}", ct);
+            await _redis.RemoveAsync($"user_benefits:{user.UserId}", ct);
             await _redis.RemoveAsync($"cache:profile:{user.UserId}", ct);
         }
         catch (Exception ex)
@@ -723,25 +758,30 @@ public class SubscriptionService : ISubscriptionService
         transaction.CompletedAt = now;
         transaction.SignatureHash = signature;
 
-        // 9. Kích hoạt hoặc gia hạn VIP (BR-PAY-SUB-01, BR-PAY-SUB-02)
+        // 9. Kích hoạt VIP (BR-PAY-SUB-01, BR-PAY-SUB-02)
         var user = transaction.User;
         var plan = transaction.Plan;
-        DateTime startsAt;
-        DateTime endsAt;
 
-        if (string.Equals(user.Role, "VIP", StringComparison.OrdinalIgnoreCase) && transaction.EndsAt > now)
-        {
-            startsAt = transaction.StartsAt;
-            endsAt = transaction.EndsAt.AddDays(plan.DurationDays);
-        }
-        else
-        {
-            startsAt = now;
-            endsAt = now.AddDays(plan.DurationDays);
-            user.Role = "VIP";
-        }
+        var activeMaxEndsAt = await _db.PaymentTransactions
+            .Where(pt => pt.UserId == transaction.UserId &&
+                         pt.TransactionId != transaction.TransactionId &&
+                         pt.TransactionStatus == "SUCCESS" &&
+                         pt.EndsAt > now)
+            .MaxAsync(pt => (DateTime?)pt.EndsAt, ct);
 
+        DateTime startsAt = activeMaxEndsAt.HasValue && activeMaxEndsAt.Value > now
+            ? activeMaxEndsAt.Value
+            : now;
+
+        DateTime endsAt = startsAt.AddDays(plan.DurationDays);
         endsAt = new DateTime(endsAt.Year, endsAt.Month, endsAt.Day, 23, 59, 59, DateTimeKind.Utc);
+
+        if (!string.Equals(user.Role, UserRoles.Admin, StringComparison.OrdinalIgnoreCase))
+        {
+            user.Role = UserRoles.Vip;
+        }
+        user.UpdatedAt = now;
+
         transaction.StartsAt = startsAt;
         transaction.EndsAt = endsAt;
         transaction.ReceiptUrl = $"/api/v1/subscriptions/transactions/{transaction.TransactionId}/receipt";
@@ -773,6 +813,7 @@ public class SubscriptionService : ISubscriptionService
         try
         {
             await _redis.RemoveAsync($"vip_status:{user.UserId}", ct);
+            await _redis.RemoveAsync($"user_benefits:{user.UserId}", ct);
             await _redis.RemoveAsync($"cache:profile:{user.UserId}", ct);
         }
         catch (Exception ex)
@@ -893,6 +934,27 @@ public class SubscriptionService : ISubscriptionService
         }
     }
 
+    /// <summary>
+    /// Snapshot quyền lợi của giao dịch: Features_JSON của gói, khóa hạn mức nào thiếu thì lấy SystemSettings VIP tại lúc checkout.
+    /// </summary>
+    private async Task<string> BuildBenefitSnapshotAsync(string? planFeaturesJson, CancellationToken ct)
+    {
+        var chat = _settingService != null
+            ? await _settingService.GetIntSettingAsync(VipBenefitJson.ChatSettingKey, VipBenefitJson.DefaultChat, ct)
+            : VipBenefitJson.DefaultChat;
+        var meal = _settingService != null
+            ? await _settingService.GetIntSettingAsync(VipBenefitJson.MealSettingKey, VipBenefitJson.DefaultMeal, ct)
+            : VipBenefitJson.DefaultMeal;
+        var fridge = _settingService != null
+            ? await _settingService.GetIntSettingAsync(VipBenefitJson.FridgeSettingKey, VipBenefitJson.DefaultFridge, ct)
+            : VipBenefitJson.DefaultFridge;
+        var barcode = _settingService != null
+            ? await _settingService.GetIntSettingAsync(VipBenefitJson.BarcodeSettingKey, VipBenefitJson.DefaultBarcode, ct)
+            : VipBenefitJson.DefaultBarcode;
+
+        return VipBenefitJson.EnsureQuotas(planFeaturesJson, chat, meal, fridge, barcode);
+    }
+
     private static PaymentReceiptDto BuildReceiptDto(PaymentTransaction tx)
     {
         var fullName = !string.IsNullOrWhiteSpace(tx.User.FullName) ? tx.User.FullName : tx.User.Email;
@@ -908,12 +970,14 @@ public class SubscriptionService : ISubscriptionService
             FullName = fullName,
             Email = tx.User.Email,
             PlanId = tx.PlanId,
-            PlanName = tx.Plan.PlanName,
-            DurationDays = tx.Plan.DurationDays,
+            PlanVersion = tx.PlanVersion,
+            PlanName = tx.SnapshotPlanName ?? tx.Plan?.PlanName ?? "Gói VIP",
+            DurationDays = (int)(tx.EndsAt - tx.StartsAt).TotalDays > 0 ? (int)(tx.EndsAt - tx.StartsAt).TotalDays : (tx.Plan?.DurationDays ?? 30),
             AmountVnd = tx.AmountVnd,
+            SnapshotFeaturesJson = tx.SnapshotFeaturesJson,
             VipStartsAt = tx.StartsAt,
             VipEndsAt = tx.EndsAt,
-            Note = $"Thanh toán kích hoạt gói VIP {tx.Plan.PlanName} ({tx.Plan.DurationDays} ngày)"
+            Note = $"Thanh toán kích hoạt gói VIP {tx.SnapshotPlanName ?? tx.Plan?.PlanName ?? "Gói VIP"} ({((int)(tx.EndsAt - tx.StartsAt).TotalDays > 0 ? (int)(tx.EndsAt - tx.StartsAt).TotalDays : (tx.Plan?.DurationDays ?? 30))} ngày, Version {tx.PlanVersion})"
         };
     }
 
@@ -968,10 +1032,11 @@ public class SubscriptionService : ISubscriptionService
             activePlanDto = new SubscriptionPlanItemDto
             {
                 PlanId = activeVipTx.Plan.PlanId,
-                PlanName = activeVipTx.Plan.PlanName,
-                DurationDays = activeVipTx.Plan.DurationDays,
-                PriceVnd = (long)activeVipTx.Plan.Price,
-                IsActive = activeVipTx.Plan.IsActive
+                PlanName = activeVipTx.SnapshotPlanName ?? activeVipTx.Plan.PlanName,
+                DurationDays = (int)(activeVipTx.EndsAt - activeVipTx.StartsAt).TotalDays > 0 ? (int)(activeVipTx.EndsAt - activeVipTx.StartsAt).TotalDays : activeVipTx.Plan.DurationDays,
+                PriceVnd = (long)activeVipTx.AmountVnd,
+                IsActive = activeVipTx.Plan.IsActive,
+                Version = activeVipTx.PlanVersion
             };
             endsAt = activeVipTx.EndsAt;
         }
@@ -983,7 +1048,8 @@ public class SubscriptionService : ISubscriptionService
             AmountVnd = (long)pt.AmountVnd,
             Status = pt.TransactionStatus,
             CreatedAt = pt.CreatedAt,
-            PlanName = pt.Plan?.PlanName ?? string.Empty,
+            PlanName = pt.SnapshotPlanName ?? pt.Plan?.PlanName ?? string.Empty,
+            PlanVersion = pt.PlanVersion,
             OrderCode = pt.PartnerTransactionCode,
             CompletedAt = pt.CompletedAt,
             ReceiptUrl = string.Equals(pt.TransactionStatus, "SUCCESS", StringComparison.OrdinalIgnoreCase)
@@ -991,11 +1057,18 @@ public class SubscriptionService : ISubscriptionService
                 : null
         }).ToList();
 
+        VipBenefitFeaturesDto? features = null;
+        if (_userBenefitService != null)
+        {
+            features = await _userBenefitService.GetUserBenefitsAsync(userId, isVip ? UserRoles.Vip : UserRoles.Member, ct);
+        }
+
         var result = new CurrentUserSubscriptionResponseDto
         {
             IsVip = isVip,
             Plan = activePlanDto,
             EndsAt = endsAt,
+            Features = features,
             Transactions = txDtos
         };
 
@@ -1091,26 +1164,6 @@ public class SubscriptionService : ISubscriptionService
             throw AppException.BadRequest(ErrorCodes.ErrValidation, "Giao dịch chưa hoàn tất thanh toán thành công, không thể lập biên lai.");
         }
 
-        var fullName = !string.IsNullOrWhiteSpace(tx.User.FullName) ? tx.User.FullName : tx.User.Email;
-
-        return new PaymentReceiptDto
-        {
-            ReceiptNumber = $"REC-{tx.CreatedAt:yyyyMMdd}-{tx.TransactionId:D6}",
-            TransactionId = tx.TransactionId,
-            OrderCode = tx.PartnerTransactionCode,
-            Gateway = tx.GatewayProvider,
-            Status = tx.TransactionStatus,
-            PaymentDate = tx.CompletedAt ?? tx.CreatedAt,
-            UserId = tx.UserId,
-            FullName = fullName,
-            Email = tx.User.Email,
-            PlanId = tx.PlanId,
-            PlanName = tx.Plan.PlanName,
-            DurationDays = tx.Plan.DurationDays,
-            AmountVnd = tx.AmountVnd,
-            VipStartsAt = tx.StartsAt,
-            VipEndsAt = tx.EndsAt,
-            Note = $"Thanh toán kích hoạt gói VIP {tx.Plan.PlanName} ({tx.Plan.DurationDays} ngày)"
-        };
+        return BuildReceiptDto(tx);
     }
 }

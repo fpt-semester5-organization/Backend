@@ -58,6 +58,11 @@ public class PaymentReceiptDto
     public int PlanId { get; set; }
 
     /// <summary>
+    /// Phiên bản của gói VIP tại thời điểm đăng ký mua (Plan Versioning).
+    /// </summary>
+    public int PlanVersion { get; set; } = 1;
+
+    /// <summary>
     /// Tên gói VIP đăng ký.
     /// </summary>
     public string PlanName { get; set; } = string.Empty;
@@ -66,6 +71,11 @@ public class PaymentReceiptDto
     /// Thời hạn sử dụng của gói (tính theo ngày).
     /// </summary>
     public int DurationDays { get; set; }
+
+    /// <summary>
+    /// Bản chụp toàn bộ đặc quyền cam kết của gói tại thời điểm thanh toán (JSON).
+    /// </summary>
+    public string? SnapshotFeaturesJson { get; set; }
 
     /// <summary>
     /// Số tiền thanh toán thực tế (VNĐ).

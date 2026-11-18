@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace VeggieLife.BLL.Common.Helpers;
@@ -18,9 +19,97 @@ public static class StringSimilarityHelper
         '(', ')', '[', ']', '{', '}', ',', '.', ';', ':', '-', '_', '/', '\\', '\"', '\'', '!', '?', '+'
     };
 
+    /// <summary>Ngưỡng Levenshtein để coi là sai chính tả nhẹ (cùng số từ).</summary>
+    public const double TypoSimilarityThreshold = 0.90;
+
+    /// <summary>
+    /// Phân loại mức khớp an toàn giữa tên AI nhận diện và tên trong danh mục Ingredients (FN-VIS-01).
+    /// Tên tiếng Việt đặt danh từ chính trước, từ bổ nghĩa sau, nên chỉ chấp nhận danh mục trùng hẳn
+    /// hoặc CHUNG HƠN (là phần đầu của tên AI: "Ớt chuông" ⊂ "Ớt chuông vàng").
+    /// Danh mục CỤ THỂ HƠN tên AI ("Chuối" → "Hoa chuối thái mỏng", "Cam" → "Nước ép cam") bị từ chối.
+    /// </summary>
+    public static CatalogMatch ClassifyCatalogMatch(string? aiName, string? catalogName)
+    {
+        if (string.IsNullOrWhiteSpace(aiName) || string.IsNullOrWhiteSpace(catalogName))
+        {
+            return CatalogMatch.None;
+        }
+
+        var aiVariants = ExtractVariants(aiName).Select(Tokenize).Where(t => t.Length > 0).ToList();
+        var catVariants = ExtractVariants(catalogName).Select(Tokenize).Where(t => t.Length > 0).ToList();
+        var best = CatalogMatch.None;
+
+        foreach (var a in aiVariants)
+        {
+            foreach (var c in catVariants)
+            {
+                CatalogMatch m;
+                if (a.SequenceEqual(c))
+                {
+                    m = new CatalogMatch(CatalogMatchKind.Exact, 1.0, c.Length);
+                }
+                else if (c.Length < a.Length && a.Take(c.Length).SequenceEqual(c))
+                {
+                    // Danh mục là phần đầu của tên AI → tên chung hơn, chấp nhận; càng nhiều từ càng sát nghĩa
+                    m = new CatalogMatch(CatalogMatchKind.Generalization, (double)c.Length / a.Length, c.Length);
+                }
+                else if (c.Length == a.Length)
+                {
+                    var sa = string.Join(' ', a);
+                    var sc = string.Join(' ', c);
+                    var lev = 1.0 - (double)LevenshteinDistance(sa, sc) / Math.Max(sa.Length, sc.Length);
+                    m = lev >= TypoSimilarityThreshold
+                        ? new CatalogMatch(CatalogMatchKind.Typo, lev, c.Length)
+                        : CatalogMatch.None;
+                }
+                else
+                {
+                    m = CatalogMatch.None;
+                }
+
+                if (m.IsBetterThan(best))
+                {
+                    best = m;
+                }
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    /// Chọn nguyên liệu danh mục khớp an toàn nhất với tên AI: Trùng hẳn &gt; Chung hơn (nhiều từ nhất) &gt; Sai chính tả nhẹ.
+    /// Trả về null nếu không có ứng viên an toàn (khi đó giữ nguyên tên AI).
+    /// </summary>
+    public static (T? Item, CatalogMatch Match) FindBestCatalogMatch<T>(string? aiName, IEnumerable<T> catalog, Func<T, string?> nameOf)
+        where T : class
+    {
+        T? bestItem = null;
+        var best = CatalogMatch.None;
+        foreach (var item in catalog)
+        {
+            var m = ClassifyCatalogMatch(aiName, nameOf(item));
+            if (m.IsBetterThan(best))
+            {
+                best = m;
+                bestItem = item;
+            }
+        }
+
+        return (bestItem, best);
+    }
+
+    private static string[] Tokenize(string text)
+    {
+        var s = CleanPunctuation(text.Normalize(NormalizationForm.FormC).Trim().ToLowerInvariant());
+        return s.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
     /// <summary>
     /// Tính độ tương đồng giữa hai chuỗi từ 0.0 (hoàn toàn khác) đến 1.0 (trùng khớp hoàn toàn).
     /// Tự động tách và so sánh các biến thể (tên chính, biệt danh trong ngoặc đơn) giữa 2 chuỗi.
+    /// Lưu ý: điểm cao khi tên ngắn nằm trọn trong tên dài → KHÔNG dùng để khớp tên AI với danh mục
+    /// (dùng <see cref="FindBestCatalogMatch{T}"/>).
     /// </summary>
     public static double CalculateSimilarity(string? source, string? target)
     {
@@ -193,5 +282,32 @@ public static class StringSimilarityHelper
         }
 
         return d[n, m];
+    }
+}
+
+/// <summary>Mức khớp giữa tên AI và tên danh mục.</summary>
+public enum CatalogMatchKind
+{
+    None = 0,
+    /// <summary>Sai chính tả nhẹ, cùng số từ (Levenshtein ≥ 0.90).</summary>
+    Typo = 1,
+    /// <summary>Tên danh mục là phần đầu (chung hơn) của tên AI.</summary>
+    Generalization = 2,
+    /// <summary>Trùng hẳn (không phân biệt hoa thường, dấu câu, hoặc trùng biệt danh trong ngoặc).</summary>
+    Exact = 3,
+}
+
+/// <summary>Kết quả khớp: loại, điểm trong cùng loại, số từ của tên danh mục được khớp.</summary>
+public readonly record struct CatalogMatch(CatalogMatchKind Kind, double Score, int MatchedTokens)
+{
+    public static readonly CatalogMatch None = new(CatalogMatchKind.None, 0, 0);
+
+    public bool IsMatch => Kind != CatalogMatchKind.None;
+
+    public bool IsBetterThan(CatalogMatch other)
+    {
+        if (Kind != other.Kind) return Kind > other.Kind;
+        if (MatchedTokens != other.MatchedTokens) return MatchedTokens > other.MatchedTokens;
+        return Score > other.Score;
     }
 }

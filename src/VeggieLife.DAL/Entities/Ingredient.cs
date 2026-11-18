@@ -29,6 +29,8 @@ public partial class Ingredient
 
     public virtual ICollection<IngredientAllergen> IngredientAllergens { get; set; } = new List<IngredientAllergen>();
 
+    public virtual ICollection<IngredientCandidateImage> IngredientCandidateImages { get; set; } = new List<IngredientCandidateImage>();
+
     public virtual ICollection<RecipeIngredient> RecipeIngredients { get; set; } = new List<RecipeIngredient>();
 
     public virtual ICollection<ShoppingListItem> ShoppingListItems { get; set; } = new List<ShoppingListItem>();

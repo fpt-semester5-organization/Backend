@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace VeggieLife.DAL.Entities;
@@ -22,6 +22,8 @@ public partial class SubscriptionPlan
     public DateTime CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }
+
+    public int Version { get; set; } = 1;
 
     public virtual User Admin { get; set; } = null!;
 

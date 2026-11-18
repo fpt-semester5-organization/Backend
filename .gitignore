@@ -85,3 +85,7 @@ database/seed/timeline/out/*
 !database/seed/timeline/out/update_ingredient_images.sql
 __pycache__/
 *.local.md
+
+# Triển khai: sao lưu DB và .env của VM không đưa lên Git
+deploy/vm/backup/
+deploy/vm/.env

@@ -87,5 +87,30 @@ public class PaymentGatewayServiceTests
         // Assert
         isValid.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task CreateMoMoPaymentAsync_ReturnsSandboxCheckoutUrl_WithOrderCodeAndAmount()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["App:BackendUrl"] = "http://localhost:5137",
+                ["Payment:PayOS:ReturnUrl"] = "http://localhost:3000/payment/success",
+                ["Payment:PayOS:CancelUrl"] = "http://localhost:3000/payment/cancel"
+            })
+            .Build();
+
+        var gateway = new PaymentGatewayServiceStub(config, NullLogger<PaymentGatewayServiceStub>.Instance);
+
+        // Act
+        var result = await gateway.CreateMoMoPaymentAsync(300, 150000, "Thanh toan VIP VL_123456", "http://localhost:3000/payment/success");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.PaymentUrl.Should().Contain("/api/v1/payments/momo/sandbox-checkout");
+        result.PaymentUrl.Should().Contain("orderCode=VL_123456");
+        result.PaymentUrl.Should().Contain("amount=150000");
+    }
 }
 

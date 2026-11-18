@@ -940,6 +940,57 @@ public class MealPlanServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetMealPlanByIdAsync_ThreeDayPlan_WithOddAdminLimit25_ScalesTo11UsingMathCeiling()
+    {
+        // ARRANGE: Admin cấu hình hạn mức 25 (số lẻ không chia hết cho 7)
+        _mockSettingService.Setup(s => s.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(25);
+
+        var userId = 5082;
+        _db.Users.Add(new User { UserId = userId, Email = "user5082@test.com", FullName = "User 5082", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        _db.HealthProfiles.Add(new HealthProfile { UserId = userId, DietarySchoolId = 1, Gender = "MALE", DateOfBirth = new DateOnly(1992, 5, 5), HeightCm = 170m, CurrentWeightKg = 65m, BmiValue = 22.5m, BmrKcal = 1500m, TdeeKcal = 2000m, TargetDailyCalories = 2000m, RegionPreference = "MIEN_NAM", HealthGoal = "MAINTAIN" });
+        var plan = CreateTestMealPlan(5082, userId, "DRAFT");
+        plan.DurationDays = 3; // 3 ngày
+        await _db.SaveChangesAsync();
+
+        // ACT: Lấy chi tiết thực đơn 3 ngày
+        var detail = await _service.GetMealPlanByIdAsync(5082, userId, CancellationToken.None);
+
+        // ASSERT: 25 * 3 / 7 = 10.71 -> Math.Ceiling làm tròn lên thành 11
+        detail.Edits.PreDeployLimit.Should().Be(11);
+        detail.SwapsRemaining.Should().Be(11);
+        detail.MaxSwapsAllowed.Should().Be(11);
+    }
+
+    [Fact]
+    public async Task UpdateMealPlanSlotAsync_ThreeDayPlan_WithOddAdminLimit25_DecrementsConsecutively()
+    {
+        // ARRANGE: Admin cấu hình hạn mức 25
+        _mockSettingService.Setup(s => s.GetIntSettingAsync("MEAL_SWAP_LIMIT_DRAFT", 21, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(25);
+
+        var userId = 5083;
+        _db.Users.Add(new User { UserId = userId, Email = "user5083@test.com", FullName = "User 5083", Role = UserRoles.Member, AccountStatus = "ACTIVE" });
+        _db.HealthProfiles.Add(new HealthProfile { UserId = userId, DietarySchoolId = 1, Gender = "MALE", DateOfBirth = new DateOnly(1992, 5, 5), HeightCm = 170m, CurrentWeightKg = 65m, BmiValue = 22.5m, BmrKcal = 1500m, TdeeKcal = 2000m, TargetDailyCalories = 2000m, RegionPreference = "MIEN_NAM", HealthGoal = "MAINTAIN" });
+        var plan = CreateTestMealPlan(5083, userId, "DRAFT");
+        plan.DurationDays = 3;
+        plan.MaxSwapsAllowed = 11;
+        plan.SwapsRemaining = 11;
+        var slot = await _db.MealSlots.FirstAsync(s => s.PlanId == 5083);
+        slot.RecipeId = 101;
+        await _db.SaveChangesAsync();
+
+        var request = new UpdateMealPlanSlotRequest { SwapReason = "Đổi món lần 1" };
+
+        // ACT: Đổi món lần đầu tiên trên thực đơn 3 ngày
+        var result1 = await _service.UpdateMealPlanSlotAsync(5083, slot.SlotId, userId, UserRoles.Member, request);
+
+        // ASSERT: Số lượt còn lại phải là 10 (11 - 1 = 10), KHÔNG bị tụt về 20 hay ngày * bữa
+        result1.SwapsRemaining.Should().Be(10);
+        result1.MaxSwapsAllowed.Should().Be(11);
+    }
+
+    [Fact]
     public async Task UpdateMealPlanSlotAsync_ExcludedRecipeIds_ShouldNotPickExcludedRecipe()
     {
         // ARRANGE

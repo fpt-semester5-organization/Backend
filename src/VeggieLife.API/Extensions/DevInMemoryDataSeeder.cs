@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
+using VeggieLife.BLL.Services.AI;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
 
@@ -65,6 +66,18 @@ public static class DevInMemoryDataSeeder
         var riceCategory = new FoodCategory { CategoryId = 1, CategoryName = "Món Cơm & Xôi Chay", Description = "Món cơm", IsCore = true, IsActive = true };
         var hiddenCategory = new FoodCategory { CategoryId = 99, CategoryName = "Danh Mục Đã Bị Ẩn", Description = "Danh mục ẩn", IsCore = false, IsActive = false };
         db.FoodCategories.AddRange(soupCategory, braisedCategory, stirFryCategory, riceCategory, hiddenCategory);
+
+        // 2.5. Món ăn khái niệm (Foods) đảm bảo chuẩn hóa CategoryId cho Recipes
+        var foods = new List<Food>
+        {
+            new() { FoodId = 1, CategoryId = 3, FoodName = "Canh nấm đậu phụ rong biển", CreatedAt = DateTime.UtcNow },
+            new() { FoodId = 2, CategoryId = 9, FoodName = "Nấm kho tiêu hạt sen đậm đà", CreatedAt = DateTime.UtcNow },
+            new() { FoodId = 3, CategoryId = 14, FoodName = "Mì xào nấm rau củ giòn ngọt", CreatedAt = DateTime.UtcNow },
+            new() { FoodId = 4, CategoryId = 3, FoodName = "Súp ngô ngọt kem tươi dinh dưỡng", CreatedAt = DateTime.UtcNow },
+            new() { FoodId = 5, CategoryId = 3, FoodName = "Canh bí đỏ nháp đang soạn", CreatedAt = DateTime.UtcNow },
+            new() { FoodId = 6, CategoryId = 99, FoodName = "Công thức vi phạm cách ly", CreatedAt = DateTime.UtcNow }
+        };
+        db.Foods.AddRange(foods);
 
         // 3. Nguyên liệu thực phẩm (Ingredients)
         var ingredients = new List<Ingredient>
@@ -154,11 +167,12 @@ public static class DevInMemoryDataSeeder
         };
         db.HealthProfiles.Add(memberProfile);
 
-        // 6. Công thức nấu ăn (Recipes) - ID 101 đến 106 chuẩn theo 09_Seed_SampleRecipes.sql
+        // 6. Công thức nấu ăn (Recipes) - ID 101 đến 106 chuẩn theo 09_Seed_SampleRecipes.sql (Đầy đủ FoodId, CategoryId, CookTime, Calories)
         var r101 = new Recipe
         {
             RecipeId = 101,
             UserId = 1,
+            FoodId = 1,
             DietarySchoolId = 7, // VEGAN
             Title = "Canh nấm đậu phụ rong biển",
             Description = "Món canh thanh đạm bổ dưỡng mát lành giải nhiệt cơ thể.",
@@ -180,6 +194,7 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 102,
             UserId = 1,
+            FoodId = 2,
             DietarySchoolId = 1, // BUDDHIST
             Title = "Nấm kho tiêu hạt sen đậm đà",
             Description = "Nấm kho sánh quyện đậm đà đưa cơm chuẩn vị chay Phật giáo.",
@@ -201,6 +216,7 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 103,
             UserId = 2,
+            FoodId = 3,
             DietarySchoolId = 7, // VEGAN
             Title = "Mì xào nấm rau củ giòn ngọt",
             Description = "Món mì xào giòn thơm kèm video hướng dẫn từng bước.",
@@ -222,6 +238,7 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 104,
             UserId = 2,
+            FoodId = 4,
             DietarySchoolId = 2, // LACTO
             Title = "Súp ngô ngọt kem tươi dinh dưỡng",
             Description = "Súp thơm mùi bơ sữa và ngọt thanh tự nhiên từ bắp ngọt.",
@@ -243,6 +260,7 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 105,
             UserId = 2,
+            FoodId = 5,
             DietarySchoolId = 7,
             Title = "Canh bí đỏ nháp đang soạn",
             Description = "Bản nháp chưa gửi duyệt.",
@@ -263,6 +281,7 @@ public static class DevInMemoryDataSeeder
         {
             RecipeId = 106,
             UserId = 2,
+            FoodId = 6,
             DietarySchoolId = 7,
             Title = "Công thức vi phạm cách ly",
             Description = "Bị cách ly kiểm duyệt.",
@@ -377,12 +396,12 @@ public static class DevInMemoryDataSeeder
         {
             var now = DateTime.UtcNow;
             db.AiquotaLogs.AddRange(
-                new AiquotaLog { UserId = 2, FeatureCode = "AI_CHAT", TokensConsumed = 120000, CostEstimateUsd = 4.2m, RequestStatus = "SUCCESS", ExecutionTimeMs = 600, CreatedAt = now.AddDays(-2) },
-                new AiquotaLog { UserId = 2, FeatureCode = "MEAL_PLAN_GEN", TokensConsumed = 30000, CostEstimateUsd = 1.2m, RequestStatus = "SUCCESS", ExecutionTimeMs = 1200, CreatedAt = now.AddDays(-2) },
-                new AiquotaLog { UserId = 2, FeatureCode = "AI_FRIDGE", TokensConsumed = 45000, CostEstimateUsd = 1.8m, RequestStatus = "SUCCESS", ExecutionTimeMs = 800, CreatedAt = now.AddDays(-1) },
-                new AiquotaLog { UserId = 2, FeatureCode = "AI_BARCODE", TokensConsumed = 15000, CostEstimateUsd = 0.6m, RequestStatus = "SUCCESS", ExecutionTimeMs = 350, CreatedAt = now.AddDays(-1) },
-                new AiquotaLog { UserId = 2, FeatureCode = "AI_CHAT", TokensConsumed = 80000, CostEstimateUsd = 2.75m, RequestStatus = "SUCCESS", ExecutionTimeMs = 700, CreatedAt = now.AddHours(-3) },
-                new AiquotaLog { UserId = 2, FeatureCode = "CONTENT_MODERATION", TokensConsumed = 20000, CostEstimateUsd = 0.85m, RequestStatus = "SUCCESS", ExecutionTimeMs = 400, CreatedAt = now.AddHours(-1) }
+                new AiquotaLog { UserId = 2, FeatureCode = "AI_CHAT", TokensConsumed = 120000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(120000), RequestStatus = "SUCCESS", ExecutionTimeMs = 600, CreatedAt = now.AddDays(-2) },
+                new AiquotaLog { UserId = 2, FeatureCode = "MEAL_PLAN_GEN", TokensConsumed = 30000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(30000), RequestStatus = "SUCCESS", ExecutionTimeMs = 1200, CreatedAt = now.AddDays(-2) },
+                new AiquotaLog { UserId = 2, FeatureCode = "AI_FRIDGE", TokensConsumed = 45000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(45000), RequestStatus = "SUCCESS", ExecutionTimeMs = 800, CreatedAt = now.AddDays(-1) },
+                new AiquotaLog { UserId = 2, FeatureCode = "AI_BARCODE", TokensConsumed = 15000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(15000), RequestStatus = "SUCCESS", ExecutionTimeMs = 350, CreatedAt = now.AddDays(-1) },
+                new AiquotaLog { UserId = 2, FeatureCode = "AI_CHAT", TokensConsumed = 80000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(80000), RequestStatus = "SUCCESS", ExecutionTimeMs = 700, CreatedAt = now.AddHours(-3) },
+                new AiquotaLog { UserId = 2, FeatureCode = "CONTENT_MODERATION", TokensConsumed = 20000, CostEstimateUsd = AiCostCalculator.CalculateFromTotal(20000), RequestStatus = "SUCCESS", ExecutionTimeMs = 400, CreatedAt = now.AddHours(-1) }
             );
         }
 

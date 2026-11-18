@@ -246,6 +246,20 @@ public partial class AppDbContext
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("FK_SystemSettings_Users");
         });
+
+        // SubscriptionPlans: Thêm Version
+        modelBuilder.Entity<SubscriptionPlan>(entity =>
+        {
+            entity.Property(e => e.Version).HasColumnName("Version").HasDefaultValue(1);
+        });
+
+        // PaymentTransactions: Thêm các cột Snapshot bảo lưu quyền lợi biên lai
+        modelBuilder.Entity<PaymentTransaction>(entity =>
+        {
+            entity.Property(e => e.SnapshotFeaturesJson).HasColumnName("Snapshot_Features_JSON");
+            entity.Property(e => e.SnapshotPlanName).HasColumnName("Snapshot_Plan_Name").HasMaxLength(200);
+            entity.Property(e => e.PlanVersion).HasColumnName("Plan_Version");
+        });
     }
 
     /// <summary>

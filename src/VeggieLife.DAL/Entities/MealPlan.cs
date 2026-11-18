@@ -23,6 +23,14 @@ public partial class MealPlan
 
     public string? CustomInstructions { get; set; }
 
+    public string? HealthGoal { get; set; }
+
+    public string? RegionPreference { get; set; }
+
+    public bool UseFridge { get; set; }
+
+    public bool RequiresAlliumFree { get; set; }
+
     public string PlanStatus { get; set; } = null!;
 
     public bool GeneratedByAi { get; set; }

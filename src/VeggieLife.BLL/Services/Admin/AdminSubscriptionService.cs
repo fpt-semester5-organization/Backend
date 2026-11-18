@@ -12,6 +12,7 @@ using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.DTOs.Admin.Subscriptions;
 using VeggieLife.BLL.Services.Cache;
 using VeggieLife.BLL.Services.Email;
+using VeggieLife.BLL.Services.Subscriptions;
 using VeggieLife.BLL.Validators.Admin;
 using VeggieLife.DAL.Context;
 using VeggieLife.DAL.Entities;
@@ -56,7 +57,10 @@ public class AdminSubscriptionService : IAdminSubscriptionService
                 PlanName = p.PlanName,
                 DurationDays = p.DurationDays,
                 PriceVnd = (long)p.Price,
-                IsActive = p.IsActive
+                IsActive = p.IsActive,
+                Version = p.Version,
+                FeaturesJson = p.FeaturesJson,
+                EffectiveFrom = p.UpdatedAt ?? p.CreatedAt
             })
             .ToListAsync(ct);
 
@@ -107,14 +111,19 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             throw AppException.Conflict(ErrorCodes.ErrPlanDuplicate, "Tên gói đã tồn tại.");
         }
 
+        var featuresJson = await ResolvePlanFeaturesAsync(request.FeaturesJson, ct);
+
+        var now = DateTime.UtcNow;
         var plan = new SubscriptionPlan
         {
             AdminId = adminId,
             PlanName = trimmedName,
             DurationDays = request.DurationDays,
             Price = request.PriceVnd,
+            FeaturesJson = featuresJson,
             IsActive = true,
-            CreatedAt = DateTime.UtcNow
+            Version = 1,
+            CreatedAt = now
         };
 
         _db.SubscriptionPlans.Add(plan);
@@ -133,11 +142,13 @@ public class AdminSubscriptionService : IAdminSubscriptionService
                 planId = plan.PlanId,
                 planName = plan.PlanName,
                 durationDays = plan.DurationDays,
-                priceVnd = request.PriceVnd,
+                price = (long)plan.Price,
+                features = plan.FeaturesJson,
+                version = plan.Version,
                 isActive = plan.IsActive
             }),
             Note = $"Tạo mới gói VIP {plan.PlanName}",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = now
         });
         await _db.SaveChangesAsync(ct);
 
@@ -184,8 +195,12 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             planName = plan.PlanName,
             durationDays = plan.DurationDays,
             price = (long)plan.Price,
-            isActive = plan.IsActive
+            isActive = plan.IsActive,
+            version = plan.Version,
+            featuresJson = plan.FeaturesJson
         });
+
+        bool isPlanSpecificationChanged = false;
 
         if (!string.IsNullOrWhiteSpace(request?.PlanName))
         {
@@ -203,7 +218,11 @@ public class AdminSubscriptionService : IAdminSubscriptionService
                 throw AppException.Conflict(ErrorCodes.ErrPlanDuplicate, "Tên gói đã tồn tại.");
             }
 
-            plan.PlanName = trimmedName;
+            if (!string.Equals(plan.PlanName, trimmedName, StringComparison.Ordinal))
+            {
+                plan.PlanName = trimmedName;
+                isPlanSpecificationChanged = true;
+            }
         }
 
         if (request?.DurationDays.HasValue == true)
@@ -212,12 +231,27 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             {
                 throw AppException.BadRequest(ErrorCodes.ErrValidation, "Thời hạn gói phải lớn hơn 0.");
             }
-            plan.DurationDays = request.DurationDays.Value;
+            if (plan.DurationDays != request.DurationDays.Value)
+            {
+                plan.DurationDays = request.DurationDays.Value;
+                isPlanSpecificationChanged = true;
+            }
         }
 
-        if (request?.PriceVnd.HasValue == true)
+        if (request?.PriceVnd.HasValue == true && (long)plan.Price != request.PriceVnd.Value)
         {
             plan.Price = request.PriceVnd.Value;
+            isPlanSpecificationChanged = true;
+        }
+
+        if (request?.FeaturesJson != null)
+        {
+            var featuresJson = await ResolvePlanFeaturesAsync(request.FeaturesJson, ct);
+            if (!string.Equals(plan.FeaturesJson, featuresJson, StringComparison.Ordinal))
+            {
+                plan.FeaturesJson = featuresJson;
+                isPlanSpecificationChanged = true;
+            }
         }
 
         if (request?.IsActive.HasValue == true)
@@ -225,7 +259,15 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             plan.IsActive = request.IsActive.Value;
         }
 
-        plan.UpdatedAt = DateTime.UtcNow;
+        var now = DateTime.UtcNow;
+
+        // Nếu thông số gói thay đổi -> Tăng version và ghi nhận vết AuditLog
+        if (isPlanSpecificationChanged)
+        {
+            plan.Version += 1;
+        }
+
+        plan.UpdatedAt = now;
 
         // Ghi AuditLogs theo BR-ADM-SYS-002
         _db.AuditLogs.Add(new AuditLog
@@ -238,13 +280,19 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             OldValue = oldValue,
             NewValue = JsonSerializer.Serialize(new
             {
+                version = plan.Version,
                 planName = plan.PlanName,
                 durationDays = plan.DurationDays,
                 price = (long)plan.Price,
+                features = plan.FeaturesJson,
                 isActive = plan.IsActive
             }),
-            Note = $"Cập nhật gói VIP {plan.PlanName}",
-            CreatedAt = DateTime.UtcNow
+            Note = isPlanSpecificationChanged 
+                ? (!string.IsNullOrWhiteSpace(request?.ChangeReason) 
+                    ? request.ChangeReason.Trim() 
+                    : $"Cập nhật gói VIP {plan.PlanName} lên Version {plan.Version}")
+                : $"Cập nhật trạng thái gói VIP {plan.PlanName}",
+            CreatedAt = now
         });
         await _db.SaveChangesAsync(ct);
 
@@ -256,6 +304,136 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             PlanId = plan.PlanId,
             PriceVnd = (long)plan.Price
         };
+    }
+
+    /// <summary>
+    /// Lấy lịch sử tất cả các phiên bản của một gói VIP (Audit & Plan Versioning từ AuditLogs).
+    /// </summary>
+    public async Task<IReadOnlyList<AdminSubscriptionPlanVersionDto>> GetSubscriptionPlanVersionsAsync(
+        int planId,
+        CancellationToken ct = default)
+    {
+        if (planId <= 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Mã gói không hợp lệ.");
+        }
+
+        var plan = await _db.SubscriptionPlans
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.PlanId == planId, ct);
+        if (plan == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrAdmNotFound, "Gói VIP không tồn tại.");
+        }
+
+        var auditLogs = await _db.AuditLogs
+            .AsNoTracking()
+            .Where(a => a.TargetTable == "SubscriptionPlans"
+                     && a.TargetId == planId.ToString()
+                     && (a.Action == "UPDATE_VIP_PLAN" || a.Action == "UPDATE_VIP_PRICE" || a.Action == "CREATE_VIP_PLAN"))
+            .OrderByDescending(a => a.CreatedAt)
+            .ToListAsync(ct);
+
+        var adminIds = auditLogs.Where(a => a.ActorUserId.HasValue).Select(a => a.ActorUserId!.Value).Distinct().ToList();
+        var adminNames = await _db.Users
+            .Where(u => adminIds.Contains(u.UserId))
+            .ToDictionaryAsync(u => u.UserId, u => !string.IsNullOrWhiteSpace(u.FullName) ? u.FullName : u.Email, ct);
+
+        // Chỉ các lần sửa làm tăng Version mới tạo phiên bản; bật/tắt bán không đổi phiên bản
+        var changes = auditLogs
+            .Select(log => (Log: log, Old: ParsePlanSnapshot(log.OldValue), New: ParsePlanSnapshot(log.NewValue)))
+            .Where(c => c.Old?.Version != null && c.New?.Version != null && c.New.Version > c.Old.Version)
+            .ToList(); // mới nhất trước
+
+        string? AdminName(int? id) => id.HasValue && adminNames.TryGetValue(id.Value, out var name) ? name : null;
+
+        var versions = new List<AdminSubscriptionPlanVersionDto>();
+        var seenVersions = new HashSet<int> { plan.Version };
+
+        // 1. Phiên bản hiện hành: có hiệu lực từ lần tăng Version gần nhất
+        var latest = changes.FirstOrDefault();
+        var currentAdminId = latest.Log?.ActorUserId ?? plan.AdminId;
+        versions.Add(new AdminSubscriptionPlanVersionDto
+        {
+            VersionId = plan.PlanId * 1000 + plan.Version,
+            PlanId = plan.PlanId,
+            Version = plan.Version,
+            PlanName = plan.PlanName,
+            Price = plan.Price,
+            DurationDays = plan.DurationDays,
+            FeaturesJson = plan.FeaturesJson,
+            EffectiveFrom = latest.Log?.CreatedAt ?? plan.CreatedAt,
+            EffectiveTo = null,
+            UpdatedByAdminId = currentAdminId,
+            UpdatedByAdminName = AdminName(currentAdminId),
+            ChangeReason = latest.Log?.Note ?? $"Phiên bản hiện hành (Version {plan.Version})",
+            CreatedAt = latest.Log?.CreatedAt ?? plan.CreatedAt
+        });
+
+        // 2. Phiên bản cũ (Old_Value của mỗi lần tăng Version): hiệu lực từ lần tăng Version trước đó đến lần này
+        for (var i = 0; i < changes.Count; i++)
+        {
+            var (log, old, _) = changes[i];
+            if (!seenVersions.Add(old!.Version!.Value)) continue;
+
+            var previous = i + 1 < changes.Count ? changes[i + 1].Log : null;
+            var effectiveFrom = previous?.CreatedAt ?? plan.CreatedAt;
+            var adminId = previous?.ActorUserId ?? plan.AdminId;
+            versions.Add(new AdminSubscriptionPlanVersionDto
+            {
+                VersionId = plan.PlanId * 1000 + old.Version.Value,
+                PlanId = plan.PlanId,
+                Version = old.Version.Value,
+                PlanName = old.PlanName ?? plan.PlanName,
+                Price = old.Price ?? plan.Price,
+                DurationDays = old.DurationDays ?? plan.DurationDays,
+                FeaturesJson = old.FeaturesJson,
+                EffectiveFrom = effectiveFrom,
+                EffectiveTo = log.CreatedAt,
+                UpdatedByAdminId = adminId,
+                UpdatedByAdminName = AdminName(adminId),
+                ChangeReason = previous?.Note ?? $"Phiên bản {old.Version.Value}",
+                CreatedAt = effectiveFrom
+            });
+        }
+
+        return versions.OrderByDescending(v => v.Version).ToList();
+    }
+
+    private sealed record PlanAuditSnapshot(int? Version, string? PlanName, decimal? Price, int? DurationDays, string? FeaturesJson);
+
+    /// <summary>Đọc ảnh chụp gói trong Old_Value/New_Value của AuditLogs; JSON hỏng thì trả null.</summary>
+    private static PlanAuditSnapshot? ParsePlanSnapshot(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return null;
+
+            int? version = root.TryGetProperty("version", out var vProp) && vProp.TryGetInt32(out var vVal) ? vVal : null;
+            string? name = root.TryGetProperty("planName", out var nProp) && nProp.ValueKind == JsonValueKind.String ? nProp.GetString() : null;
+            decimal? price = root.TryGetProperty("price", out var pProp) && pProp.TryGetDecimal(out var pVal) ? pVal : null;
+            int? duration = root.TryGetProperty("durationDays", out var dProp) && dProp.TryGetInt32(out var dVal) ? dVal : null;
+
+            string? features = null;
+            if (root.TryGetProperty("features", out var fProp) || root.TryGetProperty("featuresJson", out fProp))
+            {
+                features = fProp.ValueKind switch
+                {
+                    JsonValueKind.String => fProp.GetString(),
+                    JsonValueKind.Null => null,
+                    _ => fProp.GetRawText()
+                };
+            }
+
+            return new PlanAuditSnapshot(version, name, price, duration, features);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -490,6 +668,7 @@ public class AdminSubscriptionService : IAdminSubscriptionService
         try
         {
             await _redis.RemoveAsync($"vip_status:{transaction.UserId}", ct);
+            await _redis.RemoveAsync($"user_benefits:{transaction.UserId}", ct);
             await _redis.RemoveAsync($"cache:profile:{transaction.UserId}", ct);
             await _redis.RemoveAsync("plans_cache", ct);
         }
@@ -543,19 +722,26 @@ public class AdminSubscriptionService : IAdminSubscriptionService
                 (pt.User != null && pt.User.FullName.Contains(keyword)));
         }
 
+        // Múi giờ Việt Nam (UTC+7) chuẩn cho đối soát và giám sát dòng tiền VeggieLife
+        var vietnamOffset = TimeSpan.FromHours(7);
         if (fromDate.HasValue)
         {
-            var fromUtc = fromDate.Value.Date;
+            var fromUtc = fromDate.Value.Date - vietnamOffset;
             query = query.Where(pt => pt.CreatedAt >= fromUtc);
         }
 
         if (toDate.HasValue)
         {
-            var toUtc = toDate.Value.Date.AddDays(1);
+            var toUtc = toDate.Value.Date.AddDays(1) - vietnamOffset;
             query = query.Where(pt => pt.CreatedAt < toUtc);
         }
 
         var total = await query.CountAsync(ct);
+
+        // Giám sát dòng tiền Admin: Tính tổng doanh thu các giao dịch SUCCESS theo bộ lọc thời gian & điều kiện hiện tại
+        var totalRevenue = (long)await query
+            .Where(pt => pt.TransactionStatus == "SUCCESS")
+            .SumAsync(pt => (decimal?)pt.AmountVnd ?? 0m, ct);
 
         var pagedList = await query
             .OrderByDescending(pt => pt.CreatedAt)
@@ -606,7 +792,10 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             };
         }).ToList();
 
-        var meta = new PagedMeta(filter.Page, filter.Size, total);
+        var meta = new PagedMeta(filter.Page, filter.Size, total)
+        {
+            TotalRevenueVnd = totalRevenue
+        };
         return (items, meta);
     }
 
@@ -698,6 +887,7 @@ public class AdminSubscriptionService : IAdminSubscriptionService
         try
         {
             await _redis.RemoveAsync($"vip_status:{transaction.UserId}", ct);
+            await _redis.RemoveAsync($"user_benefits:{transaction.UserId}", ct);
             await _redis.RemoveAsync($"cache:profile:{transaction.UserId}", ct);
             await _redis.RemoveAsync("plans_cache", ct);
         }
@@ -733,6 +923,46 @@ public class AdminSubscriptionService : IAdminSubscriptionService
             VipStartsAt = startsAt,
             VipEndsAt = endsAt
         };
+    }
+
+    /// <summary>
+    /// Features_JSON của gói khi tạo/sửa (D121 Q1-B): ba hạn mức VIP luôn theo SystemSettings.
+    /// Request ghi hạn mức khác SystemSettings thì từ chối; khóa thiếu được bổ sung; các khóa khác giữ nguyên.
+    /// </summary>
+    private async Task<string> ResolvePlanFeaturesAsync(string? requestedJson, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(requestedJson);
+                if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    throw AppException.BadRequest(ErrorCodes.ErrValidation, "Quyền lợi gói (featuresJson) phải là một đối tượng JSON.");
+                }
+            }
+            catch (JsonException)
+            {
+                throw AppException.BadRequest(ErrorCodes.ErrValidation, "Quyền lợi gói (featuresJson) không phải JSON hợp lệ.");
+            }
+        }
+
+        var (chat, meal, fridge, barcode) = await VipPlanBenefitSync.ReadVipQuotasAsync(_db, ct);
+        var expected = new[]
+        {
+            (Key: VipBenefitJson.ChatLimitDaily, Value: chat),
+            (Key: VipBenefitJson.MealPlanLimitWeekly, Value: meal),
+            (Key: VipBenefitJson.FridgeScanLimitDaily, Value: fridge),
+            (Key: VipBenefitJson.BarcodeScanLimitDaily, Value: barcode)
+        };
+        if (expected.Any(q => VipBenefitJson.ReadQuota(requestedJson, q.Key) is int requested && requested != q.Value))
+        {
+            throw AppException.BadRequest(
+                ErrorCodes.ErrValidation,
+                "Hạn mức VIP (Trợ lý AI, Thực đơn tuần, Quét tủ lạnh, Quét mã vạch) chỉnh tại Cấu hình hệ thống > Chỉ số hệ thống và áp dụng cho mọi gói, không sửa riêng từng gói.");
+        }
+
+        return VipBenefitJson.EnsureQuotas(requestedJson, chat, meal, fridge, barcode);
     }
 
     private async Task InvalidatePlanCacheAsync(CancellationToken ct)

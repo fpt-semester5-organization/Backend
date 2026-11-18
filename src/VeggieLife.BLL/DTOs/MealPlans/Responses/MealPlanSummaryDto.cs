@@ -10,4 +10,5 @@ public class MealPlanSummaryDto
     public string StartDate { get; set; } = null!;
     public string PlanStatus { get; set; } = null!;
     public int DurationDays { get; set; } = 7;
+    public bool UseFridge { get; set; }
 }

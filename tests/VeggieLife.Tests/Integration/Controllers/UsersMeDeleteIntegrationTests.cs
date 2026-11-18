@@ -33,7 +33,7 @@ using Xunit;
 namespace VeggieLife.Tests.Integration.Controllers;
 
 /// <summary>
-/// Bộ kiểm thử tích hợp (Integration Tests) cho chức năng Vô hiệu hóa tài khoản (ân hạn 30 ngày) (FN-PROF-07).
+/// Bộ kiểm thử tích hợp (Integration Tests) cho chức năng Vô hiệu hóa tài khoản (thời gian chờ xóa 30 ngày (có thể khôi phục)) (FN-PROF-07).
 /// </summary>
 public class UsersMeDeleteIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
 {

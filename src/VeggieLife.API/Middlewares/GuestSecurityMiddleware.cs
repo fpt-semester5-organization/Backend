@@ -11,14 +11,13 @@ using Microsoft.Extensions.Options;
 using VeggieLife.BLL.Common.Constants;
 using VeggieLife.BLL.Common.Responses;
 using VeggieLife.BLL.Common.Settings;
-using VeggieLife.BLL.Services.Cache;
 
 namespace VeggieLife.API.Middlewares;
 
 /// <summary>
 /// Middleware đóng vai trò "người gác cổng" (Gatekeeper):
-/// 1. Giới hạn 10 yêu cầu/phút mỗi địa chỉ IP dành cho Khách, vượt thì tạm khóa 10 phút (BR-GUEST-SEC-01).
-/// 2. Kiểm soát vùng địa lý (chỉ cho phép truy cập từ Việt Nam với công tắc bật/tắt linh hoạt) (BR-GUEST-06).
+/// kiểm soát vùng địa lý (chỉ cho phép truy cập từ Việt Nam với công tắc bật/tắt linh hoạt) (BR-GUEST-06).
+/// Đã gỡ bỏ giới hạn 10 yêu cầu/phút và tạm khóa IP 10 phút (BR-GUEST-SEC-01) theo yêu cầu Leader ngày 05/11/2026.
 /// </summary>
 public class GuestSecurityMiddleware
 {
@@ -41,7 +40,6 @@ public class GuestSecurityMiddleware
 
     public async Task InvokeAsync(
         HttpContext context,
-        IRedisService redisService,
         IOptions<GuestSecuritySettings> securityOptions)
     {
         var path = context.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
@@ -99,51 +97,6 @@ public class GuestSecurityMiddleware
                 await context.Response.WriteAsync(JsonSerializer.Serialize(regionError, JsonOptions));
                 return;
             }
-        }
-
-        // 4. Kiểm tra Rate Limit: 10 yêu cầu/phút mỗi IP, vượt thì chặn 10 phút
-        // Nếu là localhost/loopback và không bật RateLimitLocalhost (và không có header X-Enforce-Rate-Limit), bỏ qua Rate Limit để không chặn test runner
-        var isLocal = IsLoopbackOrPrivateIp(clientIp);
-        var forceRateLimit = context.Request.Headers.ContainsKey("X-Enforce-Rate-Limit");
-        if (isLocal && !settings.RateLimitLocalhost && !forceRateLimit)
-        {
-            await _next(context);
-            return;
-        }
-
-        var rateLimitResult = await redisService.CheckIpRateLimitAsync(
-            clientIp,
-            settings.RateLimitPerMinute,
-            settings.BanDurationMinutes,
-            context.RequestAborted);
-
-        if (!rateLimitResult.Allowed)
-        {
-            _logger.LogWarning("IP {Ip} đã vượt hạn mức Rate Limit hoặc đang bị tạm khóa 10 phút (Count: {Count}, RetryAfter: {Ttl}s)",
-                clientIp, rateLimitResult.CurrentCount, rateLimitResult.RetryAfter?.TotalSeconds);
-
-            context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-            context.Response.ContentType = "application/json; charset=utf-8";
-
-            if (rateLimitResult.RetryAfter.HasValue)
-            {
-                var seconds = (int)Math.Max(1, rateLimitResult.RetryAfter.Value.TotalSeconds);
-                context.Response.Headers["Retry-After"] = seconds.ToString();
-            }
-
-            var message = "Vượt quá giới hạn 10 yêu cầu/phút. Địa chỉ IP của bạn bị tạm khóa trong 10 phút (BR-GUEST-SEC-01). Vui lòng thử lại sau.";
-            var errorResponse = new ApiErrorResponse(
-                StatusCodes.Status429TooManyRequests,
-                ErrorCodes.ErrGuestRateLimitExceeded,
-                message,
-                new
-                {
-                    ip = clientIp,
-                    retryAfterSeconds = (int)(rateLimitResult.RetryAfter?.TotalSeconds ?? 600)
-                });
-
-            await context.Response.WriteAsync(JsonSerializer.Serialize(errorResponse, JsonOptions));
-            return;
         }
 
         await _next(context);

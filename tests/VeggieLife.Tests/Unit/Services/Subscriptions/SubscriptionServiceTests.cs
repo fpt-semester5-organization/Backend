@@ -82,11 +82,6 @@ public class SubscriptionServiceTests
             return Task.FromResult((true, 1L, (long)(maxLimit - 1)));
         }
 
-        public Task<(bool Allowed, bool IsBanned, long CurrentCount, TimeSpan? RetryAfter)> CheckIpRateLimitAsync(string clientIp, int maxRequestsPerMinute = 10, int banDurationMinutes = 10, CancellationToken ct = default)
-        {
-            return Task.FromResult((true, false, 1L, (TimeSpan?)null));
-        }
-
         public Task EnqueueAsync<T>(string queueName, T item, CancellationToken ct = default)
         {
             return Task.CompletedTask;
@@ -409,7 +404,7 @@ public class SubscriptionServiceTests
     }
 
     [Fact]
-    public async Task CheckoutSubscriptionAsync_WhenUserHasActiveVip_ChainsStartsAtToPreviousEndsAt()
+    public async Task CheckoutSubscriptionAsync_WhenUserHasActiveSameVipPlan_ThrowsConflict()
     {
         var (db, service, _, _, _) = CreateTestHarness();
 
@@ -441,16 +436,117 @@ public class SubscriptionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var result = await service.CheckoutSubscriptionAsync(100, UserRoles.Vip, new CheckoutSubscriptionRequest
+        var act = () => service.CheckoutSubscriptionAsync(100, UserRoles.Vip, new CheckoutSubscriptionRequest
         {
             PlanId = 1,
             Gateway = "VIETQR"
         });
 
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(409);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrVipAlreadyActive);
+    }
+
+    [Fact]
+    public async Task CheckoutSubscriptionAsync_WhenUserHasActiveVip_DifferentPlan_ThrowsConflictVipAlreadyActive()
+    {
+        var (db, service, _, _, _) = CreateTestHarness();
+
+        db.SubscriptionPlans.AddRange(
+            new SubscriptionPlan
+            {
+                PlanId = 1,
+                AdminId = 1,
+                PlanName = "VIP 1 Tháng",
+                Price = 49000,
+                DurationDays = 30,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            },
+            new SubscriptionPlan
+            {
+                PlanId = 2,
+                AdminId = 1,
+                PlanName = "VIP 12 Tháng",
+                Price = 449000,
+                DurationDays = 365,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            });
+
+        var futureEndsAt = DateTime.UtcNow.AddDays(15);
+        db.PaymentTransactions.Add(new PaymentTransaction
+        {
+            TransactionId = 999,
+            PlanId = 1,
+            UserId = 100,
+            GatewayProvider = "MOMO",
+            PartnerTransactionCode = "VL_EXISTING_VIP",
+            AmountVnd = 49000,
+            TransactionStatus = "SUCCESS",
+            SignatureHash = "success_sig",
+            CreatedAt = DateTime.UtcNow.AddDays(-15),
+            StartsAt = DateTime.UtcNow.AddDays(-15),
+            EndsAt = futureEndsAt
+        });
+        await db.SaveChangesAsync();
+
+        var act = () => service.CheckoutSubscriptionAsync(100, UserRoles.Vip, new CheckoutSubscriptionRequest
+        {
+            PlanId = 2,
+            Gateway = "VIETQR"
+        });
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(409);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrVipAlreadyActive);
+    }
+
+    [Fact]
+    public async Task CheckoutSubscriptionAsync_WhenUserVipExpired_AllowsCheckoutNewPlan()
+    {
+        var (db, service, _, _, _) = CreateTestHarness();
+
+        db.SubscriptionPlans.Add(new SubscriptionPlan
+        {
+            PlanId = 1,
+            AdminId = 1,
+            PlanName = "VIP 1 Tháng",
+            Price = 49000,
+            DurationDays = 30,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        var pastEndsAt = DateTime.UtcNow.AddDays(-1);
+        db.PaymentTransactions.Add(new PaymentTransaction
+        {
+            TransactionId = 999,
+            PlanId = 1,
+            UserId = 100,
+            GatewayProvider = "MOMO",
+            PartnerTransactionCode = "VL_EXPIRED_VIP",
+            AmountVnd = 49000,
+            TransactionStatus = "SUCCESS",
+            SignatureHash = "success_sig",
+            CreatedAt = DateTime.UtcNow.AddDays(-31),
+            StartsAt = DateTime.UtcNow.AddDays(-31),
+            EndsAt = pastEndsAt
+        });
+        await db.SaveChangesAsync();
+
+        var result = await service.CheckoutSubscriptionAsync(100, UserRoles.Member, new CheckoutSubscriptionRequest
+        {
+            PlanId = 1,
+            Gateway = "VIETQR"
+        });
+
+        result.Should().NotBeNull();
+        result.AmountVnd.Should().Be(49000);
+
         var newTx = await db.PaymentTransactions.FirstOrDefaultAsync(t => t.PartnerTransactionCode == result.OrderCode);
         newTx.Should().NotBeNull();
-        // Kỳ mới bắt đầu từ hạn cũ
-        newTx!.StartsAt.Should().BeCloseTo(futureEndsAt, TimeSpan.FromSeconds(1));
+        newTx!.StartsAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(2));
     }
 
     // ==========================================

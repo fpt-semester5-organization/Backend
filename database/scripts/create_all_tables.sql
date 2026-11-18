@@ -1,15 +1,15 @@
 -- ============================================================================
--- VeggieLifeDb - Master Schema Creation Script (41 Tables & All Migration Patches)
+-- VeggieLifeDb - Master Schema Creation Script (42 Tables & All Migration Patches)
 -- Clusters:
 --   - Quản trị Tài khoản, Sức khỏe & Hội viên (9 thực thể)
 --   - Mạng xã hội Ẩm thực, Video, Kiểm duyệt & Tương tác (7 thực thể)
 --   - Kho Công thức Chay, Thực đơn, Nguyên liệu & Đi chợ (11 thực thể)
 --   - Tra cứu Phụ gia, Quét Mã vạch & An toàn (5 thực thể)
---   - Trợ lý Tư vấn AI, Tủ lạnh Ảo & Địa điểm (7 thực thể)
+--   - Trợ lý Tư vấn AI, Tủ lạnh Ảo & Địa điểm (8 thực thể)
 --   - Quản trị Hệ thống, Tham số & Kiểm toán (2 thực thể)
 -- Target RDBMS: Microsoft SQL Server 2022
--- Total Entities: 41 Tables, 343 Columns
--- Generated from: database/schema/ (Files 01 to 45)
+-- Total Entities: 42 Tables (Lean Architecture)
+-- Generated from: database/schema/ (Files 01 to 50)
 -- ============================================================================
 
 USE [VeggieLifeDb];
@@ -55,8 +55,6 @@ END;
 GO
 
 
-
-
 -- ============================================================================
 -- START: 02_Allergens.sql
 -- ============================================================================
@@ -78,8 +76,6 @@ CREATE TABLE dbo.Allergens (
     CONSTRAINT UQ_Allergens_Name UNIQUE (Allergen_Name),
     CONSTRAINT UQ_Allergens_Code UNIQUE (Code)
 );
-
-GO
 
 
 -- ============================================================================
@@ -136,8 +132,6 @@ WHERE Google_ID IS NOT NULL;
 GO
 
 
-
-
 -- ============================================================================
 -- START: 04_HealthProfiles.sql
 -- ============================================================================
@@ -186,8 +180,6 @@ BEGIN
     END
 END;
 
-GO
-
 
 -- ============================================================================
 -- START: 05_UserWeightHistory.sql
@@ -210,8 +202,6 @@ CREATE TABLE dbo.UserWeightHistory (
     CONSTRAINT FK_UserWeightHistory_Users FOREIGN KEY (User_ID) 
         REFERENCES dbo.Users(User_ID)
 );
-
-GO
 
 
 -- ============================================================================
@@ -237,8 +227,6 @@ CREATE TABLE dbo.UserAllergies (
         REFERENCES dbo.Allergens(Allergen_ID) ON DELETE CASCADE
 );
 GO
-
-
 
 
 -- ============================================================================
@@ -270,8 +258,6 @@ CREATE TABLE dbo.SubscriptionPlans (
     CONSTRAINT CK_SubscriptionPlans_Features_JSON CHECK (Features_JSON IS NULL OR ISJSON(Features_JSON) = 1)
 );
 GO
-
-
 
 
 -- ============================================================================
@@ -314,8 +300,6 @@ CREATE TABLE dbo.PaymentTransactions (
 GO
 
 
-
-
 -- ============================================================================
 -- START: 09_AIQuotaLogs.sql
 -- ============================================================================
@@ -347,8 +331,6 @@ CREATE TABLE dbo.AIQuotaLogs (
         'SUCCESS', 'QUOTA_EXCEEDED', 'ERROR'
     ))
 );
-
-GO
 
 
 -- ============================================================================
@@ -399,8 +381,6 @@ END;
 GO
 
 
-
-
 -- ============================================================================
 -- START: 11_FoodCategories.sql
 -- ============================================================================
@@ -436,8 +416,6 @@ END;
 GO
 
 
-
-
 -- ============================================================================
 -- START: 12_Ingredients.sql
 -- ============================================================================
@@ -463,6 +441,8 @@ BEGIN
         [Calories_Per_100g]     DECIMAL(6,1) NOT NULL,
         [Is_Allium]             BIT NOT NULL CONSTRAINT [DF_Ingredients_Is_Allium] DEFAULT (0),
         [Food_Group]            VARCHAR(20) NOT NULL CONSTRAINT [DF_Ingredients_Food_Group] DEFAULT ('PLANT'),
+        [Image_Url]             VARCHAR(500) NULL,
+        [Is_Locked]             BIT NOT NULL CONSTRAINT [DF_Ingredients_Is_Locked] DEFAULT (0),
         [Created_At]            DATETIME2(7) NOT NULL CONSTRAINT [DF_Ingredients_Created_At] DEFAULT (SYSDATETIME()),
 
         CONSTRAINT [PK_Ingredients] PRIMARY KEY CLUSTERED ([Ingredient_ID] ASC),
@@ -478,10 +458,11 @@ BEGIN
 
     CREATE NONCLUSTERED INDEX [IX_Ingredients_Is_Allium] 
     ON [dbo].[Ingredients]([Is_Allium] ASC);
+
+    CREATE NONCLUSTERED INDEX [IX_Ingredients_Is_Locked] 
+    ON [dbo].[Ingredients]([Is_Locked] ASC);
 END;
 GO
-
-
 
 
 -- ============================================================================
@@ -517,8 +498,6 @@ BEGIN
     END
 END;
 GO
-
-
 
 
 -- ============================================================================
@@ -566,8 +545,6 @@ BEGIN
     END;
 END;
 GO
-
-
 
 
 -- ============================================================================
@@ -694,8 +671,6 @@ END;
 GO
 
 
-
-
 -- ============================================================================
 -- START: 16_RecipeIngredients.sql
 -- ============================================================================
@@ -731,8 +706,6 @@ END;
 GO
 
 
-
-
 -- ============================================================================
 -- START: 17_Videos.sql
 -- ============================================================================
@@ -764,14 +737,12 @@ BEGIN
 
         CONSTRAINT [PK_Videos] PRIMARY KEY CLUSTERED ([Video_ID] ASC),
         CONSTRAINT [FK_Videos_Posts] FOREIGN KEY ([Post_ID]) REFERENCES [dbo].[Posts]([Post_ID]),
-        CONSTRAINT [CK_Videos_Status] CHECK ([Status] IN ('PROCESSING', 'READY', 'FAILED', 'BANNED'))
+        CONSTRAINT [CK_Videos_Status] CHECK ([Status] IN ('PROCESSING', 'READY', 'FAILED', 'BANNED', 'DELETED'))
     );
 
     CREATE NONCLUSTERED INDEX [IX_Videos_Post_ID] ON [dbo].[Videos]([Post_ID] ASC);
 END;
 GO
-
-
 
 
 -- ============================================================================
@@ -823,8 +794,6 @@ END;
 GO
 
 
-
-
 -- ============================================================================
 -- START: 19_Comments.sql
 -- ============================================================================
@@ -871,8 +840,6 @@ END;
 GO
 
 
-
-
 -- ============================================================================
 -- START: 20_Votes.sql
 -- ============================================================================
@@ -909,8 +876,6 @@ BEGIN
     END
 END;
 GO
-
-
 
 
 -- ============================================================================
@@ -967,8 +932,6 @@ END;
 GO
 
 
-
-
 -- ============================================================================
 -- START: 22_MealPlans.sql
 -- ============================================================================
@@ -995,7 +958,11 @@ BEGIN
         [End_Date]              DATE NOT NULL,
         [Target_Daily_Kcal]     DECIMAL(6,1) NOT NULL,
         [Budget_Tier]           VARCHAR(12) NOT NULL CONSTRAINT [DF_MealPlans_Budget_Tier] DEFAULT ('STANDARD'),
-        [Custom_Instructions]   NVARCHAR(200) NULL,
+        [Custom_Instructions]   NVARCHAR(500) NULL,
+        [Health_Goal]           VARCHAR(30) NULL,
+        [Region_Preference]     VARCHAR(20) NULL,
+        [Use_Fridge]            BIT NOT NULL CONSTRAINT [DF_MealPlans_Use_Fridge] DEFAULT (0),
+        [Requires_Allium_Free]  BIT NOT NULL CONSTRAINT [DF_MealPlans_Requires_Allium_Free] DEFAULT (0),
         [Plan_Status]           VARCHAR(20) NOT NULL CONSTRAINT [DF_MealPlans_Status] DEFAULT ('DRAFT'),
         [Generated_By_AI]       BIT NOT NULL CONSTRAINT [DF_MealPlans_Generated_By_AI] DEFAULT (0),
         [Max_Swaps_Allowed]     INT NOT NULL CONSTRAINT [DF_MealPlans_Max_Swaps] DEFAULT (21),
@@ -1005,7 +972,9 @@ BEGIN
 
         CONSTRAINT [PK_MealPlans] PRIMARY KEY CLUSTERED ([Plan_ID] ASC),
         CONSTRAINT [CK_MealPlans_Budget_Tier] CHECK ([Budget_Tier] IN ('ECONOMICAL', 'STANDARD', 'PREMIUM')),
-        CONSTRAINT [CK_MealPlans_Status] CHECK ([Plan_Status] IN ('DRAFT', 'ACTIVE', 'ARCHIVED', 'TEMPLATE', 'CANCELLED'))
+        CONSTRAINT [CK_MealPlans_Status] CHECK ([Plan_Status] IN ('DRAFT', 'ACTIVE', 'ARCHIVED', 'TEMPLATE', 'CANCELLED')),
+        CONSTRAINT [CK_MealPlans_Health_Goal] CHECK ([Health_Goal] IS NULL OR [Health_Goal] IN ('LOSE_WEIGHT', 'MAINTAIN', 'GAIN_MUSCLE')),
+        CONSTRAINT [CK_MealPlans_Region_Preference] CHECK ([Region_Preference] IS NULL OR [Region_Preference] IN ('NORTH', 'CENTRAL', 'SOUTH'))
     );
 
     CREATE NONCLUSTERED INDEX [IX_MealPlans_User_ID] ON [dbo].[MealPlans]([User_ID] ASC);
@@ -1021,8 +990,6 @@ BEGIN
     END;
 END;
 GO
-
-
 
 
 -- ============================================================================
@@ -1063,8 +1030,6 @@ END;
 GO
 
 
-
-
 -- ============================================================================
 -- START: 24_ShoppingLists.sql
 -- ============================================================================
@@ -1099,8 +1064,6 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_ShoppingLists_Plan_ID] ON [dbo].[ShoppingLists]([Plan_ID] ASC);
 END;
 GO
-
-
 
 
 -- ============================================================================
@@ -1138,8 +1101,6 @@ END;
 GO
 
 
-
-
 -- ============================================================================
 -- START: 26_Products.sql
 -- ============================================================================
@@ -1166,8 +1127,6 @@ CREATE TABLE dbo.Products (
     CONSTRAINT CK_Products_Vegan_Verdict CHECK (Vegan_Verdict IN ('VEGAN', 'NON_VEGAN', 'DOUBTFUL'))
 );
 
-GO
-
 
 -- ============================================================================
 -- START: 27_ENumberDictionary.sql
@@ -1191,8 +1150,6 @@ CREATE TABLE dbo.ENumberDictionary (
     CONSTRAINT PK_ENumberDictionary PRIMARY KEY CLUSTERED (Code),
     CONSTRAINT CK_ENumberDictionary_Vegan_Status CHECK (Vegan_Status IN ('VEGAN', 'NON_VEGAN', 'DOUBTFUL'))
 );
-
-GO
 
 
 -- ============================================================================
@@ -1218,8 +1175,6 @@ CREATE TABLE dbo.Product_ENumbers (
 GO
 
 
-
-
 -- ============================================================================
 -- START: 29_ProductAllergens.sql
 -- ============================================================================
@@ -1242,8 +1197,6 @@ CREATE TABLE dbo.ProductAllergens (
     CONSTRAINT CK_ProductAllergens_Presence CHECK (Presence_Type IN ('CONTAINS', 'MAY_CONTAIN'))
 );
 GO
-
-
 
 
 -- ============================================================================
@@ -1273,8 +1226,6 @@ CREATE TABLE dbo.UserScanHistory (
     CONSTRAINT CK_UserScanHistory_Owner CHECK (User_ID IS NOT NULL OR Guest_UUID IS NOT NULL)
 );
 GO
-
-
 
 
 -- ============================================================================
@@ -1313,8 +1264,6 @@ BEGIN
     END;
 END;
 GO
-
-
 
 
 -- ============================================================================
@@ -1363,8 +1312,6 @@ BEGIN
     END;
 END;
 GO
-
-
 
 
 -- ============================================================================
@@ -1419,8 +1366,6 @@ END;
 GO
 
 
-
-
 -- ============================================================================
 -- START: 34_VenueMenuItems.sql
 -- ============================================================================
@@ -1456,8 +1401,6 @@ END;
 GO
 
 
-
-
 -- ============================================================================
 -- START: 35_VenueCategories.sql
 -- ============================================================================
@@ -1491,8 +1434,6 @@ END;
 GO
 
 
-
-
 -- ============================================================================
 -- START: 36_ChatSessions.sql
 -- ============================================================================
@@ -1520,8 +1461,6 @@ CREATE TABLE dbo.ChatSessions (
     CONSTRAINT CK_ChatSessions_Owner CHECK (User_ID IS NOT NULL OR Guest_UUID IS NOT NULL)
 );
 
-GO
-
 
 -- ============================================================================
 -- START: 37_ChatMessages.sql
@@ -1546,8 +1485,6 @@ CREATE TABLE dbo.ChatMessages (
     CONSTRAINT CK_ChatMessages_Sender_Type CHECK (Sender_Type IN ('USER', 'ASSISTANT')),
     CONSTRAINT CK_ChatMessages_Metadata_JSON CHECK (Metadata_JSON IS NULL OR ISJSON(Metadata_JSON) = 1)
 );
-
-GO
 
 
 -- ============================================================================
@@ -1575,8 +1512,6 @@ CREATE TABLE dbo.Surveys (
         REFERENCES dbo.ChatSessions(Chat_Session_ID) ON DELETE SET NULL,
     CONSTRAINT CK_Surveys_Rating_Score CHECK (Rating_Score BETWEEN 1 AND 5)
 );
-
-GO
 
 
 -- ============================================================================
@@ -1609,8 +1544,6 @@ BEGIN
         CONSTRAINT CK_SystemSettings_Category CHECK (Category IN ('MEAL_PLAN', 'AI_QUOTA', 'LLMOPS', 'COMMUNITY', 'GENERAL'))
     );
 END;
-
-GO
 
 
 -- ============================================================================
@@ -1648,8 +1581,6 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_MealSlotSwapHistories_Slot_ID] ON [dbo].[MealSlotSwapHistories]([Slot_ID] ASC);
 END;
 GO
-
-
 
 
 -- ============================================================================
@@ -1692,8 +1623,6 @@ BEGIN
         FOREIGN KEY ([Category_ID]) REFERENCES [dbo].[FoodCategories]([Category_ID]);
 END;
 GO
-
-
 
 
 -- ============================================================================
@@ -1740,8 +1669,6 @@ END;
 GO
 
 
-
-
 -- ============================================================================
 -- START: 43_MealPlans_Add_DurationDays.sql
 -- ============================================================================
@@ -1766,8 +1693,6 @@ BEGIN
     ALTER TABLE [dbo].[MealPlans] ADD [Duration_Days] INT NOT NULL CONSTRAINT [DF_MealPlans_Duration_Days] DEFAULT (7);
 END;
 GO
-
-
 
 
 -- ============================================================================
@@ -1876,8 +1801,6 @@ WHEN NOT MATCHED BY TARGET THEN
 GO
 
 
-
-
 -- ============================================================================
 -- START: 45_MealPlans_Allow_Cancelled_Status.sql
 -- ============================================================================
@@ -1908,3 +1831,588 @@ ALTER TABLE [dbo].[MealPlans] ADD CONSTRAINT [CK_MealPlans_Status]
 GO
 
 
+-- ============================================================================
+-- START: 46_Ingredients_Add_ImageUrl_IsLocked.sql
+-- ============================================================================
+-- ============================================================================
+-- File: 46_Ingredients_Add_ImageUrl_IsLocked.sql
+-- Table: Ingredients
+-- Cluster: Quản trị Nguyên liệu & Ảnh đại diện chuẩn
+-- Description: 
+--   1. Bổ sung [Image_Url] (đường dẫn ảnh đại diện chuẩn duy nhất) vào bảng Ingredients.
+--   2. Bổ sung [Is_Locked] (cờ khóa bảo vệ của Admin: không cho tự động ghi đè) vào bảng Ingredients.
+-- ============================================================================
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+-- 1. Bổ sung cột Image_Url vào bảng Ingredients nếu chưa tồn tại
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[Ingredients]') AND name = 'Image_Url')
+BEGIN
+    ALTER TABLE [dbo].[Ingredients]
+    ADD [Image_Url] VARCHAR(500) NULL;
+    PRINT N'>> Da bo sung cot [Image_Url] vao bang dbo.Ingredients.';
+END;
+GO
+
+-- 2. Bổ sung cột Is_Locked vào bảng Ingredients nếu chưa tồn tại
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[Ingredients]') AND name = 'Is_Locked')
+BEGIN
+    ALTER TABLE [dbo].[Ingredients]
+    ADD [Is_Locked] BIT NOT NULL CONSTRAINT [DF_Ingredients_Is_Locked] DEFAULT (0);
+    PRINT N'>> Da bo sung cot [Is_Locked] vao bang dbo.Ingredients.';
+END;
+GO
+
+-- 3. Tạo chỉ mục tìm kiếm nhanh theo trạng thái khóa
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Ingredients_Is_Locked' AND object_id = OBJECT_ID(N'[dbo].[Ingredients]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_Ingredients_Is_Locked] ON [dbo].[Ingredients]([Is_Locked] ASC);
+    PRINT N'>> Da tao chi muc IX_Ingredients_Is_Locked.';
+END;
+GO
+
+
+-- ============================================================================
+-- START: 47_IngredientCandidateImages.sql
+-- ============================================================================
+-- ============================================================================
+-- File: 47_IngredientCandidateImages.sql
+-- Table: IngredientCandidateImages
+-- Cluster: Quản trị Nguyên liệu & Ảnh đại diện chuẩn
+-- Description:
+--   Kho ảnh ứng viên (Candidate Pool) cắt từ ảnh tủ lạnh người dùng theo box2d (FN-VIS-01),
+--   chờ Admin duyệt làm ảnh đại diện nguyên liệu (FN-ADM-12).
+--   Nguồn: plan/1.Implement/32. E2E Ingredient Avatars from Fridge Vision and Admin Lock (mục 3.2)
+--   - BR-ADM-ING-02: chỉ thu thập khi box2d hợp lệ, confidence >= 0.80, nguyên liệu Is_Locked = 0;
+--                    tối đa 05 ảnh PENDING mới nhất mỗi nguyên liệu (FIFO).
+--   - BR-ADM-ING-03: ảnh ứng viên KHÔNG tự trở thành Ingredients.Image_Url; chỉ cập nhật khi Admin duyệt.
+--   Cột [Image_Url], [Is_Locked] của Ingredients đã có ở 46_Ingredients_Add_ImageUrl_IsLocked.sql.
+-- ============================================================================
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[IngredientCandidateImages]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE [dbo].[IngredientCandidateImages] (
+        [Candidate_ID]      INT IDENTITY(1,1) NOT NULL,
+        [Ingredient_ID]     INT NOT NULL,
+        [Session_ID]        INT NOT NULL,
+        [Cropped_Image_URL] VARCHAR(500) NOT NULL,
+        [Confidence_Score]  DECIMAL(4,3) NOT NULL,
+        [Status]            VARCHAR(20) NOT NULL CONSTRAINT [DF_CandidateImages_Status] DEFAULT ('PENDING'),
+        [Created_At]        DATETIME2(7) NOT NULL CONSTRAINT [DF_CandidateImages_Created_At] DEFAULT (SYSDATETIME()),
+
+        CONSTRAINT [PK_IngredientCandidateImages] PRIMARY KEY CLUSTERED ([Candidate_ID] ASC),
+        CONSTRAINT [FK_IngredientCandidateImages_Ingredients] FOREIGN KEY ([Ingredient_ID]) REFERENCES [dbo].[Ingredients]([Ingredient_ID]) ON DELETE CASCADE,
+        CONSTRAINT [FK_IngredientCandidateImages_FridgeSessions] FOREIGN KEY ([Session_ID]) REFERENCES [dbo].[FridgeSessions]([Session_ID]) ON DELETE CASCADE,
+        CONSTRAINT [CK_CandidateImages_Status] CHECK ([Status] IN ('PENDING', 'APPROVED', 'REJECTED')),
+        CONSTRAINT [CK_CandidateImages_Confidence] CHECK ([Confidence_Score] >= 0 AND [Confidence_Score] <= 1)
+    );
+
+    CREATE NONCLUSTERED INDEX [IX_CandidateImages_Ingredient_ID] ON [dbo].[IngredientCandidateImages]([Ingredient_ID] ASC, [Status] ASC);
+    CREATE NONCLUSTERED INDEX [IX_CandidateImages_Session_ID] ON [dbo].[IngredientCandidateImages]([Session_ID] ASC);
+    PRINT N'>> Da khoi tao bang dbo.IngredientCandidateImages thanh cong.';
+END;
+GO
+
+
+-- ============================================================================
+-- START: 47_MealPlans_Add_Personalization_Columns.sql
+-- ============================================================================
+-- ============================================================================
+-- File: 47_MealPlans_Add_Personalization_Columns.sql
+-- Table: MealPlans (Alteration)
+-- Cluster: Kho Công thức Chay, Thực đơn & Đi chợ
+-- Description: 
+--   1. Bổ sung [Health_Goal] (Mục tiêu sức khỏe: LOSE_WEIGHT, MAINTAIN, GAIN_MUSCLE) vào bảng MealPlans.
+--   2. Bổ sung [Region_Preference] (Khẩu vị vùng miền: NORTH, CENTRAL, SOUTH) vào bảng MealPlans.
+--   3. Bổ sung [Use_Fridge] (Cờ tối ưu nguyên liệu tủ lạnh ảo: 1/0) vào bảng MealPlans.
+--   4. Bổ sung [Requires_Allium_Free] (Cờ kiêng ngũ vị tân: 1/0) vào bảng MealPlans.
+--   5. Mở rộng [Custom_Instructions] lên NVARCHAR(500) để đồng bộ với giới hạn DTO và giao diện người dùng.
+-- ============================================================================
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+-- 1. Bổ sung cột Health_Goal vào bảng MealPlans
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[MealPlans]')
+      AND name = 'Health_Goal'
+)
+BEGIN
+    ALTER TABLE [dbo].[MealPlans]
+    ADD [Health_Goal] VARCHAR(30) NULL;
+
+    ALTER TABLE [dbo].[MealPlans]
+    ADD CONSTRAINT [CK_MealPlans_Health_Goal]
+    CHECK ([Health_Goal] IS NULL OR [Health_Goal] IN ('LOSE_WEIGHT', 'MAINTAIN', 'GAIN_MUSCLE'));
+
+    PRINT N'>> Da bo sung cot [Health_Goal] vao bang dbo.MealPlans.';
+END;
+GO
+
+-- 2. Bổ sung cột Region_Preference vào bảng MealPlans
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[MealPlans]')
+      AND name = 'Region_Preference'
+)
+BEGIN
+    ALTER TABLE [dbo].[MealPlans]
+    ADD [Region_Preference] VARCHAR(20) NULL;
+
+    ALTER TABLE [dbo].[MealPlans]
+    ADD CONSTRAINT [CK_MealPlans_Region_Preference]
+    CHECK ([Region_Preference] IS NULL OR [Region_Preference] IN ('NORTH', 'CENTRAL', 'SOUTH'));
+
+    PRINT N'>> Da bo sung cot [Region_Preference] vao bang dbo.MealPlans.';
+END;
+GO
+
+-- 3. Bổ sung cột Use_Fridge vào bảng MealPlans
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[MealPlans]')
+      AND name = 'Use_Fridge'
+)
+BEGIN
+    ALTER TABLE [dbo].[MealPlans]
+    ADD [Use_Fridge] BIT NOT NULL CONSTRAINT [DF_MealPlans_Use_Fridge] DEFAULT (0);
+
+    PRINT N'>> Da bo sung cot [Use_Fridge] vao bang dbo.MealPlans.';
+END;
+GO
+
+-- 4. Bổ sung cột Requires_Allium_Free vào bảng MealPlans
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[MealPlans]')
+      AND name = 'Requires_Allium_Free'
+)
+BEGIN
+    ALTER TABLE [dbo].[MealPlans]
+    ADD [Requires_Allium_Free] BIT NOT NULL CONSTRAINT [DF_MealPlans_Requires_Allium_Free] DEFAULT (0);
+
+    PRINT N'>> Da bo sung cot [Requires_Allium_Free] vao bang dbo.MealPlans.';
+END;
+GO
+
+-- 5. Mở rộng Custom_Instructions lên NVARCHAR(500)
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[MealPlans]')
+      AND name = 'Custom_Instructions'
+      AND max_length < 1000
+)
+BEGIN
+    ALTER TABLE [dbo].[MealPlans]
+    ALTER COLUMN [Custom_Instructions] NVARCHAR(500) NULL;
+
+    PRINT N'>> Da mo rong cot [Custom_Instructions] len NVARCHAR(500) trong dbo.MealPlans.';
+END;
+GO
+
+
+-- ============================================================================
+-- START: 48_SubscriptionPlans_Versioning_And_Snapshots.sql
+-- ============================================================================
+-- ============================================================================
+-- File: 48_SubscriptionPlans_Versioning_And_Snapshots.sql
+-- Table: SubscriptionPlans, PaymentTransactions, AuditLogs
+-- Cluster: Quản trị Tài khoản, Sức khỏe & Hội viên (VIP Subscriptions)
+-- Description:
+--   Giải pháp TỐI GIẢN (Lean Architecture) bảo lưu quyền lợi gói VIP theo cam kết biên lai:
+--   1. TẬN DỤNG bảng [AuditLogs] có sẵn để ghi vết toàn bộ lịch sử cập nhật của Admin (Old_Value, New_Value, Note, Created_At).
+--   2. Bổ sung cột [Version] vào [SubscriptionPlans] để nhận diện phiên bản hiện hành.
+--   3. Bổ sung [Snapshot_Features_JSON] và [Snapshot_Plan_Name] vào [PaymentTransactions]
+--      để đóng băng (freeze) toàn bộ đặc quyền AI, thực đơn, cẩm nang đúng với biên lai lúc mua.
+--   4. KHÔNG TẠO BẢNG MỚI -> Giữ nguyên 100% Conceptual ERD và Logical ERD.
+--   5. Backfill an toàn dữ liệu snapshot cho các giao dịch hiện có.
+-- ============================================================================
+
+USE [VeggieLifeDb];
+GO
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+-- ============================================================================
+-- PHẦN 0: DỌN DẸP BẢNG THỪA (NẾU ĐÃ TỪNG TẠO TRƯỚC ĐÓ)
+-- ============================================================================
+IF OBJECT_ID(N'[dbo].[SubscriptionPlanVersions]', N'U') IS NOT NULL
+BEGIN
+    DROP TABLE [dbo].[SubscriptionPlanVersions];
+    PRINT N'>> Da xoa bo bang dbo.SubscriptionPlanVersions de tan dung bang dbo.AuditLogs co san.';
+END;
+GO
+
+-- ============================================================================
+-- PHẦN 1: BỔ SUNG CỘT PHIÊN BẢN VÀO BẢNG SubscriptionPlans
+-- ============================================================================
+
+-- 1.1 Cột [Version]: Đánh dấu số phiên bản (Mỗi lần Admin sửa gói -> Version tăng 1)
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[SubscriptionPlans]')
+      AND name = 'Version'
+)
+BEGIN
+    ALTER TABLE [dbo].[SubscriptionPlans]
+    ADD [Version] INT NOT NULL CONSTRAINT [DF_SubscriptionPlans_Version] DEFAULT (1);
+
+    PRINT N'>> Da bo sung cot [Version] vao bang dbo.SubscriptionPlans.';
+END;
+GO
+
+-- 1.2 Dọn dẹp cột thừa [Effective_From] nếu đã từng thêm trước đó
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[SubscriptionPlans]')
+      AND name = 'Effective_From'
+)
+BEGIN
+    DECLARE @dfEffFrom NVARCHAR(256);
+    SELECT @dfEffFrom = d.name 
+    FROM sys.default_constraints d 
+    JOIN sys.columns c ON d.parent_column_id = c.column_id AND d.parent_object_id = c.object_id
+    WHERE c.name = 'Effective_From' AND c.object_id = OBJECT_ID(N'[dbo].[SubscriptionPlans]');
+
+    IF @dfEffFrom IS NOT NULL
+        EXEC('ALTER TABLE [dbo].[SubscriptionPlans] DROP CONSTRAINT ' + @dfEffFrom);
+
+    ALTER TABLE [dbo].[SubscriptionPlans] DROP COLUMN [Effective_From];
+    PRINT N'>> Da don dep cot thua [Effective_From] tren dbo.SubscriptionPlans.';
+END;
+GO
+
+
+-- ============================================================================
+-- PHẦN 2: BỔ SUNG CỘT SNAPSHOT QUYỀN LỢI VÀO BẢNG PaymentTransactions
+-- ============================================================================
+
+-- 2.1 Cột [Snapshot_Features_JSON]: Đóng băng quyền lợi lúc thanh toán thành công
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[PaymentTransactions]')
+      AND name = 'Snapshot_Features_JSON'
+)
+BEGIN
+    ALTER TABLE [dbo].[PaymentTransactions]
+    ADD [Snapshot_Features_JSON] NVARCHAR(MAX) NULL
+        CONSTRAINT [CK_PaymentTransactions_Snapshot_Features_JSON]
+        CHECK ([Snapshot_Features_JSON] IS NULL OR ISJSON([Snapshot_Features_JSON]) = 1);
+
+    PRINT N'>> Da bo sung cot [Snapshot_Features_JSON] vao bang dbo.PaymentTransactions.';
+END;
+GO
+
+-- 2.2 Cột [Snapshot_Plan_Name]: Lưu tên gói lúc mua (để in biên lai chính xác dù sau này gói đổi tên)
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[PaymentTransactions]')
+      AND name = 'Snapshot_Plan_Name'
+)
+BEGIN
+    ALTER TABLE [dbo].[PaymentTransactions]
+    ADD [Snapshot_Plan_Name] NVARCHAR(200) NULL;
+
+    PRINT N'>> Da bo sung cot [Snapshot_Plan_Name] vao bang dbo.PaymentTransactions.';
+END;
+GO
+
+-- 2.3 Dọn dẹp các cột snapshot dư thừa nếu đã từng tạo (vì Amount_VND, Starts_At, Ends_At đã có sẵn)
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[PaymentTransactions]') AND name = 'Plan_Version')
+BEGIN
+    DECLARE @dfPlanVer NVARCHAR(256);
+    SELECT @dfPlanVer = d.name 
+    FROM sys.default_constraints d 
+    JOIN sys.columns c ON d.parent_column_id = c.column_id AND d.parent_object_id = c.object_id
+    WHERE c.name = 'Plan_Version' AND c.object_id = OBJECT_ID(N'[dbo].[PaymentTransactions]');
+
+    IF @dfPlanVer IS NOT NULL
+        EXEC('ALTER TABLE [dbo].[PaymentTransactions] DROP CONSTRAINT ' + @dfPlanVer);
+
+    ALTER TABLE [dbo].[PaymentTransactions] DROP COLUMN [Plan_Version];
+    PRINT N'>> Da xoa cot thua [Plan_Version] tren dbo.PaymentTransactions.';
+END;
+GO
+
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[PaymentTransactions]') AND name = 'Snapshot_Price')
+BEGIN
+    ALTER TABLE [dbo].[PaymentTransactions] DROP COLUMN [Snapshot_Price];
+    PRINT N'>> Da xoa cot thua [Snapshot_Price] tren dbo.PaymentTransactions.';
+END;
+GO
+
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[PaymentTransactions]') AND name = 'Snapshot_Duration_Days')
+BEGIN
+    ALTER TABLE [dbo].[PaymentTransactions] DROP COLUMN [Snapshot_Duration_Days];
+    PRINT N'>> Da xoa cot thua [Snapshot_Duration_Days] tren dbo.PaymentTransactions.';
+END;
+GO
+
+
+-- ============================================================================
+-- PHẦN 3: BACKFILL DỮ LIỆU BAN ĐẦU (IDEMPOTENT DATA BACKFILL)
+-- ============================================================================
+
+-- Backfill quyền lợi và tên gói cho các giao dịch lịch sử hiện có nếu chưa có snapshot
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[PaymentTransactions]')
+      AND name = 'Snapshot_Features_JSON'
+)
+BEGIN
+    EXEC sp_executesql N'
+    UPDATE pt
+    SET 
+        pt.[Snapshot_Plan_Name] = ISNULL(pt.[Snapshot_Plan_Name], sp.[Plan_Name]),
+        pt.[Snapshot_Features_JSON] = ISNULL(pt.[Snapshot_Features_JSON], sp.[Features_JSON])
+    FROM [dbo].[PaymentTransactions] pt
+    INNER JOIN [dbo].[SubscriptionPlans] sp ON pt.[Plan_ID] = sp.[Plan_ID]
+    WHERE pt.[Snapshot_Features_JSON] IS NULL;';
+
+    PRINT N'>> Da backfill Snapshot quyen loi cho cac giao dich cu thanh cong.';
+END;
+GO
+
+PRINT N'>> Hoan tat Migration 48: Toi uu hoa luu tru quyen loi VIP qua AuditLogs va Snapshot columns!';
+GO
+
+
+
+-- ============================================================================
+-- START: 49_PaymentTransactions_PlanVersion_And_Full_Snapshot.sql
+-- ============================================================================
+-- ============================================================================
+-- File: 49_PaymentTransactions_PlanVersion_And_Full_Snapshot.sql
+-- Table: PaymentTransactions, SubscriptionPlans
+-- Cluster: Quản trị Tài khoản, Sức khỏe & Hội viên (VIP Subscriptions)
+-- Description (2.plan solving - GĐ1, D121 Q1-B/Q2/Q3):
+--   Giao dịch phải tự mang đủ "phiên bản + quyền lợi lúc mua", không phụ thuộc trạng thái hiện tại của gói.
+--   1. Bổ sung [Plan_Version] vào [PaymentTransactions] (migration 48 đã xóa cột này) và backfill một lần
+--      bằng [SubscriptionPlans].[Version] tại thời điểm thêm cột.
+--   2. Bổ sung khóa hạn mức còn thiếu trong [SubscriptionPlans].[Features_JSON] từ SystemSettings VIP hiện hành
+--      (chỉ thêm khóa thiếu, không ghi đè khóa đã có, không tăng Version vì Backend vốn đã dùng SystemSettings cho khóa thiếu).
+--   3. Snapshot của giao dịch: NULL -> lấy Features_JSON của gói; thiếu khóa -> bổ sung như bước 2.
+--   4. In số giao dịch SUCCESS còn thiếu khóa (kỳ vọng = 0).
+-- Idempotent: chạy lại nhiều lần không đổi kết quả (backfill Plan_Version chỉ chạy khi vừa thêm cột).
+-- ============================================================================
+
+USE [VeggieLifeDb];
+GO
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+-- ============================================================================
+-- PHẦN 1: CỘT [Plan_Version] TRÊN PaymentTransactions
+-- ============================================================================
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'[dbo].[PaymentTransactions]')
+      AND name = 'Plan_Version'
+)
+BEGIN
+    ALTER TABLE [dbo].[PaymentTransactions]
+    ADD [Plan_Version] INT NOT NULL
+        CONSTRAINT [DF_PaymentTransactions_Plan_Version] DEFAULT (1)
+        CONSTRAINT [CK_PaymentTransactions_Plan_Version] CHECK ([Plan_Version] >= 1);
+
+    PRINT N'>> Da bo sung cot [Plan_Version] vao bang dbo.PaymentTransactions.';
+
+    -- Backfill một lần: giao dịch cũ nhận phiên bản hiện hành của gói (hiện tất cả gói đều ở Version 1)
+    EXEC sp_executesql N'
+    UPDATE pt
+    SET pt.[Plan_Version] = sp.[Version]
+    FROM [dbo].[PaymentTransactions] pt
+    INNER JOIN [dbo].[SubscriptionPlans] sp ON pt.[Plan_ID] = sp.[Plan_ID];';
+
+    PRINT N'>> Da backfill [Plan_Version] cho cac giao dich hien co.';
+END;
+GO
+
+-- ============================================================================
+-- PHẦN 2: BỔ SUNG KHÓA HẠN MỨC CÒN THIẾU TRONG SubscriptionPlans.Features_JSON
+-- ============================================================================
+DECLARE @VipChat INT = ISNULL((SELECT TRY_CAST([Setting_Value] AS INT) FROM [dbo].[SystemSettings] WHERE [Setting_Key] = 'CHAT_LIMIT_DAILY_VIP'), 200);
+DECLARE @VipMeal INT = ISNULL((SELECT TRY_CAST([Setting_Value] AS INT) FROM [dbo].[SystemSettings] WHERE [Setting_Key] = 'MEAL_PLAN_WEEKLY_LIMIT_VIP'), 3);
+DECLARE @VipFridge INT = ISNULL((SELECT TRY_CAST([Setting_Value] AS INT) FROM [dbo].[SystemSettings] WHERE [Setting_Key] = 'FRIDGE_SCAN_LIMIT_DAILY_VIP'), 30);
+
+PRINT N'>> Gia tri bo sung cho khoa thieu (SystemSettings VIP): chat=' + CAST(@VipChat AS NVARCHAR(10))
+    + N', meal=' + CAST(@VipMeal AS NVARCHAR(10)) + N', fridge=' + CAST(@VipFridge AS NVARCHAR(10));
+
+UPDATE [dbo].[SubscriptionPlans]
+SET [Features_JSON] = N'{}'
+WHERE [Features_JSON] IS NULL OR ISJSON([Features_JSON]) = 0;
+
+-- Backend đọc cả camelCase lẫn snake_case (UserBenefitService), nên chỉ coi là thiếu khi cả hai đều không có
+UPDATE [dbo].[SubscriptionPlans]
+SET [Features_JSON] = JSON_MODIFY([Features_JSON], '$.chatLimitDaily', @VipChat)
+WHERE JSON_VALUE([Features_JSON], '$.chatLimitDaily') IS NULL
+  AND JSON_VALUE([Features_JSON], '$.chat_limit_daily') IS NULL;
+
+UPDATE [dbo].[SubscriptionPlans]
+SET [Features_JSON] = JSON_MODIFY([Features_JSON], '$.mealPlanLimitWeekly', @VipMeal)
+WHERE JSON_VALUE([Features_JSON], '$.mealPlanLimitWeekly') IS NULL
+  AND JSON_VALUE([Features_JSON], '$.meal_plan_limit_weekly') IS NULL;
+
+UPDATE [dbo].[SubscriptionPlans]
+SET [Features_JSON] = JSON_MODIFY([Features_JSON], '$.fridgeScanLimitDaily', @VipFridge)
+WHERE JSON_VALUE([Features_JSON], '$.fridgeScanLimitDaily') IS NULL
+  AND JSON_VALUE([Features_JSON], '$.fridge_scan_limit_daily') IS NULL;
+
+PRINT N'>> Da chuan hoa Features_JSON cua cac goi VIP (du 3 khoa han muc).';
+
+-- ============================================================================
+-- PHẦN 3: CHUẨN HÓA SNAPSHOT CỦA GIAO DỊCH
+-- ============================================================================
+UPDATE pt
+SET pt.[Snapshot_Features_JSON] = sp.[Features_JSON],
+    pt.[Snapshot_Plan_Name] = ISNULL(pt.[Snapshot_Plan_Name], sp.[Plan_Name])
+FROM [dbo].[PaymentTransactions] pt
+INNER JOIN [dbo].[SubscriptionPlans] sp ON pt.[Plan_ID] = sp.[Plan_ID]
+WHERE pt.[Snapshot_Features_JSON] IS NULL OR ISJSON(pt.[Snapshot_Features_JSON]) = 0;
+
+UPDATE [dbo].[PaymentTransactions]
+SET [Snapshot_Features_JSON] = JSON_MODIFY([Snapshot_Features_JSON], '$.chatLimitDaily', @VipChat)
+WHERE JSON_VALUE([Snapshot_Features_JSON], '$.chatLimitDaily') IS NULL
+  AND JSON_VALUE([Snapshot_Features_JSON], '$.chat_limit_daily') IS NULL;
+
+UPDATE [dbo].[PaymentTransactions]
+SET [Snapshot_Features_JSON] = JSON_MODIFY([Snapshot_Features_JSON], '$.mealPlanLimitWeekly', @VipMeal)
+WHERE JSON_VALUE([Snapshot_Features_JSON], '$.mealPlanLimitWeekly') IS NULL
+  AND JSON_VALUE([Snapshot_Features_JSON], '$.meal_plan_limit_weekly') IS NULL;
+
+UPDATE [dbo].[PaymentTransactions]
+SET [Snapshot_Features_JSON] = JSON_MODIFY([Snapshot_Features_JSON], '$.fridgeScanLimitDaily', @VipFridge)
+WHERE JSON_VALUE([Snapshot_Features_JSON], '$.fridgeScanLimitDaily') IS NULL
+  AND JSON_VALUE([Snapshot_Features_JSON], '$.fridge_scan_limit_daily') IS NULL;
+
+PRINT N'>> Da chuan hoa Snapshot_Features_JSON cua cac giao dich (du 3 khoa han muc).';
+GO
+
+-- ============================================================================
+-- PHẦN 4: KIỂM TRA SAU MIGRATION (kỳ vọng = 0)
+-- ============================================================================
+DECLARE @MissingSnapshot INT = (
+    SELECT COUNT(*)
+    FROM [dbo].[PaymentTransactions]
+    WHERE [Transaction_Status] = 'SUCCESS'
+      AND (
+            [Snapshot_Features_JSON] IS NULL
+         OR (JSON_VALUE([Snapshot_Features_JSON], '$.chatLimitDaily') IS NULL AND JSON_VALUE([Snapshot_Features_JSON], '$.chat_limit_daily') IS NULL)
+         OR (JSON_VALUE([Snapshot_Features_JSON], '$.mealPlanLimitWeekly') IS NULL AND JSON_VALUE([Snapshot_Features_JSON], '$.meal_plan_limit_weekly') IS NULL)
+         OR (JSON_VALUE([Snapshot_Features_JSON], '$.fridgeScanLimitDaily') IS NULL AND JSON_VALUE([Snapshot_Features_JSON], '$.fridge_scan_limit_daily') IS NULL)
+      )
+);
+
+PRINT N'>> Giao dich SUCCESS con thieu khoa han muc trong snapshot: ' + CAST(@MissingSnapshot AS NVARCHAR(10)) + N' (ky vong 0).';
+PRINT N'>> Hoan tat Migration 49: Plan_Version + snapshot quyen loi day du tren PaymentTransactions!';
+GO
+
+
+-- ============================================================================
+-- START: 50_SystemSettings_BarcodeScanLimits.sql
+-- ============================================================================
+-- ============================================================================
+-- File: 50_SystemSettings_BarcodeScanLimits.sql
+-- Table: SystemSettings, SubscriptionPlans, PaymentTransactions
+-- Cluster: Quản trị Hệ thống, Tham số & Kiểm toán
+-- Description (4. Barcode quota plan - GĐ1, D122):
+--   Hạn mức quét mã vạch do Admin cấu hình trong "Chỉ số hệ thống" (Khách 3 / Thành viên 20 / VIP 50 lượt/ngày).
+--   1. Thêm 3 khóa BARCODE_SCAN_LIMIT_DAILY_GUEST / _FREE / _VIP vào SystemSettings (chỉ thêm khi chưa có).
+--   2. Bổ sung khóa [barcodeScanLimitDaily] = Settings VIP vào Features_JSON của gói còn thiếu
+--      (chỉ thêm khóa thiếu, không ghi đè, không tăng Version - giống migration 49).
+--   3. Bổ sung [barcodeScanLimitDaily] = 50 vào Snapshot_Features_JSON của giao dịch còn thiếu:
+--      người mua trước đây được quét không giới hạn, 50 là mức VIP mới gần nhất (D122).
+--   4. In số gói / giao dịch SUCCESS còn thiếu khóa (kỳ vọng 0).
+-- Không tạo bảng, không thêm cột. Idempotent: chạy lại không đổi kết quả.
+-- ============================================================================
+
+USE [VeggieLifeDb];
+GO
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+-- ============================================================================
+-- PHẦN 1: KHÓA HẠN MỨC QUÉT MÃ VẠCH TRONG SystemSettings
+-- ============================================================================
+DECLARE @Now DATETIME2(7) = SYSUTCDATETIME();
+
+INSERT INTO [dbo].[SystemSettings] ([Setting_Key], [Setting_Value], [Default_Value], [Data_Type], [Category], [Description], [Updated_At])
+SELECT source.[Setting_Key], source.[Setting_Value], source.[Default_Value], 'INT', 'AI_QUOTA', source.[Description], @Now
+FROM (VALUES
+    ('BARCODE_SCAN_LIMIT_DAILY_GUEST', N'3', N'3', N'Số lần quét mã vạch tối đa mỗi ngày cho khách vãng lai (Guest)'),
+    ('BARCODE_SCAN_LIMIT_DAILY_FREE', N'20', N'20', N'Số lần quét mã vạch tối đa mỗi ngày cho tài khoản Thành viên'),
+    ('BARCODE_SCAN_LIMIT_DAILY_VIP', N'50', N'50', N'Số lần quét mã vạch tối đa mỗi ngày cho tài khoản VIP'),
+    ('FRIDGE_SCAN_LIMIT_DAILY_GUEST', N'3', N'3', N'Số lần quét tủ lạnh AI tối đa mỗi ngày cho khách vãng lai (Guest)')
+) AS source ([Setting_Key], [Setting_Value], [Default_Value], [Description])
+WHERE NOT EXISTS (SELECT 1 FROM [dbo].[SystemSettings] s WHERE s.[Setting_Key] = source.[Setting_Key]);
+
+PRINT N'>> Them khoa han muc quet ma vach vao SystemSettings: ' + CAST(@@ROWCOUNT AS NVARCHAR(10)) + N' dong.';
+GO
+
+-- ============================================================================
+-- PHẦN 2: BỔ SUNG [barcodeScanLimitDaily] VÀO Features_JSON CỦA GÓI VIP
+-- ============================================================================
+DECLARE @VipBarcode INT = ISNULL((SELECT TRY_CAST([Setting_Value] AS INT) FROM [dbo].[SystemSettings] WHERE [Setting_Key] = 'BARCODE_SCAN_LIMIT_DAILY_VIP'), 50);
+
+UPDATE [dbo].[SubscriptionPlans]
+SET [Features_JSON] = JSON_MODIFY(ISNULL(NULLIF([Features_JSON], N''), N'{}'), '$.barcodeScanLimitDaily', @VipBarcode)
+WHERE ([Features_JSON] IS NULL OR ISJSON([Features_JSON]) = 1)
+  AND JSON_VALUE(ISNULL([Features_JSON], N'{}'), '$.barcodeScanLimitDaily') IS NULL
+  AND JSON_VALUE(ISNULL([Features_JSON], N'{}'), '$.barcode_scan_limit_daily') IS NULL;
+
+PRINT N'>> Bo sung barcodeScanLimitDaily = ' + CAST(@VipBarcode AS NVARCHAR(10)) + N' cho ' + CAST(@@ROWCOUNT AS NVARCHAR(10)) + N' goi VIP.';
+GO
+
+-- ============================================================================
+-- PHẦN 3: BỔ SUNG [barcodeScanLimitDaily] = 100 VÀO SNAPSHOT GIAO DỊCH CŨ
+-- ============================================================================
+UPDATE [dbo].[PaymentTransactions]
+SET [Snapshot_Features_JSON] = JSON_MODIFY([Snapshot_Features_JSON], '$.barcodeScanLimitDaily', 100)
+WHERE [Snapshot_Features_JSON] IS NOT NULL
+  AND ISJSON([Snapshot_Features_JSON]) = 1
+  AND JSON_VALUE([Snapshot_Features_JSON], '$.barcodeScanLimitDaily') IS NULL
+  AND JSON_VALUE([Snapshot_Features_JSON], '$.barcode_scan_limit_daily') IS NULL;
+
+PRINT N'>> Bo sung barcodeScanLimitDaily = 100 cho ' + CAST(@@ROWCOUNT AS NVARCHAR(10)) + N' giao dich.';
+GO
+
+-- ============================================================================
+-- PHẦN 4: KIỂM TRA SAU MIGRATION (kỳ vọng = 0)
+-- ============================================================================
+DECLARE @MissingPlans INT = (
+    SELECT COUNT(*) FROM [dbo].[SubscriptionPlans]
+    WHERE JSON_VALUE(ISNULL([Features_JSON], N'{}'), '$.barcodeScanLimitDaily') IS NULL
+      AND JSON_VALUE(ISNULL([Features_JSON], N'{}'), '$.barcode_scan_limit_daily') IS NULL
+);
+DECLARE @MissingTransactions INT = (
+    SELECT COUNT(*) FROM [dbo].[PaymentTransactions]
+    WHERE [Transaction_Status] = 'SUCCESS'
+      AND ([Snapshot_Features_JSON] IS NULL
+        OR (JSON_VALUE([Snapshot_Features_JSON], '$.barcodeScanLimitDaily') IS NULL
+            AND JSON_VALUE([Snapshot_Features_JSON], '$.barcode_scan_limit_daily') IS NULL))
+);
+
+PRINT N'>> Goi con thieu barcodeScanLimitDaily: ' + CAST(@MissingPlans AS NVARCHAR(10)) + N' (ky vong 0).';
+PRINT N'>> Giao dich SUCCESS con thieu barcodeScanLimitDaily: ' + CAST(@MissingTransactions AS NVARCHAR(10)) + N' (ky vong 0).';
+PRINT N'>> Hoan tat Migration 50: han muc quet ma vach cau hinh trong SystemSettings!';
+GO

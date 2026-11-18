@@ -22,7 +22,7 @@ namespace VeggieLife.BLL.Services.Products;
 
 /// <summary>
 /// Dịch vụ tra cứu mã vạch sản phẩm đóng gói và quản lý lịch sử quét (FN-BAR-01, FN-BAR-02).
-/// Tuân thủ: BR-GUEST-07 (Khách 3 lần/ngày qua Redis), BR-USR-09, BR-ADM-MAS-002, BR-ADM-AI-005.
+/// Tuân thủ: BR-GUEST-07 và D122 (hạn mức quét/ngày cấu hình ở SystemSettings: Khách qua Redis, thành viên qua UserScanHistory), BR-USR-09, BR-ADM-MAS-002, BR-ADM-AI-005.
 /// </summary>
 public class ProductService : IProductService
 {
@@ -31,6 +31,12 @@ public class ProductService : IProductService
     private readonly IAiServiceClient? _aiClient;
     private readonly IRedisService _redis;
     private readonly ILogger<ProductService> _logger;
+    private readonly VeggieLife.BLL.Services.Settings.ISystemSettingService? _settingService;
+    private readonly VeggieLife.BLL.Services.Subscriptions.IUserBenefitService? _userBenefitService;
+
+    // Mặc định khi chưa đọc được SystemSettings (D122: Khách 3 / Free 20 lượt/ngày)
+    private const int DefaultGuestDailyLimit = 3;
+    private const int DefaultFreeDailyLimit = 20;
 
     private static readonly Regex BarcodeRegex = new(@"^\d{8,14}$", RegexOptions.Compiled);
     private static readonly Regex AdditiveRegex = new(@"(?i)\b(E|INS)\s*(\d{3,4}[a-z]?)\b", RegexOptions.Compiled);
@@ -39,18 +45,39 @@ public class ProductService : IProductService
         @"(?i)(?:^|[^\p{L}\p{N}])(sữa|whey|casein|trứng|mật\s+ong|gelatin|thịt|cá|tôm|mực|mỡ\s+heo|mỡ\s+bò|mỡ\s+động\s+vật|nước\s+mắm|chiết\s+xuất\s+thịt|carmine|cochineal|e120|shellac|e904|rennet|tallow|lard)(?:$|[^\p{L}\p{N}])",
         RegexOptions.Compiled);
 
+    // Từ khóa động vật tiếng Anh/Pháp/Tây Ban Nha/Ý/Đức (OFF thường chỉ có thành phần ngoại ngữ).
+    // Loại trừ các cụm thực vật: coconut/soy/oat/almond/rice milk, lait/leche de coco, cocoa/peanut/shea butter,
+    // milk thistle, cream of tartar.
+    private static readonly Regex ForeignAnimalKeywordRegex = new(
+        @"(?i)(?<!(coconut|soy|soya|oat|almond|rice|plant|nut|cashew)[\s-]*)\b(milk|lait|leche|latte|milch|melk)\b(?![\s-]*(thistle|de\s+coco))" +
+        @"|\b(lactose|lactoserum|lactosérum|lactosuero|siero\s+di\s+latte|molke|wei|cheese|fromage|queso|formaggio|käse|crème|panna|sahne)\b" +
+        @"|\bcream\b(?!\s+of\s+tartar)" +
+        @"|(?<!(cocoa|cacao|peanut|shea|nut|almond)[\s-]*)\b(butter|beurre|mantequilla|burro)\b" +
+        @"|\b(eggs?|œufs?|oeufs?|huevos?|uova|uovo|eier?|honey|miel|miele|honig|gelatine|gélatine|gelatina|beef|pork|chicken|bacon|ham|fish|anchov(y|ies)|shrimp|prawn|lard|saindoux|manteca|strutto|schmalz|meat|viande|carne|fleisch)\b",
+        RegexOptions.Compiled);
+
+    // allergens_tags của OFF chỉ ra thành phần gốc động vật (sữa, trứng, cá, giáp xác, nhuyễn thể)
+    private static readonly HashSet<string> AnimalAllergenTags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "milk", "eggs", "fish", "crustaceans", "molluscs"
+    };
+
     public ProductService(
         AppDbContext context,
         IOpenFoodFactsClient openFoodFactsClient,
         IAiServiceClient aiClient,
         IRedisService redis,
-        ILogger<ProductService> logger)
+        ILogger<ProductService> logger,
+        VeggieLife.BLL.Services.Settings.ISystemSettingService? settingService = null,
+        VeggieLife.BLL.Services.Subscriptions.IUserBenefitService? userBenefitService = null)
     {
         _context = context;
         _openFoodFactsClient = openFoodFactsClient;
         _aiClient = aiClient;
         _redis = redis;
         _logger = logger;
+        _settingService = settingService;
+        _userBenefitService = userBenefitService;
     }
 
     public ProductService(
@@ -82,27 +109,21 @@ public class ProductService : IProductService
             ? "MANUAL_INPUT"
             : "CAMERA_BARCODE";
 
-        // 2. Kiểm tra hạn mức sử dụng của Khách vãng lai qua Redis (BR-GUEST-07) -> 403 ERR_QUOTA_BARCODE_EXCEEDED
-        string? guestQuotaKey = null;
-        string? effectiveGuestId = null;
-        if (!userId.HasValue)
+        // 2. Kiểm tra hạn mức quét trong ngày (D122, cấu hình ở SystemSettings) -> 403 ERR_QUOTA_BARCODE_EXCEEDED
+        var usage = await ResolveDailyUsageAsync(userId, guestId, ct);
+        var guestQuotaKey = usage.GuestQuotaKey;
+        var effectiveGuestId = usage.EffectiveGuestId;
+        var dailyLimit = usage.Limit;
+        var memberUsedToday = usage.GuestQuotaKey == null ? usage.Used : 0;
+        if (usage.Used >= dailyLimit)
         {
-            effectiveGuestId = !string.IsNullOrWhiteSpace(guestId) ? guestId.Trim() : "anonymous";
-            guestQuotaKey = $"guest_quota:{effectiveGuestId}:barcode";
-
-            var currentQuota = await _redis.GetAsync<int?>(guestQuotaKey, ct) ?? 0;
-            if (currentQuota == 0)
-            {
-                var dateKey = $"guest_quota:barcode:{effectiveGuestId}:{DateTime.UtcNow:yyyyMMdd}";
-                currentQuota = (int)(await _redis.GetAsync<long?>(dateKey, ct) ?? 0);
-            }
-
-            if (currentQuota >= 3)
-            {
-                throw AppException.Forbidden(
-                    ErrorCodes.ErrQuotaBarcodeExceeded,
-                    "Khách đã sử dụng hết hạn mức quét mã vạch trong ngày (tối đa 03 lần/ngày). Vui lòng đăng ký tài khoản để tiếp tục sử dụng.");
-            }
+            throw AppException.Forbidden(
+                ErrorCodes.ErrQuotaBarcodeExceeded,
+                !userId.HasValue
+                    ? $"Khách đã sử dụng hết hạn mức quét mã vạch trong ngày (tối đa {dailyLimit:D2} lần/ngày). Vui lòng đăng ký tài khoản để tiếp tục sử dụng."
+                    : usage.IsVip
+                        ? $"Bạn đã dùng hết {dailyLimit} lượt quét mã vạch hôm nay của gói VIP. Vui lòng quay lại vào ngày mai."
+                        : $"Bạn đã dùng hết {dailyLimit} lượt quét mã vạch hôm nay. Nâng cấp VIP để được quét nhiều hơn.");
         }
 
         // 3. TRA DB TRƯỚC: có Products theo Barcode và Last_Synced_At trong 30 ngày thì dùng luôn kết quả đã lưu (mục tiêu <= 400 ms)
@@ -113,9 +134,12 @@ public class ProductService : IProductService
                 .ThenInclude(pa => pa.Allergen)
             .FirstOrDefaultAsync(p => p.Barcode == cleanBarcode, ct);
 
+        // Kết quả "Cần xem lại" (DOUBTFUL) chưa được Admin xác minh thì không dùng cache: tra lại OFF/AI mỗi lần
+        // để không giữ một kết luận thiếu dữ liệu suốt 30 ngày.
         bool isFresh = product != null
             && product.LastSyncedAt >= DateTime.UtcNow.AddDays(-30)
-            && (product.AdminVerified || !string.IsNullOrWhiteSpace(product.ImageUrl));
+            && (product.AdminVerified || !string.IsNullOrWhiteSpace(product.ImageUrl))
+            && (product.AdminVerified || !string.Equals(product.VeganVerdict, "DOUBTFUL", StringComparison.OrdinalIgnoreCase));
 
         if (isFresh)
         {
@@ -175,37 +199,8 @@ public class ProductService : IProductService
                 _logger.LogWarning(ex, "Lỗi khi ghi lịch sử UserScanHistory cho barcode {Barcode}.", cleanBarcode);
             }
 
-            // Khấu trừ hạn mức Khách sau khi commit thành công
-            ScanQuotaDto cachedQuota;
-            if (!userId.HasValue && guestQuotaKey != null)
-            {
-                var newUsed = await _redis.IncrementAsync(guestQuotaKey, 1, TimeSpan.FromHours(24), ct);
-                try
-                {
-                    var dateKey = $"guest_quota:barcode:{effectiveGuestId}:{DateTime.UtcNow:yyyyMMdd}";
-                    await _redis.IncrementAsync(dateKey, 1, TimeSpan.FromHours(24), ct);
-                }
-                catch
-                {
-                    // ignored
-                }
-
-                cachedQuota = new ScanQuotaDto
-                {
-                    Used = (int)newUsed,
-                    Limit = 3,
-                    Remaining = Math.Max(0, 3 - (int)newUsed)
-                };
-            }
-            else
-            {
-                cachedQuota = new ScanQuotaDto
-                {
-                    Used = 1,
-                    Limit = 100,
-                    Remaining = 99
-                };
-            }
+            // Khấu trừ hạn mức sau khi ghi lịch sử quét
+            var cachedQuota = await ConsumeQuotaAsync(guestQuotaKey, effectiveGuestId, dailyLimit, memberUsedToday, ct);
 
             var cachedAdditives = product.ProductEnumbers
                 .Select(pe => new DetectedAdditiveDto
@@ -440,14 +435,18 @@ public class ProductService : IProductService
         var textToCheck = offProduct?.IngredientsText ?? product?.IngredientsText;
         if (!string.IsNullOrWhiteSpace(textToCheck))
         {
-            if (AnimalKeywordRegex.IsMatch(textToCheck))
+            if (AnimalKeywordRegex.IsMatch(textToCheck) || ForeignAnimalKeywordRegex.IsMatch(textToCheck))
             {
                 hasAnimalIngredients = true;
             }
         }
 
+        // Dị ứng gốc động vật do OFF khai báo (allergens_tags) là bằng chứng có cấu trúc, đáng tin hơn chuỗi thành phần
+        bool hasAnimalAllergen = offProduct?.AllergensTags?.Any(t => AnimalAllergenTags.Contains(t)) == true;
+
         bool offNonVegan = offProduct?.IngredientsAnalysisTags?.Contains("en:non-vegan") == true ||
-                           string.Equals(offProduct?.VeganVerdict, "NON_VEGAN", StringComparison.OrdinalIgnoreCase);
+                           string.Equals(offProduct?.VeganVerdict, "NON_VEGAN", StringComparison.OrdinalIgnoreCase) ||
+                           hasAnimalAllergen;
 
         string calculatedVerdict;
         if (hasNonVeganAdditive || hasAnimalIngredients || offNonVegan)
@@ -688,37 +687,8 @@ public class ProductService : IProductService
             }
         });
 
-        // 10. Khách: INCR guest_quota:{guestId}:barcode (TTL 24 giờ) SAU KHI commit thành công
-        ScanQuotaDto quota;
-        if (!userId.HasValue && guestQuotaKey != null)
-        {
-            var newUsed = await _redis.IncrementAsync(guestQuotaKey, 1, TimeSpan.FromHours(24), ct);
-            try
-            {
-                var dateKey = $"guest_quota:barcode:{effectiveGuestId}:{DateTime.UtcNow:yyyyMMdd}";
-                await _redis.IncrementAsync(dateKey, 1, TimeSpan.FromHours(24), ct);
-            }
-            catch
-            {
-                // ignored
-            }
-
-            quota = new ScanQuotaDto
-            {
-                Used = (int)newUsed,
-                Limit = 3,
-                Remaining = Math.Max(0, 3 - (int)newUsed)
-            };
-        }
-        else
-        {
-            quota = new ScanQuotaDto
-            {
-                Used = 1,
-                Limit = 100,
-                Remaining = 99
-            };
-        }
+        // 10. Khấu trừ hạn mức SAU KHI commit thành công (Khách: INCR Redis TTL 24 giờ; thành viên: đã ghi UserScanHistory)
+        var quota = await ConsumeQuotaAsync(guestQuotaKey, effectiveGuestId, dailyLimit, memberUsedToday, ct);
 
         // 11. Trả HTTP 200 đúng envelope mẫu
         var verdictText = !string.IsNullOrWhiteSpace(aiResponse?.VerdictText)
@@ -744,6 +714,93 @@ public class ProductService : IProductService
             Quota = quota
         };
     }
+
+    /// <summary>
+    /// FN-BAR-01: Hạn mức và số lượt đã quét hôm nay, để giao diện hiện lượt còn lại trước khi quét (D122).
+    /// </summary>
+    public async Task<ScanQuotaDto> GetBarcodeQuotaAsync(int? userId, string? guestId, CancellationToken ct = default)
+    {
+        var usage = await ResolveDailyUsageAsync(userId, guestId, ct);
+        return new ScanQuotaDto
+        {
+            Used = usage.Used,
+            Limit = usage.Limit,
+            Remaining = Math.Max(0, usage.Limit - usage.Used)
+        };
+    }
+
+    private sealed record DailyUsage(int Limit, int Used, bool IsVip, string? GuestQuotaKey, string? EffectiveGuestId);
+
+    /// <summary>
+    /// Hạn mức và số lượt đã quét hôm nay. Khách: đếm bằng Redis, hạn mức BARCODE_SCAN_LIMIT_DAILY_GUEST.
+    /// Thành viên Free/VIP: đếm UserScanHistory từ 00:00 UTC, hạn mức theo quyền lợi (VIP theo biên lai).
+    /// </summary>
+    private async Task<DailyUsage> ResolveDailyUsageAsync(int? userId, string? guestId, CancellationToken ct)
+    {
+        if (userId.HasValue)
+        {
+            var benefits = _userBenefitService != null
+                ? await _userBenefitService.GetUserBenefitsAsync(userId.Value, null, ct)
+                : null;
+            var limit = benefits?.BarcodeScanLimitDaily
+                ?? await GetIntSettingAsync("BARCODE_SCAN_LIMIT_DAILY_FREE", DefaultFreeDailyLimit, ct);
+
+            var todayUtc = DateTime.UtcNow.Date;
+            var used = await _context.UserScanHistories
+                .CountAsync(h => h.UserId == userId.Value && h.ScannedAt >= todayUtc, ct);
+
+            return new DailyUsage(limit, used, benefits?.IsVip == true, null, null);
+        }
+
+        var guestLimit = await GetIntSettingAsync("BARCODE_SCAN_LIMIT_DAILY_GUEST", DefaultGuestDailyLimit, ct);
+        var effectiveGuestId = !string.IsNullOrWhiteSpace(guestId) ? guestId.Trim() : "anonymous";
+        var guestQuotaKey = $"guest_quota:{effectiveGuestId}:barcode";
+
+        var guestUsed = await _redis.GetAsync<int?>(guestQuotaKey, ct) ?? 0;
+        if (guestUsed == 0)
+        {
+            var dateKey = $"guest_quota:barcode:{effectiveGuestId}:{DateTime.UtcNow:yyyyMMdd}";
+            guestUsed = (int)(await _redis.GetAsync<long?>(dateKey, ct) ?? 0);
+        }
+
+        return new DailyUsage(guestLimit, guestUsed, false, guestQuotaKey, effectiveGuestId);
+    }
+
+    /// <summary>
+    /// Trả hạn mức sau một lần quét thành công. Khách: tăng bộ đếm Redis. Thành viên: lượt đã được ghi vào UserScanHistory.
+    /// </summary>
+    private async Task<ScanQuotaDto> ConsumeQuotaAsync(
+        string? guestQuotaKey,
+        string? effectiveGuestId,
+        int dailyLimit,
+        int memberUsedBefore,
+        CancellationToken ct)
+    {
+        var used = memberUsedBefore + 1;
+        if (guestQuotaKey != null)
+        {
+            used = (int)await _redis.IncrementAsync(guestQuotaKey, 1, TimeSpan.FromHours(24), ct);
+            try
+            {
+                var dateKey = $"guest_quota:barcode:{effectiveGuestId}:{DateTime.UtcNow:yyyyMMdd}";
+                await _redis.IncrementAsync(dateKey, 1, TimeSpan.FromHours(24), ct);
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+
+        return new ScanQuotaDto
+        {
+            Used = used,
+            Limit = dailyLimit,
+            Remaining = Math.Max(0, dailyLimit - used)
+        };
+    }
+
+    private Task<int> GetIntSettingAsync(string key, int fallback, CancellationToken ct) =>
+        _settingService != null ? _settingService.GetIntSettingAsync(key, fallback, ct) : Task.FromResult(fallback);
 
     public async Task<PagedResult<UserScanHistoryResponse>> GetUserScanHistoryAsync(
         int userId,

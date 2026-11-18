@@ -120,6 +120,7 @@ public class AiServiceClientFridgeTests
         mushroom.IsAnimalProduct.Should().BeFalse();
         mushroom.IsRedMeat.Should().BeFalse();
         mushroom.Box2D.Should().Equal(new List<int> { 145, 230, 420, 510 });
+        mushroom.Confidence.Should().Be(0.95); // độ tin cậy thật được đọc từ ai-service (Bước 2)
 
         // Mục 2: Thịt bò
         var meat = result.Items[1];
@@ -127,6 +128,7 @@ public class AiServiceClientFridgeTests
         meat.IsAnimalProduct.Should().BeTrue();
         meat.IsRedMeat.Should().BeTrue();
         meat.Box2D.Should().Equal(new List<int> { 10, 50, 120, 180 });
+        meat.Confidence.Should().Be(0.98);
     }
 
     [Fact]

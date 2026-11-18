@@ -13,7 +13,7 @@ public class CreateCurrentUserWeightEntryRequest
     public decimal WeightKg { get; set; }
 
     /// <summary>
-    /// Ngày ghi nhận cân nặng (YYYY-MM-DD, mặc định: hôm nay, không được ở tương lai).
+    /// Ngày ghi nhận cân nặng (YYYY-MM-DD, mặc định: hôm nay theo UTC, không được ghi nhận cho ngày trong quá khứ hoặc tương lai).
     /// </summary>
     public DateOnly? LoggedDate { get; set; }
 

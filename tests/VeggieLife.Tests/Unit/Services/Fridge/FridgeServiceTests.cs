@@ -510,6 +510,204 @@ public class FridgeServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DetectIngredients_GenericAiName_IsNotRenamedToMoreSpecificCatalogEntry()
+    {
+        // Arrange: danh mục có tên cụ thể hơn tên AI (lỗi cũ: "Chuối" → "Hoa chuối thái mỏng")
+        _db.Ingredients.Add(new Ingredient
+        {
+            IngredientId = 90,
+            IngredientName = "Hoa chuối thái mỏng",
+            FoodGroup = "VEGETABLE",
+            StandardUnit = "g",
+            DefaultStallType = "PRODUCE",
+            CaloriesPer100g = 50m
+        });
+        await _db.SaveChangesAsync();
+
+        using var stream = CreateValidPngStream(640, 480);
+        var input = new FridgeDetectionInputDto
+        {
+            ImageStream = stream,
+            FileName = "fridge.png",
+            FileLength = stream.Length,
+            ContentType = "image/png"
+        };
+
+        _mockAiClient.Setup(c => c.DetectFridgeIngredientsAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiFridgeDetectionResult
+            {
+                Success = true,
+                Items = new List<AiDetectedItemDto>
+                {
+                    new() { Name = "Chuối", FreshnessStatus = "NON-FRESH" },
+                    new() { Name = "Cà chua bi", FreshnessStatus = "FRESH" } // danh mục chung hơn → khớp "Cà chua" (ID 13)
+                }
+            });
+
+        // Act
+        var response = await _service.DetectIngredientsAsync(
+            input, userId: 10, userRole: UserRoles.Member, guestUuid: null, autoSave: true, ct: CancellationToken.None);
+
+        // Assert
+        var banana = response.Detected.Single(d => d.Name == "Chuối");
+        banana.IngredientId.Should().NotBe(90);
+        response.Detected.Should().NotContain(d => d.Name == "Hoa chuối thái mỏng");
+
+        var tomato = response.Detected.Single(d => d.Name == "Cà chua");
+        tomato.IngredientId.Should().Be(13);
+
+        (await _db.FridgeInventories.AnyAsync(f => f.UserId == 10 && f.IngredientId == 90)).Should().BeFalse();
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Ảnh ứng viên (plan/1.Implement/32 — BR-ADM-ING-02/03, TC-E2E-01/02) + độ tin cậy thật (Bước 2)
+    // ---------------------------------------------------------------------------------------------
+
+    private const string CloudinaryFridgeUrl = "https://res.cloudinary.com/demo/image/upload/v1/veggielife/fridge/abc.jpg";
+
+    private void UseCloudinaryUploadUrl()
+    {
+        _mockMediaService.Setup(m => m.UploadImageAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MediaUploadResponse { SecureUrl = CloudinaryFridgeUrl, PublicId = "veggielife/fridge/abc" });
+    }
+
+    private async Task<VeggieLife.BLL.DTOs.Fridge.Responses.CreateFridgeDetectionResponseData> ScanAsync(List<AiDetectedItemDto> items, bool autoSave = false)
+    {
+        using var stream = CreateValidPngStream(640, 480);
+        var input = new FridgeDetectionInputDto
+        {
+            ImageStream = stream,
+            FileName = "fridge.png",
+            FileLength = stream.Length,
+            ContentType = "image/png"
+        };
+        _mockAiClient.Setup(c => c.DetectFridgeIngredientsAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiFridgeDetectionResult { Success = true, Items = items });
+        return await _service.DetectIngredientsAsync(
+            input, userId: 10, userRole: UserRoles.Member, guestUuid: null, autoSave: autoSave, ct: CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task DetectIngredients_UsesRealAiConfidence_InsteadOfHardcoded095()
+    {
+        UseCloudinaryUploadUrl();
+        var response = await ScanAsync(new List<AiDetectedItemDto>
+        {
+            new() { Name = "Cà chua", FreshnessStatus = "FRESH", Confidence = 0.62 },
+            new() { Name = "Đậu hũ non", FreshnessStatus = "FRESH", Confidence = 1.7 },  // kẹp về 1.0
+            new() { Name = "Rau rừng lạ", FreshnessStatus = "FRESH" }                    // ai-service không gửi → null
+        });
+
+        response.Detected.Single(d => d.Name == "Cà chua").Confidence.Should().Be(0.62);
+        response.Detected.Single(d => d.Name == "Đậu hũ non").Confidence.Should().Be(1.0);
+        response.Detected.Single(d => d.Name == "Rau rừng lạ").Confidence.Should().BeNull();
+    }
+
+    [Fact] // TC-E2E-02: quét KHÔNG autoSave (luồng thật của frontend) vẫn thu thập ứng viên, không ghi Ingredients.Image_Url
+    public async Task DetectIngredients_UnlockedExactMatch_CreatesPendingCandidate_WithoutTouchingIngredientImage()
+    {
+        UseCloudinaryUploadUrl();
+        var box = new List<int> { 100, 200, 300, 500 };
+        await ScanAsync(new List<AiDetectedItemDto>
+        {
+            new() { Name = "Cà chua", FreshnessStatus = "FRESH", Confidence = 0.92, Box2D = box },
+            new() { Name = "Cà chua", FreshnessStatus = "FRESH", Confidence = 0.85, Box2D = new List<int> { 600, 600, 700, 700 } }, // cùng phiên → chỉ lấy khung tốt nhất
+            new() { Name = "Nấm rơm", FreshnessStatus = "FRESH", Confidence = 0.79, Box2D = box },      // < 0.80
+            new() { Name = "Hành tây tím", FreshnessStatus = "FRESH", Confidence = 0.95, Box2D = box }, // khớp "chung hơn" → không phải khớp chính xác
+            new() { Name = "Đậu hũ non", FreshnessStatus = "FRESH", Confidence = 0.95 }                 // không có box2d
+        }, autoSave: false);
+
+        var candidates = await _db.IngredientCandidateImages.AsNoTracking().ToListAsync();
+        candidates.Should().ContainSingle();
+        var c = candidates[0];
+        c.IngredientId.Should().Be(13);
+        c.Status.Should().Be(CandidateStatus.Pending);
+        c.ConfidenceScore.Should().Be(0.920m);
+        c.CroppedImageUrl.Should().Contain("/upload/c_crop,").And.EndWith("/v1/veggielife/fridge/abc.jpg");
+
+        (await _db.Ingredients.AsNoTracking().Where(i => i.ImageUrl != null).CountAsync()).Should().Be(0,
+            "BR-ADM-ING-03: ảnh ứng viên không được tự trở thành ảnh đại diện");
+    }
+
+    [Fact] // TC-E2E-01
+    public async Task DetectIngredients_LockedIngredient_CreatesNoCandidate()
+    {
+        UseCloudinaryUploadUrl();
+        var tomato = await _db.Ingredients.SingleAsync(i => i.IngredientId == 13);
+        tomato.IsLocked = true;
+        await _db.SaveChangesAsync();
+
+        await ScanAsync(new List<AiDetectedItemDto>
+        {
+            new() { Name = "Cà chua", FreshnessStatus = "FRESH", Confidence = 0.92, Box2D = new List<int> { 100, 200, 300, 500 } }
+        });
+
+        (await _db.IngredientCandidateImages.CountAsync()).Should().Be(0);
+        (await _db.Ingredients.AsNoTracking().SingleAsync(i => i.IngredientId == 13)).ImageUrl.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DetectIngredients_KeepsAtMostFivePendingCandidatesPerIngredient_DroppingOldest()
+    {
+        UseCloudinaryUploadUrl();
+        for (var k = 0; k < 7; k++)
+        {
+            await ScanAsync(new List<AiDetectedItemDto>
+            {
+                new() { Name = "Cà chua", FreshnessStatus = "FRESH", Confidence = 0.90, Box2D = new List<int> { 100 + k, 200, 300, 500 } }
+            });
+        }
+
+        var pending = await _db.IngredientCandidateImages.AsNoTracking()
+            .Where(c => c.IngredientId == 13 && c.Status == CandidateStatus.Pending)
+            .OrderBy(c => c.CandidateId).ToListAsync();
+        pending.Should().HaveCount(FridgeService.MaxPendingCandidatesPerIngredient);
+        pending[0].CroppedImageUrl.Should().Contain("y_0.102", "2 ảnh cũ nhất (y_0.100, y_0.101) đã bị loại");
+    }
+
+    [Fact]
+    public async Task DetectIngredients_NonCloudinaryImageUrl_CreatesNoCandidate()
+    {
+        // MediaService mặc định trả URL nội bộ không có "/upload/" → không cắt được
+        await ScanAsync(new List<AiDetectedItemDto>
+        {
+            new() { Name = "Cà chua", FreshnessStatus = "FRESH", Confidence = 0.92, Box2D = new List<int> { 100, 200, 300, 500 } }
+        });
+
+        (await _db.IngredientCandidateImages.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task DetectIngredients_Guest_CreatesNoCandidate()
+    {
+        UseCloudinaryUploadUrl();
+        _mockRedis.Setup(r => r.GetAsync<long?>("guest_quota:ai:guest-1", It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        using var stream = CreateValidPngStream(640, 480);
+        var input = new FridgeDetectionInputDto { ImageStream = stream, FileName = "fridge.png", FileLength = stream.Length, ContentType = "image/png" };
+        _mockAiClient.Setup(c => c.DetectFridgeIngredientsAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiFridgeDetectionResult
+            {
+                Success = true,
+                Items = new List<AiDetectedItemDto> { new() { Name = "Cà chua", FreshnessStatus = "FRESH", Confidence = 0.92, Box2D = new List<int> { 100, 200, 300, 500 } } }
+            });
+
+        await _service.DetectIngredientsAsync(input, userId: null, userRole: UserRoles.Guest, guestUuid: "guest-1", ct: CancellationToken.None);
+
+        (await _db.IngredientCandidateImages.CountAsync()).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(0.62, 0.62)]
+    [InlineData(-0.3, 0.0)]
+    [InlineData(1.7, 1.0)]
+    [InlineData(null, null)]
+    [InlineData(double.NaN, null)]
+    public void ClampConfidence_KeepsAiValueWithinZeroToOne(double? input, double? expected)
+    {
+        FridgeService.ClampConfidence(input).Should().Be(expected);
+    }
+
+    [Fact]
     public async Task DetectIngredients_GuestSuccess_DoesNotSaveToDb_IncrementsRedis()
     {
         // Arrange

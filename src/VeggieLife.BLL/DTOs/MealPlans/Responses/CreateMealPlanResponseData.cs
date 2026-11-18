@@ -14,6 +14,10 @@ public class CreateMealPlanResponseData
     public string EndDate { get; set; } = null!;
     public string BudgetTier { get; set; } = null!;
     public string? CustomInstructions { get; set; }
+    public string? HealthGoal { get; set; }
+    public string? RegionPreference { get; set; }
+    public bool UseFridge { get; set; }
+    public bool RequiresAlliumFree { get; set; }
     public decimal TargetDailyKcal { get; set; }
     public string PlanStatus { get; set; } = "DRAFT";
     public bool GeneratedByAi { get; set; }

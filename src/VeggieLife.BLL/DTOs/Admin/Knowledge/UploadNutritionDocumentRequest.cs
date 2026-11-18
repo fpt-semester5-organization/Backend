@@ -12,6 +12,9 @@ public class UploadNutritionDocumentRequest
     [StringLength(300, ErrorMessage = "Tiêu đề không được vượt quá 300 ký tự.")]
     public string Title { get; set; } = string.Empty;
 
+    /// <summary>Admin thực hiện tải lên (ghi AIQuotaLogs khi phải OCR bằng Gemini).</summary>
+    public int? ActorUserId { get; set; }
+
     [StringLength(200, ErrorMessage = "Tên tác giả không được vượt quá 200 ký tự.")]
     public string? Author { get; set; }
 

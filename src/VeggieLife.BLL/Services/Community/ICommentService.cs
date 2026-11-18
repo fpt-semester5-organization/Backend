@@ -31,6 +31,14 @@ public interface ICommentService
         bool isAdmin = false,
         CancellationToken ct = default);
 
+    Task<(IReadOnlyList<CommentDto> Items, PagedMeta Meta)> ListPostCommentsAsync(
+        int postId,
+        int page,
+        int size,
+        bool isAdmin,
+        int? currentUserId,
+        CancellationToken ct = default);
+
     /// <summary>
     /// FN-COMM-01: Lấy danh sách bình luận dạng cây theo phân trang của công thức nấu ăn (qua bài viết đại diện).
     /// </summary>
@@ -44,6 +52,14 @@ public interface ICommentService
         int page = 1,
         int size = 20,
         bool isAdmin = false,
+        CancellationToken ct = default);
+
+    Task<(IReadOnlyList<CommentDto> Items, PagedMeta Meta)> ListRecipeCommentsAsync(
+        int recipeId,
+        int page,
+        int size,
+        bool isAdmin,
+        int? currentUserId,
         CancellationToken ct = default);
 
     /// <summary>

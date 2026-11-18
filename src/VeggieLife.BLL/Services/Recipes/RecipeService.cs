@@ -195,8 +195,8 @@ public class RecipeService : IRecipeService
             {
                 RecipeId = r.RecipeId,
                 FoodId = r.FoodId,
-                FoodName = r.Food != null ? r.Food.FoodName : null,
-                FoodImageUrl = r.Food != null ? r.Food.ImageUrl : null,
+                FoodName = r.Food != null ? r.Food.FoodName : r.Title,
+                FoodImageUrl = r.Food != null ? r.Food.ImageUrl : r.ImageUrl,
                 CategoryId = r.Food != null ? r.Food.CategoryId : null,
                 CategoryName = r.Food != null && r.Food.Category != null ? r.Food.Category.CategoryName : null,
                 Type = r.Posts.Any(p => p.Videos.Any(v => v.Status == "READY" || v.Status == "PROCESSING")) || r.VideoTranscripts.Any() ? "VIDEO" : "RECIPE",
@@ -305,7 +305,7 @@ public class RecipeService : IRecipeService
 
         // 3. Truy vấn CSDL: SELECT Recipes + RecipeIngredients + Ingredients + FoodCategories + DietarySchools
         var recipe = await _db.Recipes
-            .Include(r => r.Food).ThenInclude(f => f.Category)
+            .Include(r => r.Food).ThenInclude(f => f!.Category)
             .Include(r => r.DietarySchool)
             .Include(r => r.RecipeIngredients)
                 .ThenInclude(ri => ri.Ingredient)
@@ -347,7 +347,7 @@ public class RecipeService : IRecipeService
 
         // 6. Tính số bình luận và lượt vote
         var voteCount = recipe.Posts.SelectMany(p => p.Votes).Count();
-        var commentCount = recipe.Posts.SelectMany(p => p.Comments).Count(c => !c.IsSoftDeleted);
+        var commentCount = recipe.Posts.SelectMany(p => p.Comments).Count(c => !c.IsSoftDeleted && (isAdmin ? true : (c.Status == "ACTIVE" || c.Status == "APPROVED_ACTIVE")));
 
         // 7. Xác định Video liên kết: tác giả hoặc Admin xem được mọi video chưa xóa (kể cả BANNED/PROCESSING), người khác chỉ xem READY
         var activeVideo = recipe.Posts
@@ -408,8 +408,8 @@ public class RecipeService : IRecipeService
             DietarySchoolId = recipe.DietarySchoolId,
             DifficultyLevel = recipe.DifficultyLevel,
             FoodId = recipe.FoodId,
-            FoodName = recipe.Food?.FoodName,
-            FoodImageUrl = recipe.Food?.ImageUrl,
+            FoodName = recipe.Food?.FoodName ?? recipe.Title,
+            FoodImageUrl = recipe.Food?.ImageUrl ?? recipe.ImageUrl,
             Type = contentType,
             Title = recipe.Title,
             ImageUrl = recipe.ImageUrl,
@@ -493,7 +493,7 @@ public class RecipeService : IRecipeService
         // 3. Truy vấn công thức gốc đang xem: kiểm tra tồn tại và APPROVED_ACTIVE
         var sourceRecipe = await _db.Recipes
             .AsNoTracking()
-            .Include(r => r.Food).ThenInclude(f => f.Category)
+            .Include(r => r.Food).ThenInclude(f => f!.Category)
             .Include(r => r.DietarySchool)
             .Include(r => r.RecipeIngredients)
             .FirstOrDefaultAsync(r => r.RecipeId == recipeId && r.Status == "APPROVED_ACTIVE", ct);
@@ -514,7 +514,7 @@ public class RecipeService : IRecipeService
         // 4. Truy vấn các công thức APPROVED_ACTIVE cùng trường phái, loại trừ chính công thức đang xem
         var candidateRecipes = await _db.Recipes
             .AsNoTracking()
-            .Include(r => r.Food).ThenInclude(f => f.Category)
+            .Include(r => r.Food).ThenInclude(f => f!.Category)
             .Include(r => r.DietarySchool)
             .Include(r => r.RecipeIngredients)
             .Include(r => r.Posts)
@@ -900,6 +900,11 @@ public class RecipeService : IRecipeService
             var food = await _foodService.GetOrCreateFoodAsync(request.FoodName, request.CategoryId > 0 ? request.CategoryId : 1, ct);
             resolvedFoodId = food.FoodId;
         }
+        else if (!string.IsNullOrWhiteSpace(request.Title))
+        {
+            var food = await _foodService.GetOrCreateFoodAsync(request.Title.Trim(), request.CategoryId > 0 ? request.CategoryId : 1, ct);
+            resolvedFoodId = food.FoodId;
+        }
 
         // 3. Xử lý chế độ Lưu nháp (submit = false)
         if (!request.Submit)
@@ -1215,6 +1220,12 @@ public class RecipeService : IRecipeService
         {
             var targetCatId = request.CategoryId.HasValue && request.CategoryId.Value > 0 ? request.CategoryId.Value : 1;
             var food = await _foodService.GetOrCreateFoodAsync(request.FoodName, targetCatId, ct);
+            updatedFoodId = food.FoodId;
+        }
+        else if (!updatedFoodId.HasValue && !string.IsNullOrWhiteSpace(request.Title ?? recipe.Title))
+        {
+            var targetCatId = request.CategoryId.HasValue && request.CategoryId.Value > 0 ? request.CategoryId.Value : 1;
+            var food = await _foodService.GetOrCreateFoodAsync((request.Title ?? recipe.Title).Trim(), targetCatId, ct);
             updatedFoodId = food.FoodId;
         }
         var newPrepTime = request.PrepTimeMinutes.HasValue ? request.PrepTimeMinutes.Value : recipe.PrepTimeMinutes;
@@ -1671,8 +1682,27 @@ public class RecipeService : IRecipeService
 
     private async Task CheckDailyLimitAsync(int userId, CancellationToken ct)
     {
-        // Đã hủy bỏ kiểm tra giới hạn bài đăng trong ngày theo yêu cầu để người dùng thao tác kiểm thử không bị chặn 429
-        await Task.CompletedTask;
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId, ct);
+        if (user == null)
+        {
+            throw AppException.Unauthorized(ErrorCodes.ErrAuthInvalidToken, "Không tìm thấy người dùng.");
+        }
+
+        var todayUtc = DateTime.UtcNow.Date;
+        var accountAgeDays = (DateTime.UtcNow - user.CreatedAt).TotalDays;
+        var maxLimit = accountAgeDays < 3.0 ? 2 : 10;
+
+        var postsCount = await _db.Posts
+            .CountAsync(p => p.UserId == userId && p.CreatedAt >= todayUtc && p.ModerationStatus != "DRAFT", ct);
+
+        var recipesCount = await _db.Recipes
+            .CountAsync(r => r.UserId == userId && r.CreatedAt >= todayUtc && r.Status != "DRAFT", ct);
+
+        if (postsCount + recipesCount >= maxLimit)
+        {
+            throw new AppException(429, ErrorCodes.ErrPostDailyLimitExceeded,
+                $"Tài khoản đã đạt giới hạn tối đa {maxLimit} nội dung đăng tải trong ngày (BR-USR-04).");
+        }
     }
 
     private static void ValidateRecipeStructure(CreateRecipeRequest request)

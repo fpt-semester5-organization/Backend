@@ -241,6 +241,33 @@ public static class ServiceExtensions
     /// <summary>
     /// Cấu hình các chính sách phân quyền theo vai trò (GUEST, MEMBER, VIP, ADMIN).
     /// </summary>
+    /// <summary>
+    /// Đăng ký chính sách CORS mặc định theo cấu hình <c>Cors:AllowedOrigins</c> (danh sách cách nhau bằng dấu phẩy
+    /// hoặc mảng). Không cấu hình thì không mở CORS: FE dev dùng Vite proxy cùng nguồn. Cho phép thông tin xác thực
+    /// để SignalR (/hubs) hoạt động khi FE và Backend ở hai miền khác nhau (vd Cloud Run).
+    /// </summary>
+    public static IServiceCollection AddConfiguredCors(this IServiceCollection services, IConfiguration configuration)
+    {
+        var raw = configuration["Cors:AllowedOrigins"];
+        var origins = !string.IsNullOrWhiteSpace(raw)
+            ? raw.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            : configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+
+        origins = origins.Select(o => o.TrimEnd('/')).Where(o => o.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (origins.Length == 0)
+        {
+            return services;
+        }
+
+        services.AddCors(options => options.AddDefaultPolicy(policy => policy
+            .WithOrigins(origins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials()
+            .WithExposedHeaders("Content-Disposition")));
+        return services;
+    }
+
     public static IServiceCollection AddRoleAuthorization(this IServiceCollection services)
     {
         services.AddAuthorization(options =>
@@ -479,6 +506,7 @@ public static class ServiceExtensions
         services.AddScoped<VeggieLife.BLL.Services.Chat.IChatService, VeggieLife.BLL.Services.Chat.ChatService>();
 
         // Dịch vụ Đăng ký gói VIP & Thanh toán (FN-SUB-01..04)
+        services.AddScoped<VeggieLife.BLL.Services.Subscriptions.IUserBenefitService, VeggieLife.BLL.Services.Subscriptions.UserBenefitService>();
         services.AddScoped<VeggieLife.BLL.Services.Subscriptions.ISubscriptionService, VeggieLife.BLL.Services.Subscriptions.SubscriptionService>();
 
         // Dịch vụ Bóc tách công thức từ video & Background Worker (FN-POST-10)

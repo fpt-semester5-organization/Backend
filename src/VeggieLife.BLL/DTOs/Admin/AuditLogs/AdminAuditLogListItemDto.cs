@@ -13,6 +13,10 @@ public class AdminAuditLogListItemDto
 
     public int? ActorUserId { get; set; }
 
+    public string? ActorName { get; set; }
+
+    public string? ActorAvatarUrl { get; set; }
+
     public string ActorRole { get; set; } = string.Empty;
 
     public string Action { get; set; } = string.Empty;
@@ -20,6 +24,10 @@ public class AdminAuditLogListItemDto
     public string TargetTable { get; set; } = string.Empty;
 
     public string TargetId { get; set; } = string.Empty;
+
+    public string? TargetName { get; set; }
+
+    public string? TargetAvatarUrl { get; set; }
 
     public string? Note { get; set; }
 

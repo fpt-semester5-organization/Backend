@@ -11,5 +11,6 @@ public class CurrentUserSubscriptionResponseDto
     public bool IsVip { get; set; }
     public SubscriptionPlanItemDto? Plan { get; set; }
     public DateTime? EndsAt { get; set; }
+    public VipBenefitFeaturesDto? Features { get; set; }
     public List<SubscriptionTransactionDto> Transactions { get; set; } = new();
 }

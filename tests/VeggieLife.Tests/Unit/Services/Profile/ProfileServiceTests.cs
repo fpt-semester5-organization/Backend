@@ -609,10 +609,11 @@ public class ProfileServiceTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var request = new CreateCurrentUserWeightEntryRequest
         {
             WeightKg = 54.0m,
-            LoggedDate = new DateOnly(2026, 10, 5),
+            LoggedDate = today,
             Note = "Cân buổi sáng"
         };
 
@@ -630,11 +631,69 @@ public class ProfileServiceTests : IDisposable
         var historyLog = await _db.UserWeightHistories
             .FirstOrDefaultAsync(w => w.UserId == 101 && w.WeightKg == 54.0m);
         historyLog.Should().NotBeNull();
-        historyLog!.LoggedDate.Should().Be(new DateOnly(2026, 10, 5));
+        historyLog!.LoggedDate.Should().Be(today);
         historyLog.Note.Should().Be("Cân buổi sáng");
 
         _mockRedis.Verify(r => r.RemoveAsync("cache:profile:101", It.IsAny<CancellationToken>()), Times.Once);
         _mockRedis.Verify(r => r.RemoveAsync("meal_plan_cache:101", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateWeightEntryAsync_WhenLoggedDateIsNull_ShouldDefaultToToday()
+    {
+        _db.HealthProfiles.Add(new HealthProfile
+        {
+            UserId = 101,
+            DietarySchoolId = 1,
+            Gender = "FEMALE",
+            DateOfBirth = new DateOnly(2000, 1, 1),
+            HeightCm = 165m,
+            CurrentWeightKg = 58m,
+            TargetWeightKg = 52m,
+            BmiValue = 21.3m,
+            BmrKcal = 1350m,
+            TdeeKcal = 1620m,
+            TargetDailyCalories = 1220m,
+            HealthGoal = "LOSE_WEIGHT",
+            RegionPreference = "SOUTH",
+            IsStaleMetrics = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var request = new CreateCurrentUserWeightEntryRequest
+        {
+            WeightKg = 55.0m,
+            LoggedDate = null
+        };
+
+        var result = await _service.CreateWeightEntryAsync(101, request);
+
+        result.Should().NotBeNull();
+        var historyLog = await _db.UserWeightHistories
+            .FirstOrDefaultAsync(w => w.UserId == 101 && w.WeightKg == 55.0m);
+        historyLog.Should().NotBeNull();
+        historyLog!.LoggedDate.Should().Be(today);
+    }
+
+    [Fact]
+    public async Task CreateWeightEntryAsync_WhenLoggedDateInPast_ShouldThrowBadRequest()
+    {
+        var yesterday = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1));
+        var request = new CreateCurrentUserWeightEntryRequest
+        {
+            WeightKg = 60.0m,
+            LoggedDate = yesterday
+        };
+
+        var act = async () => await _service.CreateWeightEntryAsync(101, request);
+
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+        ex.Which.Message.Should().Be("Không được ghi nhận cân nặng cho ngày trong quá khứ.");
     }
 
     [Fact]
