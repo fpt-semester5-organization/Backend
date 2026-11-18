@@ -163,11 +163,11 @@ public class ShoppingListServiceTests : IDisposable
         // ACT
         var result = await _service.CreateMealPlanShoppingListAsync(planId, userId, request);
 
-        // ASSERT: So sánh với ví dụ tính tay:
-        // - Nấm rơm (PRODUCE): (200 + 100) * 2 = 600g
-        // - Đậu hũ non (PLANT_PROTEIN): 150 * 2 = 300g
-        // - Nước tương (CONDIMENTS): 50 * 2 = 100ml
-        // - Nấm hương khô (DRY_GOODS): 0.05kg * 1000 * 2 = 100g
+        // ASSERT: So sánh với ví dụ tính theo số người (request.ServingsMultiplier = 2 người, công thức chuẩn DB cho 2 người):
+        // - Nấm rơm (PRODUCE): (200 / 2 + 100 / 2) * 2 = 300g
+        // - Đậu hũ non (PLANT_PROTEIN): (150 / 2) * 2 = 150g
+        // - Nước tương (CONDIMENTS): (50 / 2) * 2 = 50ml
+        // - Nấm hương khô (DRY_GOODS): (0.05kg * 1000 / 2) * 2 = 50g
         result.Should().NotBeNull();
         result.PlanId.Should().Be(planId);
         result.Status.Should().Be("PENDING");
@@ -177,7 +177,7 @@ public class ShoppingListServiceTests : IDisposable
         produceAisle.Should().NotBeNull();
         produceAisle!.Items.Should().HaveCount(1);
         produceAisle.Items[0].Name.Should().Be("Nấm rơm tươi");
-        produceAisle.Items[0].Quantity.Should().Be(600m);
+        produceAisle.Items[0].Quantity.Should().Be(300m);
         produceAisle.Items[0].Unit.Should().Be("g");
         produceAisle.Items[0].IsPurchased.Should().BeFalse();
         produceAisle.Items[0].RecipeSources.Should().Contain(new[] { "Canh nấm đậu phụ", "Nấm kho tiêu" });
@@ -185,19 +185,19 @@ public class ShoppingListServiceTests : IDisposable
         var proteinAisle = result.Aisles.FirstOrDefault(a => a.Aisle == "PLANT_PROTEIN");
         proteinAisle.Should().NotBeNull();
         proteinAisle!.Items[0].Name.Should().Be("Đậu hũ non");
-        proteinAisle.Items[0].Quantity.Should().Be(300m);
+        proteinAisle.Items[0].Quantity.Should().Be(150m);
         proteinAisle.Items[0].Unit.Should().Be("g");
 
         var condimentsAisle = result.Aisles.FirstOrDefault(a => a.Aisle == "CONDIMENTS");
         condimentsAisle.Should().NotBeNull();
         condimentsAisle!.Items[0].Name.Should().Be("Nước tương");
-        condimentsAisle.Items[0].Quantity.Should().Be(100m);
+        condimentsAisle.Items[0].Quantity.Should().Be(50m);
         condimentsAisle.Items[0].Unit.Should().Be("ml");
 
         var dryGoodsAisle = result.Aisles.FirstOrDefault(a => a.Aisle == "DRY_GOODS");
         dryGoodsAisle.Should().NotBeNull();
         dryGoodsAisle!.Items[0].Name.Should().Be("Nấm hương khô");
-        dryGoodsAisle.Items[0].Quantity.Should().Be(100m);
+        dryGoodsAisle.Items[0].Quantity.Should().Be(50m);
         dryGoodsAisle.Items[0].Unit.Should().Be("g");
 
         // Kiểm tra dữ liệu thực tế đã lưu trong DB
