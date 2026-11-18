@@ -190,6 +190,26 @@ public class FridgeController : BaseApiController
     }
 
     /// <summary>
+    /// FN-VIS-02 (D123): Lưu hàng loạt kết quả nhận diện vào tủ lạnh ảo trong một giao dịch.
+    /// Gộp mục trùng nguyên liệu, ghi đè dòng đã có, bỏ qua đồ mặn; trả số mục tạo mới / cập nhật / bỏ qua.
+    /// </summary>
+    [HttpPost("items/batch")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<FridgeBatchSaveResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SaveFridgeItemsBatch(
+        [FromBody] SaveFridgeItemsBatchRequest request,
+        CancellationToken ct)
+    {
+        var userId = EnsureMemberUser();
+        var result = await _fridgeService.SaveFridgeItemsBatchAsync(userId, request, ct);
+        return OkResponse(result, "Đã lưu vào tủ lạnh.");
+    }
+
+    /// <summary>
     /// FN-VIS-02: Cập nhật độ tươi (FRESH / NON-FRESH) hoặc tên hiển thị của nguyên liệu trong tủ lạnh ảo.
     /// </summary>
     [HttpPut("items/{id:int}")]

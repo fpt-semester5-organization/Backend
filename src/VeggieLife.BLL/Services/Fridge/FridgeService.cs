@@ -412,6 +412,7 @@ public class FridgeService : IFridgeService
         // BƯỚC 6: LƯU TRỮ VÀO CSDL HOẶC GHI NHẬN HẠN MỨC TRÊN REDIS
         // =========================================================================
         var saved = false;
+        int? createdSessionId = null;
 
         if (!isGuest && userId.HasValue)
         {
@@ -451,6 +452,7 @@ public class FridgeService : IFridgeService
             };
             _db.FridgeSessions.Add(fridgeSession);
             await _db.SaveChangesAsync(ct);
+            createdSessionId = fridgeSession.SessionId;
 
             // 6.3 UPSERT vào bảng FridgeInventory: CHỈ KHI autoSave = true
             if (autoSave)
@@ -560,6 +562,7 @@ public class FridgeService : IFridgeService
         return new CreateFridgeDetectionResponseData
         {
             Saved = saved,
+            SessionId = createdSessionId,
             Detected = detectedList,
             Warnings = warnings,
             Quota = new FridgeDetectionQuotaDto
@@ -711,6 +714,235 @@ public class FridgeService : IFridgeService
             Unit = newItem.Unit,
             ThumbnailUrl = newItem.ThumbnailUrl
         };
+    }
+
+    private const int MaxBatchItems = 100;
+
+    /// <summary>
+    /// FN-VIS-02 (D123): Lưu hàng loạt nguyên liệu vào tủ lạnh ảo trong một giao dịch.
+    /// Mục trùng nguyên liệu được gộp (cộng dồn số lượng, NON-FRESH nếu có mục NON-FRESH);
+    /// nguyên liệu đã có trong tủ được ghi đè theo lần lưu mới (mỗi nguyên liệu một dòng, BR-USR-08);
+    /// đồ mặn bị bỏ qua.
+    /// </summary>
+    public async Task<FridgeBatchSaveResultDto> SaveFridgeItemsBatchAsync(
+        int userId,
+        SaveFridgeItemsBatchRequest request,
+        CancellationToken ct = default)
+    {
+        // SqlServerRetryingExecutionStrategy không cho mở transaction thủ công ngoài strategy
+        var strategy = _db.Database.CreateExecutionStrategy();
+        var attempt = 0;
+        return await strategy.ExecuteAsync(async () =>
+        {
+            if (attempt++ > 0)
+            {
+                _db.ChangeTracker.Clear();
+            }
+            return await SaveFridgeItemsBatchCoreAsync(userId, request, ct);
+        });
+    }
+
+    private async Task<FridgeBatchSaveResultDto> SaveFridgeItemsBatchCoreAsync(
+        int userId,
+        SaveFridgeItemsBatchRequest request,
+        CancellationToken ct)
+    {
+        if (request?.Items == null || request.Items.Count == 0)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, "Danh sách nguyên liệu cần lưu không được rỗng.");
+        }
+
+        if (request.Items.Count > MaxBatchItems)
+        {
+            throw AppException.BadRequest(ErrorCodes.ErrValidation, $"Mỗi lần lưu tối đa {MaxBatchItems} nguyên liệu.");
+        }
+
+        if (request.SessionId.HasValue)
+        {
+            var ownsSession = await _db.FridgeSessions.AnyAsync(s => s.SessionId == request.SessionId.Value && s.UserId == userId, ct);
+            if (!ownsSession)
+            {
+                throw AppException.BadRequest(ErrorCodes.ErrValidation, "Phiên nhận diện không hợp lệ.");
+            }
+        }
+
+        var result = new FridgeBatchSaveResultDto { Requested = request.Items.Count };
+
+        using var transaction = _db.Database.IsRelational() ? await _db.Database.BeginTransactionAsync(ct) : null;
+
+        // 1. Xác định nguyên liệu cho từng mục; nhớ theo tên để không tạo trùng nguyên liệu trong cùng một lô
+        var ingredientsByName = new Dictionary<string, Ingredient>(StringComparer.OrdinalIgnoreCase);
+        var resolved = new List<(CreateFridgeItemRequest Item, Ingredient Ingredient)>();
+
+        foreach (var item in request.Items)
+        {
+            var rawName = item?.CustomItemName?.Trim() ?? string.Empty;
+            if (item == null || rawName.Length > 100)
+            {
+                result.SkippedItems.Add(new FridgeBatchSkippedItemDto { Name = rawName, Reason = "INVALID_NAME" });
+                continue;
+            }
+
+            var parenIdx = rawName.IndexOf('(');
+            var cleanName = parenIdx > 0 ? rawName[..parenIdx].Trim() : rawName;
+
+            Ingredient? ingredient = null;
+            if (item.IngredientId.HasValue && item.IngredientId.Value > 0)
+            {
+                ingredient = await _db.Ingredients.FindAsync(new object[] { item.IngredientId.Value }, ct);
+            }
+
+            if (ingredient == null && cleanName.Length > 0 && !ingredientsByName.TryGetValue(cleanName, out ingredient))
+            {
+                ingredient = await _db.Ingredients.FirstOrDefaultAsync(i => i.IngredientName.ToLower() == cleanName.ToLower(), ct);
+                if (ingredient == null && !IsMeatOrSeafood(cleanName, null))
+                {
+                    var standardUnit = !string.IsNullOrWhiteSpace(item.Unit) ? (item.Unit.Length > 20 ? item.Unit[..20] : item.Unit) : "g";
+                    ingredient = new Ingredient
+                    {
+                        IngredientName = cleanName.Length > 100 ? cleanName[..100] : cleanName,
+                        StandardUnit = standardUnit,
+                        DefaultStallType = "PRODUCE",
+                        FoodGroup = NormalizeFoodGroup(null, cleanName),
+                        IsAllium = false,
+                        CaloriesPer100g = 50m,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _db.Ingredients.Add(ingredient);
+                }
+
+                if (ingredient != null)
+                {
+                    ingredientsByName[cleanName] = ingredient;
+                }
+            }
+
+            var nameForCheck = cleanName.Length > 0 ? cleanName : ingredient?.IngredientName ?? string.Empty;
+            if (IsMeatOrSeafood(nameForCheck, ingredient?.FoodGroup))
+            {
+                result.SkippedItems.Add(new FridgeBatchSkippedItemDto { Name = rawName, Reason = "NON_VEGETARIAN" });
+                continue;
+            }
+
+            if (ingredient == null)
+            {
+                result.SkippedItems.Add(new FridgeBatchSkippedItemDto { Name = rawName, Reason = "INVALID_NAME" });
+                continue;
+            }
+
+            resolved.Add((item, ingredient));
+        }
+
+        // Lưu nguyên liệu mới tạo để có Ingredient_ID trước khi gộp
+        await _db.SaveChangesAsync(ct);
+
+        // 2. Gộp theo nguyên liệu và UPSERT vào FridgeInventory
+        var existingRows = await _db.FridgeInventories
+            .Where(f => f.UserId == userId)
+            .ToListAsync(ct);
+        var savedRows = new List<FridgeInventory>();
+
+        foreach (var group in resolved.GroupBy(r => r.Ingredient.IngredientId))
+        {
+            var ingredient = group.First().Ingredient;
+            var items = group.Select(r => r.Item).ToList();
+
+            var amountsByUnit = items
+                .Select(i => ParseBatchItemQuantity(i, ingredient.StandardUnit))
+                .Where(p => p.Amount > 0)
+                .GroupBy(p => p.Unit, StringComparer.OrdinalIgnoreCase)
+                .Select(g => (Unit: g.Key, Amount: g.Sum(p => p.Amount), Count: g.Count()))
+                .OrderByDescending(g => g.Count)
+                .ToList();
+
+            var quantity = amountsByUnit.Count > 0 ? amountsByUnit[0].Amount : 1.0m;
+            var unit = amountsByUnit.Count > 0 ? amountsByUnit[0].Unit : ingredient.StandardUnit;
+
+            string displayName;
+            if (items.Count == 1)
+            {
+                displayName = string.IsNullOrWhiteSpace(items[0].CustomItemName) ? ingredient.IngredientName : items[0].CustomItemName!.Trim();
+            }
+            else
+            {
+                var amountLabel = string.Join(", ", amountsByUnit.Select(a =>
+                    $"{a.Amount.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} {a.Unit}"));
+                displayName = amountLabel.Length > 0 ? $"{ingredient.IngredientName} ({amountLabel})" : ingredient.IngredientName;
+            }
+
+            var freshness = items.Any(i => string.Equals(i.FreshnessStatus, "NON-FRESH", StringComparison.OrdinalIgnoreCase))
+                ? "NON-FRESH"
+                : "FRESH";
+            var thumbnail = items.Select(i => i.ThumbnailUrl).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t));
+
+            displayName = displayName.Length > 100 ? displayName[..100] : displayName;
+            unit = unit.Length > 30 ? unit[..30] : unit;
+
+            var row = existingRows
+                .Where(f => f.IngredientId == ingredient.IngredientId)
+                .OrderByDescending(f => f.InventoryId)
+                .FirstOrDefault();
+
+            if (row != null)
+            {
+                row.CustomItemName = displayName;
+                row.FreshnessStatus = freshness;
+                row.Quantity = quantity;
+                row.Unit = unit;
+                row.SessionId = request.SessionId ?? row.SessionId;
+                row.ThumbnailUrl = thumbnail ?? row.ThumbnailUrl;
+                result.Updated++;
+            }
+            else
+            {
+                row = new FridgeInventory
+                {
+                    UserId = userId,
+                    IngredientId = ingredient.IngredientId,
+                    SessionId = request.SessionId,
+                    CustomItemName = displayName,
+                    FreshnessStatus = freshness,
+                    Quantity = quantity,
+                    Unit = unit,
+                    ThumbnailUrl = thumbnail
+                };
+                _db.FridgeInventories.Add(row);
+                existingRows.Add(row);
+                result.Created++;
+            }
+
+            savedRows.Add(row);
+        }
+
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            // UQ_FridgeInventory_User_Ingredient: một yêu cầu khác vừa thêm cùng nguyên liệu
+            _logger.LogWarning(ex, "Lưu hàng loạt tủ lạnh bị trùng nguyên liệu cho user {UserId}.", userId);
+            throw AppException.Conflict(ErrorCodes.ErrFridgeItemExists, "Tủ lạnh vừa được cập nhật ở nơi khác, vui lòng thử lại.");
+        }
+
+        if (transaction != null)
+        {
+            await transaction.CommitAsync(ct);
+        }
+
+        result.Skipped = result.SkippedItems.Count;
+        result.Items = savedRows.Select(r => new FridgeItemDto
+        {
+            InventoryId = r.InventoryId,
+            IngredientId = r.IngredientId,
+            Name = r.CustomItemName,
+            FreshnessStatus = r.FreshnessStatus,
+            Quantity = r.Quantity,
+            Unit = r.Unit,
+            ThumbnailUrl = r.ThumbnailUrl
+        }).ToList();
+
+        return result;
     }
 
     /// <summary>
@@ -938,6 +1170,31 @@ public class FridgeService : IFridgeService
         }
 
         return "PLANT";
+    }
+
+    /// <summary>
+    /// Số lượng của một mục lưu hàng loạt: ưu tiên phần trong ngoặc của tên hiển thị ("Cà chua (3 quả)", "Chanh (1/2 quả)"),
+    /// không có thì dùng Quantity/Unit gửi lên.
+    /// </summary>
+    private static (decimal Amount, string Unit) ParseBatchItemQuantity(CreateFridgeItemRequest item, string defaultUnit)
+    {
+        var name = item.CustomItemName ?? string.Empty;
+        var open = name.IndexOf('(');
+        var close = name.LastIndexOf(')');
+        var quantityText = open >= 0 && close > open ? name.Substring(open + 1, close - open - 1).Trim() : null;
+
+        if (string.IsNullOrWhiteSpace(quantityText))
+        {
+            return ParseAmountAndUnit(null, item.Quantity, item.Unit, defaultUnit);
+        }
+
+        var fraction = System.Text.RegularExpressions.Regex.Match(quantityText, @"^(\d+)\s*/\s*(\d+)\s*([a-zA-Zà-ỹÀ-Ỹ]+)");
+        if (fraction.Success && decimal.TryParse(fraction.Groups[2].Value, out var denominator) && denominator > 0)
+        {
+            return (decimal.Parse(fraction.Groups[1].Value) / denominator, fraction.Groups[3].Value);
+        }
+
+        return ParseAmountAndUnit(quantityText, null, item.Unit, defaultUnit);
     }
 
     private static (decimal Amount, string Unit) ParseAmountAndUnit(string? quantityText, decimal? rawAmount, string? rawUnit, string defaultUnit)
@@ -1189,7 +1446,8 @@ public class FridgeService : IFridgeService
             "bò bít tết", "beefsteak", "beef", "pork", "chicken",
             "cá ", "cá hồi", "cá thu", "cá chép", "cá lóc", "cá tra", "cá basa", "cá ngừ", "cá đuối", "cá trích",
             "tôm", "cua", "ghẹ", "mực", "bạch tuộc", "hàu", "sò", "nghêu", "ốc", "sứa", "hải sản",
-            "chả cá", "giò lụa", "chả lụa", "xúc xích heo", "xúc xích bò", "lạp xưởng", "pate gan", "mỡ heo"
+            "chả cá", "giò lụa", "chả lụa", "xúc xích", "lạp xưởng", "pate gan", "mỡ heo",
+            "giăm bông", "jambon", "thịt nguội", "salami", "bacon", "ham ", "sausage"
         };
 
         return meatKeywords.Any(k => lower.Contains(k));

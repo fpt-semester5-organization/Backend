@@ -47,6 +47,15 @@ public interface IFridgeService
         CancellationToken ct = default);
 
     /// <summary>
+    /// FN-VIS-02 (D123): Lưu hàng loạt nguyên liệu vào tủ lạnh ảo trong một giao dịch.
+    /// Gộp mục trùng nguyên liệu, ghi đè dòng đã có, bỏ qua đồ mặn.
+    /// </summary>
+    Task<FridgeBatchSaveResultDto> SaveFridgeItemsBatchAsync(
+        int userId,
+        SaveFridgeItemsBatchRequest request,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// FN-VIS-02: Cập nhật độ tươi (FRESH / NON-FRESH) hoặc tên hiển thị của nguyên liệu trong tủ lạnh ảo.
     /// </summary>
     Task<FridgeItemDto> UpdateFridgeItemAsync(

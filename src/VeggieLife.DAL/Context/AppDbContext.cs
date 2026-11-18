@@ -772,6 +772,9 @@ public partial class AppDbContext : DbContext
 
             entity.HasIndex(e => e.UserId, "IX_FridgeInventory_User_ID");
 
+            // Mỗi nguyên liệu chỉ một dòng cho mỗi người dùng (BR-USR-08, D123)
+            entity.HasIndex(e => new { e.UserId, e.IngredientId }, "UQ_FridgeInventory_User_Ingredient").IsUnique();
+
 
 
             entity.Property(e => e.InventoryId).HasColumnName("Inventory_ID");

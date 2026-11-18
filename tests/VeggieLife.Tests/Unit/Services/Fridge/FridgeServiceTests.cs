@@ -875,6 +875,133 @@ public class FridgeServiceTests : IDisposable
         freshOnly[0].FreshnessStatus.Should().Be("FRESH");
     }
 
+    // =========================================================================
+    // LƯU HÀNG LOẠT KẾT QUẢ QUÉT (FN-VIS-02, D123)
+    // =========================================================================
+
+    [Fact]
+    public async Task SaveFridgeItemsBatch_DuplicateIngredients_MergedIntoOneRowWithSummedQuantity()
+    {
+        var request = new SaveFridgeItemsBatchRequest
+        {
+            Items = new List<CreateFridgeItemRequest>
+            {
+                new() { IngredientId = 13, CustomItemName = "Cà chua (1 hộp)", FreshnessStatus = "FRESH" },
+                new() { IngredientId = 13, CustomItemName = "Cà chua (1 hộp)", FreshnessStatus = "NON-FRESH" },
+                new() { CustomItemName = "Cà chua (1 hộp)", FreshnessStatus = "FRESH", ThumbnailUrl = "https://cdn/x.jpg" },
+                new() { IngredientId = 12, CustomItemName = "Nấm rơm (200 g)" }
+            }
+        };
+
+        var result = await _service.SaveFridgeItemsBatchAsync(10, request, CancellationToken.None);
+
+        result.Requested.Should().Be(4);
+        result.Created.Should().Be(2);
+        result.Updated.Should().Be(0);
+        result.Skipped.Should().Be(0);
+
+        var rows = await _db.FridgeInventories.Where(f => f.UserId == 10).ToListAsync();
+        rows.Should().HaveCount(2);
+        var tomato = rows.Single(r => r.IngredientId == 13);
+        tomato.Quantity.Should().Be(3);
+        tomato.Unit.Should().Be("hộp");
+        tomato.CustomItemName.Should().Be("Cà chua (3 hộp)");
+        tomato.FreshnessStatus.Should().Be("NON-FRESH");
+        tomato.ThumbnailUrl.Should().Be("https://cdn/x.jpg");
+    }
+
+    [Fact]
+    public async Task SaveFridgeItemsBatch_ExistingRow_OverwrittenAndLinkedToSession()
+    {
+        _db.FridgeSessions.Add(new FridgeSession { SessionId = 7, UserId = 10, ImageCdnUrl = "https://cdn/s.jpg", CreatedAt = DateTime.UtcNow });
+        _db.FridgeInventories.Add(new FridgeInventory
+        {
+            InventoryId = 1, UserId = 10, IngredientId = 13, CustomItemName = "Cà chua (5 quả)",
+            FreshnessStatus = "NON-FRESH", Quantity = 5, Unit = "quả"
+        });
+        await _db.SaveChangesAsync();
+
+        var request = new SaveFridgeItemsBatchRequest
+        {
+            SessionId = 7,
+            Items = new List<CreateFridgeItemRequest> { new() { IngredientId = 13, CustomItemName = "Cà chua (2 quả)", FreshnessStatus = "FRESH" } }
+        };
+
+        var result = await _service.SaveFridgeItemsBatchAsync(10, request, CancellationToken.None);
+
+        result.Created.Should().Be(0);
+        result.Updated.Should().Be(1);
+        var row = await _db.FridgeInventories.SingleAsync(f => f.UserId == 10);
+        row.Quantity.Should().Be(2);
+        row.FreshnessStatus.Should().Be("FRESH");
+        row.SessionId.Should().Be(7);
+    }
+
+    [Fact]
+    public async Task SaveFridgeItemsBatch_MeatItems_SkippedAsNonVegetarian()
+    {
+        var request = new SaveFridgeItemsBatchRequest
+        {
+            Items = new List<CreateFridgeItemRequest>
+            {
+                new() { CustomItemName = "Xúc xích khô (1 cây)" },
+                new() { CustomItemName = "Thịt (1 miếng)" },
+                new() { CustomItemName = "Xúc xích chay (2 cây)" }
+            }
+        };
+
+        var result = await _service.SaveFridgeItemsBatchAsync(10, request, CancellationToken.None);
+
+        result.Skipped.Should().Be(2);
+        result.SkippedItems.Should().OnlyContain(s => s.Reason == "NON_VEGETARIAN");
+        result.Created.Should().Be(1);
+        (await _db.Ingredients.AnyAsync(i => i.IngredientName == "Xúc xích khô")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SaveFridgeItemsBatch_SameNewNameTwice_CreatesSingleIngredient()
+    {
+        var request = new SaveFridgeItemsBatchRequest
+        {
+            Items = new List<CreateFridgeItemRequest>
+            {
+                new() { CustomItemName = "Phô mai (1 miếng)" },
+                new() { CustomItemName = "Phô mai (1 miếng)" }
+            }
+        };
+
+        var result = await _service.SaveFridgeItemsBatchAsync(10, request, CancellationToken.None);
+
+        result.Created.Should().Be(1);
+        (await _db.Ingredients.CountAsync(i => i.IngredientName == "Phô mai")).Should().Be(1);
+        (await _db.FridgeInventories.CountAsync(f => f.UserId == 10)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SaveFridgeItemsBatch_SessionOfAnotherUser_Throws400()
+    {
+        _db.FridgeSessions.Add(new FridgeSession { SessionId = 8, UserId = 99, ImageCdnUrl = "https://cdn/s.jpg", CreatedAt = DateTime.UtcNow });
+        await _db.SaveChangesAsync();
+
+        var request = new SaveFridgeItemsBatchRequest
+        {
+            SessionId = 8,
+            Items = new List<CreateFridgeItemRequest> { new() { IngredientId = 13 } }
+        };
+
+        var act = async () => await _service.SaveFridgeItemsBatchAsync(10, request, CancellationToken.None);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task SaveFridgeItemsBatch_EmptyItems_Throws400()
+    {
+        var act = async () => await _service.SaveFridgeItemsBatchAsync(10, new SaveFridgeItemsBatchRequest(), CancellationToken.None);
+        var ex = await act.Should().ThrowAsync<AppException>();
+        ex.Which.ErrorCode.Should().Be(ErrorCodes.ErrValidation);
+    }
+
     [Fact]
     public async Task AddFridgeItem_AlreadyExists_Throws409FridgeItemExists()
     {

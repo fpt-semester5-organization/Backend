@@ -13,6 +13,11 @@ public class CreateFridgeDetectionResponseData
     public bool Saved { get; set; }
 
     /// <summary>
+    /// Mã phiên nhận diện vừa tạo (chỉ có với Thành viên); truyền lại khi lưu hàng loạt để gắn Session_ID.
+    /// </summary>
+    public int? SessionId { get; set; }
+
+    /// <summary>
     /// Danh sách các nguyên liệu nhận diện được từ ảnh.
     /// </summary>
     public List<DetectedFridgeIngredientDto> Detected { get; set; } = new();

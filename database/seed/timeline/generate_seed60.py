@@ -835,6 +835,14 @@ while len(fr_sessions) < 90 and tries < 2000:
 for _ in range(60):   # món nhập tay (không gắn session)
     u = rng.choice(fr_users); key = rng.choice(FRIDGE_KEYS)
     fr_inv.append(dict(id=BASE + len(fr_inv), user=u, key=key, session=None, fresh="FRESH" if rng.random() < .8 else "NON-FRESH", qty=float(rnd_between(100, 400) // 50 * 50), unit="g"))
+# Mỗi nguyên liệu chỉ một dòng cho mỗi người dùng (BR-USR-08, UQ_FridgeInventory_User_Ingredient — D123):
+# giữ dòng mới nhất, mục cũ trong lịch sử quét trỏ inventoryId về dòng được giữ. Không dùng rng nên phần sau không đổi.
+latest_inv = {}
+for x in fr_inv:
+    latest_inv[(x["user"]["id"], ING[x["key"]]["name"])] = x
+for x in fr_inv:
+    x["id"] = latest_inv[(x["user"]["id"], ING[x["key"]]["name"])]["id"]
+fr_inv = [x for x in fr_inv if latest_inv[(x["user"]["id"], ING[x["key"]]["name"])] is x]
 
 # ---- gán avatar: nữ -> ảnh nữ, nam -> ảnh nam (đã duyệt bằng mắt), mỗi ảnh dùng 1 lần
 AV_SKIP ={3, 5, 7, 11, 14, 50, 62, 70, 71, 72, 77, 102, 134, 166, 169, 172, 173, 181, 196} | AV_MALE
