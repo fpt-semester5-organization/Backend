@@ -227,7 +227,9 @@ public class PostsController : BaseApiController
         }
 
         var isAdmin = string.Equals(CurrentUserRole, UserRoles.Admin, StringComparison.OrdinalIgnoreCase);
-        var (items, meta) = await _commentService.ListPostCommentsAsync(id, page, size, isAdmin, ct);
+        var (items, meta) = CurrentUserId.HasValue
+            ? await _commentService.ListPostCommentsAsync(id, page, size, isAdmin, (int)CurrentUserId.Value, ct)
+            : await _commentService.ListPostCommentsAsync(id, page, size, isAdmin, ct);
         return PagedResponse(items, meta, "OK");
     }
 
