@@ -347,7 +347,7 @@ public class RecipeService : IRecipeService
 
         // 6. Tính số bình luận và lượt vote
         var voteCount = recipe.Posts.SelectMany(p => p.Votes).Count();
-        var commentCount = recipe.Posts.SelectMany(p => p.Comments).Count(c => !c.IsSoftDeleted);
+        var commentCount = recipe.Posts.SelectMany(p => p.Comments).Count(c => !c.IsSoftDeleted && (isAdmin ? true : (c.Status == "ACTIVE" || c.Status == "APPROVED_ACTIVE")));
 
         // 7. Xác định Video liên kết: tác giả hoặc Admin xem được mọi video chưa xóa (kể cả BANNED/PROCESSING), người khác chỉ xem READY
         var activeVideo = recipe.Posts

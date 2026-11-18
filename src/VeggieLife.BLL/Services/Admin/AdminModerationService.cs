@@ -209,6 +209,14 @@ public class AdminModerationService : IAdminModerationService
                 authorUserId = report.Recipe.UserId;
                 contentType = "RECIPE";
                 contentId = report.Recipe.RecipeId;
+
+                // Đồng bộ cập nhật trạng thái bài viết đại diện liên kết
+                var repPost = await _db.Posts.FirstOrDefaultAsync(p => p.RecipeId == report.RecipeId.Value, ct);
+                if (repPost != null)
+                {
+                    repPost.ModerationStatus = "REJECTED";
+                    repPost.UpdatedAt = DateTime.UtcNow;
+                }
             }
             else if (report.PostId.HasValue && report.Post != null)
             {
@@ -289,6 +297,14 @@ public class AdminModerationService : IAdminModerationService
                 targetStatus = "APPROVED_ACTIVE";
                 contentType = "RECIPE";
                 contentId = report.Recipe.RecipeId;
+
+                // Đồng bộ khôi phục trạng thái bài viết đại diện liên kết nếu có
+                var repPost = await _db.Posts.FirstOrDefaultAsync(p => p.RecipeId == report.RecipeId.Value, ct);
+                if (repPost != null)
+                {
+                    repPost.ModerationStatus = "APPROVED_ACTIVE";
+                    repPost.UpdatedAt = DateTime.UtcNow;
+                }
             }
             else if (report.PostId.HasValue && report.Post != null)
             {

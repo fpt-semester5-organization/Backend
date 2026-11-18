@@ -49,7 +49,9 @@ public class NutritionDocumentService : INutritionDocumentService
     public async Task<List<AdminNutritionDocumentDto>> GetDocumentsAsync(CancellationToken ct = default)
     {
         var cached = await _redis.GetAsync<List<AdminNutritionDocumentDto>>(StorageKey, ct);
-        var docs = cached != null && cached.Count > 0 ? cached : GetDefaultDocuments();
+        // Khi cache chưa từng tồn tại (cached == null): nạp tài liệu mặc định ban đầu
+        // Khi cache đã tồn tại (dù rỗng do Admin đã xóa hết, cached.Count == 0): tôn trọng dữ liệu rỗng của Admin
+        var docs = cached ?? GetDefaultDocuments();
 
         // Chuẩn hóa FileUrl sang endpoint nội bộ hệ thống để nhúng iframe 100% hiển thị không bị lỗi Cloudinary 401 ACL deny
         bool needUpdateCache = false;
@@ -62,7 +64,7 @@ public class NutritionDocumentService : INutritionDocumentService
             }
         }
 
-        if (needUpdateCache || cached == null || cached.Count == 0)
+        if (needUpdateCache || cached == null)
         {
             await _redis.SetAsync(StorageKey, docs, null, ct);
         }

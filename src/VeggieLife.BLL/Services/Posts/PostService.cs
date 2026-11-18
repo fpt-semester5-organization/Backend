@@ -303,7 +303,7 @@ public class PostService : IPostService
             Recipes = recipes,
             VoteCount = post.Votes.Count,
             HasVoted = currentUserId.HasValue && post.Votes.Any(v => v.UserId == currentUserId.Value),
-            CommentCount = post.Comments.Count(c => !c.IsSoftDeleted),
+            CommentCount = post.Comments.Count(c => !c.IsSoftDeleted && (isAdmin || isAuthor ? true : (c.Status == "ACTIVE" || c.Status == "APPROVED_ACTIVE"))),
             MemberActions = memberActions
         };
 

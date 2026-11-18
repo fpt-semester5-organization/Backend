@@ -50,19 +50,44 @@ public class CommentService : ICommentService
     /// <summary>
     /// FN-COMM-01: Lấy danh sách bình luận dạng cây (tối đa 2 cấp hiển thị) của bài viết chia sẻ.
     /// </summary>
-    public async Task<(IReadOnlyList<CommentDto> Items, PagedMeta Meta)> ListPostCommentsAsync(
+    public Task<(IReadOnlyList<CommentDto> Items, PagedMeta Meta)> ListPostCommentsAsync(
         int postId,
         int page = 1,
         int size = 20,
         bool isAdmin = false,
         CancellationToken ct = default)
+        => ListPostCommentsInternalAsync(postId, page, size, isAdmin, currentUserId: null, bypassPostStatusCheck: false, ct);
+
+    public Task<(IReadOnlyList<CommentDto> Items, PagedMeta Meta)> ListPostCommentsAsync(
+        int postId,
+        int page,
+        int size,
+        bool isAdmin,
+        int? currentUserId,
+        CancellationToken ct = default)
+        => ListPostCommentsInternalAsync(postId, page, size, isAdmin, currentUserId, bypassPostStatusCheck: false, ct);
+
+    private async Task<(IReadOnlyList<CommentDto> Items, PagedMeta Meta)> ListPostCommentsInternalAsync(
+        int postId,
+        int page = 1,
+        int size = 20,
+        bool isAdmin = false,
+        int? currentUserId = null,
+        bool bypassPostStatusCheck = false,
+        CancellationToken ct = default)
     {
         // 1. Kiểm tra tham số đầu vào
         ValidatePagingParams(postId, page, size, "Mã bài viết");
 
-        // 2. Kiểm tra bài viết đích: Phải tồn tại và ở trạng thái APPROVED_ACTIVE (hoặc admin đang thẩm tra) (BR-INT-LIKE-02)
+        // 2. Kiểm tra bài viết đích: Phải tồn tại và ở trạng thái APPROVED_ACTIVE (hoặc admin/tác giả đang xem) (BR-INT-LIKE-02)
         var post = await _db.Posts.AsNoTracking().FirstOrDefaultAsync(p => p.PostId == postId, ct);
-        if (post == null || (post.ModerationStatus != "APPROVED_ACTIVE" && !isAdmin))
+        if (post == null)
+        {
+            throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc không ở trạng thái hiển thị.");
+        }
+
+        var isAuthor = currentUserId.HasValue && post.UserId == currentUserId.Value;
+        if (!bypassPostStatusCheck && post.ModerationStatus != "APPROVED_ACTIVE" && !isAdmin && !isAuthor)
         {
             throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc không ở trạng thái hiển thị.");
         }
@@ -139,19 +164,29 @@ public class CommentService : ICommentService
     /// <summary>
     /// FN-COMM-01: Lấy danh sách bình luận dạng cây của công thức nấu ăn (tính qua bài viết đại diện).
     /// </summary>
-    public async Task<(IReadOnlyList<CommentDto> Items, PagedMeta Meta)> ListRecipeCommentsAsync(
+    public Task<(IReadOnlyList<CommentDto> Items, PagedMeta Meta)> ListRecipeCommentsAsync(
         int recipeId,
         int page = 1,
         int size = 20,
         bool isAdmin = false,
         CancellationToken ct = default)
+        => ListRecipeCommentsAsync(recipeId, page, size, isAdmin, currentUserId: null, ct);
+
+    public async Task<(IReadOnlyList<CommentDto> Items, PagedMeta Meta)> ListRecipeCommentsAsync(
+        int recipeId,
+        int page,
+        int size,
+        bool isAdmin,
+        int? currentUserId,
+        CancellationToken ct = default)
     {
         // 1. Kiểm tra tham số đầu vào
         ValidatePagingParams(recipeId, page, size, "Mã công thức");
 
-        // 2. Kiểm tra công thức đích: Phải tồn tại và ở trạng thái APPROVED_ACTIVE (hoặc admin đang thẩm tra) (BR-INT-LIKE-02)
+        // 2. Kiểm tra công thức đích: Phải tồn tại và ở trạng thái APPROVED_ACTIVE (hoặc admin/tác giả đang xem) (BR-INT-LIKE-02)
         var recipe = await _db.Recipes.AsNoTracking().FirstOrDefaultAsync(r => r.RecipeId == recipeId, ct);
-        if (recipe == null || (recipe.Status != "APPROVED_ACTIVE" && !isAdmin))
+        var isAuthor = currentUserId.HasValue && recipe != null && recipe.UserId == currentUserId.Value;
+        if (recipe == null || (recipe.Status != "APPROVED_ACTIVE" && !isAdmin && !isAuthor))
         {
             throw AppException.NotFound(ErrorCodes.ErrContentNotFound, "Nội dung không tồn tại hoặc không ở trạng thái hiển thị.");
         }
@@ -163,7 +198,8 @@ public class CommentService : ICommentService
             return (new List<CommentDto>(), new PagedMeta(page, size, 0));
         }
 
-        return await ListPostCommentsAsync(repPost.PostId, page, size, isAdmin, ct);
+        // Khi công thức đã APPROVED_ACTIVE hoặc người xem là Admin/Tác giả: bypass kiểm tra trạng thái repPost
+        return await ListPostCommentsInternalAsync(repPost.PostId, page, size, isAdmin, currentUserId, bypassPostStatusCheck: true, ct);
     }
 
     /// <summary>
